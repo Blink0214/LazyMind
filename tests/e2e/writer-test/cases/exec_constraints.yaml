@@ -1,0 +1,19 @@
+schema_version: 1
+suite: ai-writer-exec-constraints
+description: >
+  统一执行约束提示词。由 case loader 在测试开始时注入到用例提示词末尾；
+  口径跟随当前 Writer 业务流程（三个顶层 workspace 工具：
+  writer_prepare_workspace / writer_outline_workspace / writer_draft_workspace，内部函数不再作为独立工具暴露，工作流按 ready_steps 推进）。
+  报错纠正重试上限为 3 次；性能统计会将异常重试单独列出，主表只对比正常链路。
+
+# 写作类（create / use_outline / rewrite_document）：从零写作、按大纲写作。
+write: |
+  执行约束：直接触发一次 Writer 工作流，触发前不预读附件/飞书文档。
+  不要直接调用工作流内部工具，写作内容只通过 writer_prepare_workspace / writer_outline_workspace / writer_draft_workspace 完成。
+  报错按提示修正后重试，同一动作最多重试 3 次，仍失败立即停止。
+
+# 修订类（revise_document）：针对完整文档的局部修改（含飞书写回）。
+revise: |
+  执行约束：直接触发一次 Writer 工作流，触发前不预读或修改附件/飞书文档。
+  不要直接调用工作流内部工具，写作内容只通过 writer_prepare_workspace 与 writer_draft_workspace 完成。
+  报错按提示修正后重试，同一动作最多重试 3 次，仍失败立即停止。

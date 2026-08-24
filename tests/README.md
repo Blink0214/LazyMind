@@ -10,6 +10,7 @@ Unit tests for four modules: **frontend**, **backend (core)**, **auth-service**,
 | `backend/auth-service/` | FastAPI auth (JWT, RBAC, users, roles) | pytest + httpx |
 | `backend/core/` | Go API (ACL, handlers) | Go testing |
 | `algorithm/` | Chat, parsing, processor, common | pytest + unittest.mock |
+| [`e2e/`](e2e/README.md) | Manual AI Writer black-box tests against running services | Python stdlib |
 
 ## Dependency Chain & Mock Strategy
 

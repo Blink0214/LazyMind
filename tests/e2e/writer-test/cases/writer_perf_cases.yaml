@@ -1,0 +1,185 @@
+schema_version: 2
+suite: ai-writer-perf
+feishu_docs:
+  P3_FEISHU_OUTLINE_1:
+    url: https://sensetime.feishu.cn/wiki/WxIbwZqfci5IwIkHhLMcPhWcnvb
+    history_version_id: '9216'
+    baseline_revision_id: 18
+  P3_FEISHU_OUTLINE_2:
+    url: https://sensetime.feishu.cn/wiki/OXQ4wc3r3iuOEVkgr5ZcSHv8nig
+    history_version_id: '8192'
+    baseline_revision_id: 120
+  P3_FEISHU_OUTLINE_3:
+    url: https://sensetime.feishu.cn/wiki/EipkwwOEHi7rKtkqPJccChSXnWh
+    history_version_id: '2048'
+    baseline_revision_id: 8
+  P3_FEISHU_OUTLINE_4:
+    url: https://sensetime.feishu.cn/wiki/Z0Flwn0h4i2Qn7kFU8wcHZ4Nn9d
+    history_version_id: '2048'
+    baseline_revision_id: 3
+  P3_FEISHU_OUTLINE_5:
+    url: https://sensetime.feishu.cn/wiki/Fk0wwfelzihZgmk33b0cwgR2n8f
+    history_version_id: '6144'
+    baseline_revision_id: 17
+  P5_FEISHU_FULL_1:
+    url: https://sensetime.feishu.cn/wiki/PdfEwqqaUiRTLCkdUvqcr6fon7g
+    history_version_id: '13312'
+    baseline_revision_id: 125
+  P5_FEISHU_FULL_2:
+    url: https://sensetime.feishu.cn/wiki/PfoNw8631iLLPYkPvX7co92DnCg
+    history_version_id: '4096'
+    baseline_revision_id: 15
+  P5_FEISHU_FULL_3:
+    url: https://sensetime.feishu.cn/wiki/PgN5wtOlZiYGMfkC5mfcIFjtn5r
+    history_version_id: '4096'
+    baseline_revision_id: 4
+  P5_FEISHU_FULL_4:
+    url: https://sensetime.feishu.cn/wiki/UmtrwcoNbi6CoAkF0iOc6bbjnDh
+    history_version_id: '2048'
+    baseline_revision_id: 2
+  P5_FEISHU_FULL_5:
+    url: https://sensetime.feishu.cn/wiki/THUJwRMKPiAABNkset8c06csnDh
+    history_version_id: '5120'
+    baseline_revision_id: 10
+scenarios:
+- id: P01
+  title: 0-1 写作
+  cases:
+  - id: 1
+    text: '请启动 AI Writer，帮我写一篇时间自动机主动学习优化的论文，需要包含时间自动机与主动学习的基本概念，现有的算法局限、可优化方向、实验步骤和评价指标等内容。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+  - id: 2
+    text: '请启动 AI Writer，请帮我撰写一份2025年大模型产业落地调研报告，包含行业概览、技术趋势、典型应用场景、市场规模与竞争格局、挑战与风险以及发展建议等章节。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+  - id: 3
+    text: '请启动 AI Writer，帮我写一篇科幻小说，讲述人类在一颗资源枯竭的流浪行星上发现远古文明遗迹、最终跨越种族隔阂重建家园的故事，包含序章、若干章节正文和尾声。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+  - id: 4
+    text: '请启动 AI Writer，请帮我撰写一篇面向开发者的技术博客，系统讲解检索增强生成（RAG）的原理、架构设计与工程实践，包含背景动机、核心原理、系统架构、实现步骤、常见问题与优化技巧、总结等章节。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+  - id: 5
+    text: '请启动 AI Writer，请帮我编写一份智能家居中控屏的用户使用手册，涵盖产品简介、开箱清单、安装连接、功能操作、场景联动、故障排除与售后保修等章节。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+- id: P02
+  title: 基于 Markdown 的大纲写作
+  cases:
+  - id: 1
+    text: '请启动 AI Writer，并基于上传的附件大纲撰写一篇完整论文。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+    attachment: fixtures/perf/p02_case1.md
+  - id: 2
+    text: '请启动 AI Writer，并基于上传的附件大纲撰写一篇完整调研报告。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+    attachment: fixtures/perf/p02_case2.txt
+  - id: 3
+    text: '请启动 AI Writer，并基于上传的附件大纲创作一部长篇科幻小说，包括完整故事，包含充分的场景、人物行动和对话。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+    attachment: fixtures/perf/p02_case3.md
+  - id: 4
+    text: '请启动 AI Writer，并基于上传的附件大纲撰写一篇完整技术博客文章，面向有工程经验的开发者并包含必要示例。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+    attachment: fixtures/perf/p02_case4.txt
+  - id: 5
+    text: '请启动 AI Writer，并基于上传的附件大纲撰写一篇完整的用户手册，步骤应清楚并包含安全提示。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+    attachment: fixtures/perf/p02_case5.md
+- id: P03
+  title: 基于飞书的大纲写作
+  cases:
+  - id: 1
+    feishu_doc: P3_FEISHU_OUTLINE_1
+    text: '请启动 AI Writer，基于这份大纲 ${P3_FEISHU_OUTLINE_1} 撰写一篇完整的文章。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+  - id: 2
+    feishu_doc: P3_FEISHU_OUTLINE_2
+    text: '请启动 AI Writer，基于这份大纲 ${P3_FEISHU_OUTLINE_2} 撰写一篇完整的文章。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+  - id: 3
+    feishu_doc: P3_FEISHU_OUTLINE_3
+    text: '请启动 AI Writer，基于这份大纲 ${P3_FEISHU_OUTLINE_3} 撰写一篇完整的文章。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+  - id: 4
+    feishu_doc: P3_FEISHU_OUTLINE_4
+    text: '请启动 AI Writer，基于这份大纲 ${P3_FEISHU_OUTLINE_4} 撰写一篇完整的文章。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+  - id: 5
+    feishu_doc: P3_FEISHU_OUTLINE_5
+    text: '请启动 AI Writer，基于这份大纲 ${P3_FEISHU_OUTLINE_5} 撰写一篇完整的文章。
+          全文控制在 3000 字以内，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。'
+    constraints: write
+- id: P04
+  title: 基于 Markdown 的全文修改
+  cases:
+  - id: 1
+    text: '请启动 AI Writer，请针对附件上传的文章按照下述要求直接修改，并以 Markdown 形式输出修改后的完整文档。
+          在"4.3 结果分析"小节中，将目前先讲多时钟实例、再讲单时钟实例的段落顺序对调，改为先陈述单时钟实例上三种方法差距较小的结论，再展开多时钟实例上的对比分析，使叙述从简单到复杂、逻辑更顺畅。'
+    constraints: revise
+    attachment: fixtures/perf/p04_case1.md
+  - id: 2
+    text: '请启动 AI Writer，请针对附件上传的文章按照下述要求直接修改，并以 Markdown 形式输出修改后的完整文档。
+          在"三、典型应用场景"的"1. 垂直领域落地案例"部分，于"1.3 教育"之后新增一个小节"1.4 制造业"，介绍大模型在预测性维护、产线质检、供应链优化与工业知识管理等场景的落地情况，要求包含1-2个虚构的合理数据点，篇幅与前三个小节相当。'
+    constraints: revise
+    attachment: fixtures/perf/p04_case2.txt
+  - id: 3
+    text: '请启动 AI Writer，请针对附件上传的文章按照下述要求直接修改，并以Markdown的形式输出修改后的完整文档。
+          1. 在“第三章 隔阂与冲突”中，把议事会争论段落移动到石磊夜袭七号矿井并触发防御机制受挫之后，并补充必要过渡句。
+          2. 在“第四章 共生之路”中，把林远提出的折中方案拆成两个段落：第一段写技术共享与遗迹地位，第二段写监督委员会及权限约束。'
+    constraints: revise
+    attachment: fixtures/perf/p04_case3.md
+  - id: 4
+    text: '请启动 AI Writer，请针对附件上传的文章按照下述要求直接修改，并以Markdown的形式输出修改后的完整文档。
+          1. 将“RAG 与微调：知识注入的路线对比”整节改写成 Markdown 表格，使用“对比维度 / RAG / 微调”三列，包含更新成本、知识规模、可追溯性、适用任务、实现成本与周期、维护难度六行。在表格后保留一段总结，并将原“实践经验”引用块整合进总结，不再保留引用块。
+          2. 合并梳理“分块策略不当导致检索质量差”和“上下文过长导致生成质量下降”中关于块大小及上下文长度的重复对策；然后在前一小节末尾补充约 120 字的过渡说明，阐明分块大小与最终上下文长度是输入端和消费端的同一对矛盾，并自然引出下一节。'
+    constraints: revise
+    attachment: fixtures/perf/p04_case4.txt
+  - id: 5
+    text: '请启动 AI Writer，请针对附件上传的文章按照下述要求直接修改，并以Markdown的形式输出修改后的完整文档。
+          1. 将壁挂安装第 3 步扩展成两到三步，补充 6mm 钻头、约 35mm 打孔深度，以及打孔前确认墙内无水管和电线的安全提示。
+          2. 把“产品定位与核心功能”中的五项功能拆出，与“适用场景与兼容设备”合并为“2. 核心功能与适用场景”；先写功能，再写适用场景与兼容设备，后续编号相应调整。'
+    constraints: revise
+    attachment: fixtures/perf/p04_case5.md
+- id: P05
+  title: 基于飞书的全文修改
+  cases:
+  - id: 1
+    feishu_doc: P5_FEISHU_FULL_1
+    text: '请启动 AI Writer，针对这份飞书文档 ${P5_FEISHU_FULL_1} 作出如下的更改，请直接修改原有文档，不要新建飞书文档：
+          在"4.3 结果分析"小节中，将目前先讲多时钟实例、再讲单时钟实例的段落顺序对调，改为先陈述单时钟实例上三种方法差距较小的结论，再展开多时钟实例上的对比分析，使叙述从简单到复杂、逻辑更顺畅。'
+    constraints: revise
+  - id: 2
+    feishu_doc: P5_FEISHU_FULL_2
+    text: '请启动 AI Writer，针对这份飞书文档 ${P5_FEISHU_FULL_2} 作出如下的更改，请直接修改原有文档，不要新建飞书文档：
+          在"三、典型应用场景"的"1. 垂直领域落地案例"部分，于"1.3 教育"之后新增一个小节"1.4 制造业"，介绍大模型在预测性维护、产线质检、供应链优化与工业知识管理等场景的落地情况，要求包含1-2个虚构的合理数据点，篇幅与前三个小节相当。'
+    constraints: revise
+  - id: 3
+    feishu_doc: P5_FEISHU_FULL_3
+    text: '请启动 AI Writer，针对这份飞书文档 ${P5_FEISHU_FULL_3} 作出如下的更改，请直接修改原有文档，不要新建飞书文档：
+          1. 在“第三章 隔阂与冲突”中，把议事会争论段落移动到石磊夜袭七号矿井并触发防御机制受挫之后，并补充必要过渡句。
+          2. 在“第四章 共生之路”中，把林远提出的折中方案拆成两个段落：第一段写技术共享与遗迹地位，第二段写监督委员会及权限约束。'
+    constraints: revise
+  - id: 4
+    feishu_doc: P5_FEISHU_FULL_4
+    text: '请启动 AI Writer，针对这份飞书文档 ${P5_FEISHU_FULL_4} 作出如下的更改，请直接修改原有文档，不要新建飞书文档：
+          1. 将“RAG 与微调：知识注入的路线对比”整节改写成 Markdown 表格，使用“对比维度 / RAG / 微调”三列，包含更新成本、知识规模、可追溯性、适用任务、实现成本与周期、维护难度六行。在表格后保留一段总结，并将原“实践经验”引用块整合进总结，不再保留引用块。
+          2. 合并梳理“分块策略不当导致检索质量差”和“上下文过长导致生成质量下降”中关于块大小及上下文长度的重复对策；然后在前一小节末尾补充约 120 字的过渡说明，阐明分块大小与最终上下文长度是输入端和消费端的同一对矛盾，并自然引出下一节。'
+    constraints: revise
+  - id: 5
+    feishu_doc: P5_FEISHU_FULL_5
+    text: '请启动 AI Writer，针对这份飞书文档 ${P5_FEISHU_FULL_5} 作出如下的更改，请直接修改原有文档，不要新建飞书文档：
+          1. 将壁挂安装第 3 步扩展成两到三步，补充 6mm 钻头、约 35mm 打孔深度，以及打孔前确认墙内无水管和电线的安全提示。
+          2. 把“产品定位与核心功能”中的五项功能拆出，与“适用场景与兼容设备”合并为“2. 核心功能与适用场景”；先写功能，再写适用场景与兼容设备，后续编号相应调整。'
+    constraints: revise

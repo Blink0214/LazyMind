@@ -1,0 +1,318 @@
+schema_version: 2
+suite: ai-writer-core
+
+fixtures:
+  markdown_outline: {kind: local_file, path: fixtures/func/writer-outline.md}
+  markdown_full: {kind: local_file, path: fixtures/func/writer-full.md}
+  markdown_refs: {kind: local_file, path: fixtures/func/writer-refs.md}
+
+# 飞书测试文档统一登记（URL + 基线版本），功能与性能各自独立记录。
+# 基线以文档当前状态为准：跑前比较当前正文与 baseline_revision_id 内容，
+# 不同则 history-revert 到 history_version_id。
+feishu_docs:
+  outline:            # 功能测试大纲（C03/I02）
+    url: https://sensetime.feishu.cn/wiki/FgOfw3gh8ivcajk8FPyc086Knvg
+    history_version_id: '32768'
+    baseline_revision_id: 78
+  full:               # 功能测试全文（C05/C07）
+    url: https://sensetime.feishu.cn/wiki/G828wPWqDiokGvkqTNzcUPuDnec
+    history_version_id: '31744'
+    baseline_revision_id: 95
+
+scenarios:
+  - id: C01
+    title: 从零创建 Markdown 全文
+    request:
+      text: 写一篇面向社会公众的《台风天安全防范指南》公众号文章，全文800—1000字，无需配图。
+      attachment: {kind: none}
+    expected:
+      route: create
+      steps: [prepare, outline, write_document]
+      tools:
+        # 新业务逻辑将各步骤封装为顶层 workspace 工具，内部子步骤不再单独出 trace。
+        required: [writer_prepare_workspace, writer_outline_workspace, writer_draft_workspace]
+        forbidden: []
+      artifacts:
+        required:
+          outline_document: {extension: .md}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [source_document, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+
+  - id: C02
+    title: 根据 Markdown 大纲扩写全文
+    request:
+      text: 请根据我上传的大纲扩写成一篇完整文章，全文800—1000字，无需配图。
+      attachment: {fixture: markdown_outline}
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      tools:
+        required: [writer_prepare_workspace, writer_outline_workspace, writer_draft_workspace]
+        forbidden: []
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          outline_document: {extension: .md}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+
+  - id: C03
+    title: 根据飞书 IR 大纲扩写全文
+    request:
+      text: 请根据这份飞书大纲扩写成一篇完整文章，全文800—1000字，正文中无需配图：${outline}
+    feishu_doc: outline
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      tools:
+        required: [writer_prepare_workspace, writer_outline_workspace, writer_draft_workspace]
+        forbidden: []
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: outline, provider: feishu}
+          target_document: {provider: feishu}
+          outline_document: {extension: .lmd, stage: outline}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+          document_write_result: {success: true}
+        forbidden: []
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {tool: writer_replace_document, calls: 1, provider_revision_increases: true}
+
+  - id: C04
+    title: Markdown 全文重写
+    request:
+      text: 请重写我上传的完整文章并调整结构，全文800—1000字，无需配图。
+      attachment: {fixture: markdown_full}
+    expected:
+      route: rewrite
+      steps: [prepare, write_document]
+      tools:
+        required: [writer_prepare_workspace, writer_draft_workspace]
+        forbidden: [writer_outline_workspace]
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [outline_document, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+
+  - id: C05
+    title: 飞书 IR 全文重写
+    request:
+      text: 请重写这篇飞书文章并调整结构，全文800—1000字，无需配图：${full} 
+    feishu_doc: full
+    expected:
+      route: rewrite
+      steps: [prepare, write_document]
+      tools:
+        required: [writer_prepare_workspace, writer_draft_workspace]
+        forbidden: [writer_outline_workspace]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: draft_or_final, provider: feishu}
+          target_document: {provider: feishu}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+          document_write_result: {success: true}
+        forbidden: [outline_document]
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {tool: writer_replace_document, calls: 1, provider_revision_increases: true}
+
+  - id: C06
+    title: Markdown 组合局部修改
+    request:
+      text: >-
+        请对我上传的完整文章执行以下四处修改，其他内容保持不变：1) 新增：在《台风来临前的准备工作》之后插入一节《应急物资准备》；2)
+        删除：删除《台风期间的安全措施》中“地下通道、地下车库及下沉式建筑”这一条要点；3) 替换：将《台风过后的注意事项》第一段改写得更简洁；4)
+        移动：将《台风过后的注意事项》一章移动到《台风期间的安全措施》之前。
+      attachment: {fixture: markdown_full}
+    expected:
+      route: revise
+      steps: [prepare, write_document]
+      modify_types: [create, update, delete, move]
+      tools:
+        required: [writer_prepare_workspace, writer_draft_workspace]
+        forbidden: [writer_outline_workspace]
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          document_revision_task: {task_type: revise}
+          document_modify_plan: {}
+          document_revision_set: {patch_type: string_replace_set}
+          document_revision_result: {success: true}
+        forbidden: [outline_document, section_instructions, draft_blocks, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+
+  - id: C07
+    title: 飞书 IR 组合局部修改
+    request:
+      text: >-
+        请对这篇飞书文章执行以下四处修改，其他内容保持不变：1) 新增：在《台风来临前的准备工作》之后插入一节《应急物资准备》；2)
+        删除：删除《台风期间的安全措施》中“地下通道、地下车库及下沉式建筑”这一条要点；3) 替换：将《台风过后的注意事项》第一段改写得更简洁；4)
+        移动：将《台风过后的注意事项》一章移动到《台风期间的安全措施》之前：${full}
+    feishu_doc: full
+    expected:
+      route: revise
+      steps: [prepare, write_document]
+      modify_types: [create, update, delete, move]
+      tools:
+        required: [writer_prepare_workspace, writer_draft_workspace]
+        forbidden: [writer_outline_workspace]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: draft_or_final, provider: feishu}
+          document_revision_task: {task_type: revise}
+          document_modify_plan: {}
+          document_revision_set: {patch_type: writer_ir_patch}
+          document_revision_result: {success: true}
+        forbidden: [outline_document, section_instructions, draft_blocks]
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {tool: writer_publish_revision, calls: 1, provider_revision_increases: true}
+
+  - id: I01
+    title: Markdown 配图插入
+    request:
+      text: >-
+        请写一篇面向社会公众的《台风天安全防范指南》公众号文章，全文800—1000字。正文需要包含至少
+        2 张与内容紧密相关的配图并插入对应章节，每张图配一句图注。
+      attachment: {kind: none}
+    expected:
+      route: create
+      steps: [prepare, outline, write_document]
+      tools:
+        required: [writer_prepare_workspace, writer_outline_workspace, writer_draft_workspace]
+        forbidden: []
+      artifacts:
+        required:
+          outline_document: {extension: .md}
+          section_instructions: {}
+          visual_plan: {}
+          resolved_media_assets: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [source_document, document_write_result]
+      media: {min_images: 2}
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+
+  - id: I02
+    title: 飞书 IR 配图插入
+    request:
+      text: >-
+        请根据这份飞书大纲完成全文，全文800—1000字，正文需要包含至少 2 张与内容紧密相关的配图并插入对应章节，
+        每张图配一句图注。：${outline}。
+    feishu_doc: outline
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      tools:
+        required: [writer_prepare_workspace, writer_outline_workspace, writer_draft_workspace]
+        forbidden: []
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: outline, provider: feishu}
+          target_document: {provider: feishu}
+          outline_document: {extension: .lmd, stage: outline}
+          section_instructions: {}
+          resolved_media_assets: {}
+          draft_blocks: {min_items: 1}
+          document_write_result: {success: true}
+        forbidden: []
+      media: {min_images: 1}
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {tool: writer_replace_document, calls: 1, provider_revision_increases: true}
+
+  - id: X01
+    title: Markdown 创建含章节交叉引用
+    request:
+      text: >-
+        请写一篇面向社会公众的《台风天安全防范指南》公众号文章，全文800—1000字，无需配图。正文需要包含：
+        1) 至少 1 处指向其他章节的交叉引用；
+        2) 至少 1 张表格（如应急物资清单），表格需带题注和编号，并在正文中引用该表格。
+      attachment: {kind: none}
+    expected:
+      route: create
+      steps: [prepare, outline, write_document]
+      tools:
+        required: [writer_prepare_workspace, writer_outline_workspace, writer_draft_workspace]
+        forbidden: []
+      artifacts:
+        required:
+          outline_document: {extension: .md}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [source_document, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      cross_ref: {min_links: 2}
+      ref_integrity: true
+      numbering: true
+
+  - id: X02
+    title: 飞书 IR 成稿正文含图片引用
+    request:
+      text: >-
+        请根据这份飞书大纲完成全文，全文800—1000字。正文需要包含：
+        1) 至少 1 张与内容相关的配图，正文中必须有一段文字通过内部引用指向该配图；
+        2) 至少 1 处指向其他章节的交叉引用；
+        图片必须是写作流程中生成的配图，不要引用外部网络图片链接：${outline}。
+    feishu_doc: outline
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      tools:
+        required: [writer_prepare_workspace, writer_outline_workspace, writer_draft_workspace]
+        forbidden: []
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: outline, provider: feishu}
+          target_document: {provider: feishu}
+          outline_document: {extension: .lmd, stage: outline}
+          section_instructions: {}
+          resolved_media_assets: {}
+          draft_blocks: {min_items: 1}
+          document_write_result: {success: true}
+        forbidden: []
+      media: {min_images: 1}
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {tool: writer_replace_document, calls: 1, provider_revision_increases: true}
+      cross_ref: {min_links: 2}
+      ref_integrity: {require_numbering: true}
+      numbering: {require: true}
+
+  - id: X03
+    title: 含交叉引用的 Markdown 局部修改后引用保留
+    request:
+      text: >-
+        请对我上传的完整文章执行以下修改，其他内容保持不变：将《台风过境后的注意事项》整个章节移动到
+        《台风期间的安全措施》之前（调整章节顺序）。修改后正文中的章节编号必须按新顺序重新编号，并保留正文中的所有交叉引用链接。
+      attachment: {fixture: markdown_refs}
+    expected:
+      route: revise
+      steps: [prepare, write_document]
+      tools:
+        required: [writer_prepare_workspace, writer_draft_workspace]
+        forbidden: [writer_outline_workspace]
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          document_revision_task: {task_type: revise}
+          document_modify_plan: {}
+          document_revision_set: {patch_type: string_replace_set}
+          document_revision_result: {success: true}
+        forbidden: [outline_document, section_instructions, draft_blocks, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      cross_ref: {min_links: 2, preserve_from_source: true}
+      ref_integrity: true
+      numbering: {require: true}
+      ref_number_consistency: true

@@ -20,7 +20,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:writer-ui": "playwright test --config=tests/e2e/playwright.config.ts",
+    "test:writer-effects": "playwright test --config=tests/e2e/playwright.config.ts tests/e2e/writer_effect_ui.spec.ts"
   },
   "dependencies": {
     "@ant-design/icons": "5.x",
@@ -76,6 +78,7 @@
   },
   "devDependencies": {
     "@openapitools/openapi-generator-cli": "^2.20.2",
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/js-yaml": "4.0.9",

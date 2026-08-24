@@ -103,6 +103,7 @@ data/evo/
 
 AGENTS.md
 algorithm/.agentic_rag/
+tests/e2e/writer-e2e/env.local.sh
 version.*
 algorithm/Dockerfile.chat-rebase
 
@@ -117,3 +118,11 @@ backend/core/openapi.json
 backend/core/swagger.json
 backend/core/docs/swagger.json
 openapi-export/
+
+# Run artifacts produced by tests/e2e/writer-benchmark are large and not
+# source-controlled. Each test run regenerates them under a timestamped dir.
+
+# Patterns use leading "**/" so they match at any depth under tests/e2e/.
+tests/e2e/**/reports/
+tests/e2e/**/fixtures/
+tests/e2e/**/__pycache__/
