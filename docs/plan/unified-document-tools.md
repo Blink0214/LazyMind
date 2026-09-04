@@ -4,6 +4,9 @@ This document records the decisions for extracting the shared writing
 capabilities into `algorithm/lazymind/document_tools/`. A topic is considered
 closed only after it has been explicitly confirmed during the design review.
 
+Implementation progress is tracked separately in
+[`unified-document-tools-tasks.md`](./unified-document-tools-tasks.md).
+
 ## Review status
 
 1. Public API boundaries: confirmed

@@ -25,10 +25,11 @@ def _load_tools_module() -> ModuleType:
 
 
 def test_markdown_writeback_preserves_multiple_generated_image_references(monkeypatch):
-    tools = _load_tools_module()
+    from lazymind.document_tools import resources as document_resources
+
     captured = {}
 
-    class FakeWriterResourceToolkit:
+    class FakeWriterResourceCapabilities:
         def replace_document(self, **kwargs):
             captured.update(kwargs)
             document = json.loads(kwargs['content_json'])
@@ -39,7 +40,11 @@ def test_markdown_writeback_preserves_multiple_generated_image_references(monkey
                 'provider': 'feishu',
             })
 
-    monkeypatch.setattr(tools, 'WriterResourceToolkit', FakeWriterResourceToolkit)
+    monkeypatch.setattr(
+        document_resources,
+        'WriterResourceCapabilities',
+        FakeWriterResourceCapabilities,
+    )
     media_assets = {
         'library_id': 'library-1',
         'assets': {
@@ -60,11 +65,10 @@ def test_markdown_writeback_preserves_multiple_generated_image_references(monkey
         },
     }
 
-    result = tools._replace_document_and_read_back(
+    result = document_resources._replace_document_and_read_back(
         '# Story\n\n![One](/data/subagent/task/media/assets/one.jpg)\n\n'
         '![Two](/data/subagent/task/media/assets/two.jpg)',
         title='Story',
-        artifact_store='',
         source_format='markdown',
         target_document={
             'doc_id': 'document-1',
@@ -75,7 +79,7 @@ def test_markdown_writeback_preserves_multiple_generated_image_references(monkey
     )
 
     published = json.loads(captured['content_json'])
-    published_document = tools.WriterDocument.model_validate(published)
+    published_document = document_resources.WriterDocument.model_validate(published)
     image_blocks = [
         block for block in published_document.iter_blocks() if block.type == 'image'
     ]
@@ -111,7 +115,7 @@ def test_build_writing_task_extracts_document_length_constraints(query, expected
 
 
 def test_writer_retrieve_uses_configured_search_provider(monkeypatch):
-    from lazymind.document_tools import toolkits as writer
+    from lazymind.document_tools import writing as writer
 
     class FakeSciverseSearch:
         def __key_source__(self):
@@ -248,7 +252,7 @@ def test_markdown_draft_blocks_do_not_pass_resolved_media(monkeypatch, tmp_path)
 
 
 def test_wrapped_idle_timeout_restarts_section_preview_and_retries(monkeypatch):
-    from lazymind.document_tools import toolkits as writer
+    from lazymind.document_tools import writing as writer
     from lazyllm.module.module import ModuleExecutionError
 
     complete = '## 第一章\n\n完整正文。\n'
@@ -294,7 +298,7 @@ def test_wrapped_idle_timeout_restarts_section_preview_and_retries(monkeypatch):
     monkeypatch.setattr(writer, '_write_input_artifact', lambda *_args: '')
 
     emitter = writer.DraftMarkdownStreamEventEmitter(emitted.append)
-    result = json.loads(writer.WriterCreateToolkit().stream_draft_blocks_markdown(
+    result = json.loads(writer.WriterWritingCapabilities().stream_draft_blocks_markdown(
         writing_task_json='{}',
         section_instructions_json=json.dumps({
             'instructions': [{
@@ -419,7 +423,7 @@ def test_markdown_revision_fills_resolved_media_placeholder(monkeypatch, tmp_pat
 
 
 def test_markdown_no_image_request_skips_visual_planning(monkeypatch, tmp_path):
-    from lazymind.document_tools import toolkits as writer
+    from lazymind.document_tools import writing as writer
 
     calls = []
 
@@ -445,7 +449,7 @@ def test_markdown_no_image_request_skips_visual_planning(monkeypatch, tmp_path):
     monkeypatch.setattr(writer, 'WriterPlanningTools', FakePlanningTools)
     monkeypatch.setattr(writer, 'AutoModel', lambda **_kwargs: object())
 
-    result = json.loads(writer.WriterCreateToolkit().generate_section_instructions(
+    result = json.loads(writer.WriterWritingCapabilities().generate_section_instructions(
         writing_task_json=json.dumps({
             'task_id': 'task-1',
             'query': '请扩写这个大纲，不要图片',
@@ -460,7 +464,7 @@ def test_markdown_no_image_request_skips_visual_planning(monkeypatch, tmp_path):
 
 
 def test_markdown_rewrite_no_image_request_skips_visual_planning(monkeypatch, tmp_path):
-    from lazymind.document_tools import toolkits as writer
+    from lazymind.document_tools import writing as writer
 
     calls = []
 
@@ -489,7 +493,8 @@ def test_markdown_rewrite_no_image_request_skips_visual_planning(monkeypatch, tm
     monkeypatch.setattr(writer, 'WriterPlanningTools', FakePlanningTools)
     monkeypatch.setattr(writer, 'AutoModel', lambda **_kwargs: object())
 
-    result = json.loads(writer.WriterCreateToolkit().generate_rewrite_section_instructions(
+    result = json.loads(
+        writer.WriterWritingCapabilities().generate_rewrite_section_instructions(
         writing_task_json=json.dumps({
             'task_id': 'task-1',
             'query': '请重写全文，不要图片',
@@ -497,7 +502,8 @@ def test_markdown_rewrite_no_image_request_skips_visual_planning(monkeypatch, tm
         }),
         source_document_json='# 原文\n\n正文。\n',
         writing_context_json=json.dumps({'context_id': 'context-1'}),
-    ))
+        )
+    )
 
     assert calls == []
     assert result['visual_plan']['instructions'] == []
@@ -506,6 +512,7 @@ def test_markdown_rewrite_no_image_request_skips_visual_planning(monkeypatch, tm
 
 def test_selection_rewrite_uses_slot_markdown_artifact_filename(monkeypatch, tmp_path):
     tools = _load_tools_module()
+    from lazymind.document_tools import revision as document_revision
 
     class FakeWriterRevisionTools:
         def __init__(self, *, llm, artifact_store):
@@ -526,8 +533,10 @@ def test_selection_rewrite_uses_slot_markdown_artifact_filename(monkeypatch, tmp
             path.write_text('# Title\n\nPolished body.\n', encoding='utf-8')
             return {'revised_document_md': str(path)}
 
-    monkeypatch.setattr(tools, 'AutoModel', lambda **_kwargs: object())
-    monkeypatch.setattr(tools, 'WriterRevisionTools', FakeWriterRevisionTools)
+    monkeypatch.setattr(document_revision, 'AutoModel', lambda **_kwargs: object())
+    monkeypatch.setattr(
+        document_revision, 'WriterRevisionTools', FakeWriterRevisionTools,
+    )
     source_path = tmp_path / 'revised_document.md'
     source_path.write_text('# Title\n\nOriginal body.\n', encoding='utf-8')
 
@@ -553,6 +562,7 @@ def test_selection_rewrite_uses_slot_markdown_artifact_filename(monkeypatch, tmp
 
 def test_selection_rewrite_uses_slot_ir_artifact_filename(monkeypatch, tmp_path):
     tools = _load_tools_module()
+    from lazymind.document_tools import revision as document_revision
 
     class FakeWriterRevisionTools:
         def __init__(self, *, llm, artifact_store):
@@ -571,15 +581,17 @@ def test_selection_rewrite_uses_slot_ir_artifact_filename(monkeypatch, tmp_path)
             'stage': 'final',
         }],
     }
-    monkeypatch.setattr(tools, 'AutoModel', lambda **_kwargs: object())
-    monkeypatch.setattr(tools, 'WriterRevisionTools', FakeWriterRevisionTools)
+    monkeypatch.setattr(document_revision, 'AutoModel', lambda **_kwargs: object())
     monkeypatch.setattr(
-        tools,
-        'load_artifact_json',
-        lambda *_args: tools.PatchSet(target_doc_id='doc-1', hunks=[]),
+        document_revision, 'WriterRevisionTools', FakeWriterRevisionTools,
     )
     monkeypatch.setattr(
-        tools,
+        document_revision,
+        'load_artifact_json',
+        lambda *_args: document_revision.PatchSet(target_doc_id='doc-1', hunks=[]),
+    )
+    monkeypatch.setattr(
+        document_revision,
         'apply_patch_to_ir',
         lambda source, _patch: (source, None),
     )

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Literal
 
-DocumentActionPhase = Literal['preview', 'apply', 'execute']
+DocumentActionPhase = Literal["preview", "apply", "execute"]
 DocumentAction = Callable[..., Any]
 
 _DOCUMENT_ACTIONS: dict[str, dict[DocumentActionPhase, DocumentAction]] = {}
@@ -23,12 +23,14 @@ def register_document_action(
     """
     action = name.strip()
     if not action:
-        raise ValueError('document action name must not be empty')
+        raise ValueError("document action name must not be empty")
     if not callable(handler):
-        raise TypeError('document action handler must be callable')
+        raise TypeError("document action handler must be callable")
     phases = _DOCUMENT_ACTIONS.setdefault(action, {})
-    if phase in phases and phases[phase] is not handler:
-        raise ValueError(f'document action {action!r} phase {phase!r} is already registered')
+    if phase in phases:
+        raise ValueError(
+            f"document action {action!r} phase {phase!r} is already registered"
+        )
     phases[phase] = handler
 
 
@@ -43,9 +45,9 @@ def document_action_names() -> tuple[str, ...]:
 
 
 __all__ = [
-    'DocumentAction',
-    'DocumentActionPhase',
-    'document_action_names',
-    'get_document_action',
-    'register_document_action',
+    "DocumentAction",
+    "DocumentActionPhase",
+    "document_action_names",
+    "get_document_action",
+    "register_document_action",
 ]

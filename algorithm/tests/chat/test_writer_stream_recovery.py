@@ -15,7 +15,7 @@ def _stub_module(name, **attributes):
         'lazyllm.module.llms.onlinemodule', 'lazyllm.module.llms.onlinemodule.base',
         'lazyllm.tools', 'lazyllm.tools.tools', 'lazyllm.tools.writer',
         'lazyllm.tools.writer.tools', 'lazymind', 'lazymind.chat',
-        'lazymind.chat.engine', 'lazymind.chat.engine.tools',
+        'lazymind.chat.engine', 'lazymind.chat.engine.tools', 'lazymind.document_tools',
     }:
         module.__path__ = []
     return module
@@ -73,9 +73,12 @@ def _load_writer_tools():
         ),
         'lazyllm.tools.writer.utils': _stub_module(
             'lazyllm.tools.writer.utils',
+            parse_document_markdown=lambda value, **kwargs: value,
             render_block_markdown=lambda value, **kwargs: str(value),
             render_document_markdown=lambda value: str(value),
             save_artifact_json=lambda *args, **kwargs: '',
+            writer_document_from_lmd=lambda value: value,
+            writer_document_to_lmd=lambda value: value,
             writer_document_to_markdown=lambda value: str(value),
         ),
         'lazyllm.tools.tools': _stub_module('lazyllm.tools.tools'),
@@ -86,6 +89,7 @@ def _load_writer_tools():
             )},
         ),
         'lazymind': _stub_module('lazymind'),
+        'lazymind.document_tools': _stub_module('lazymind.document_tools'),
         'lazymind.chat': _stub_module('lazymind.chat'),
         'lazymind.chat.engine': _stub_module('lazymind.chat.engine'),
         'lazymind.chat.engine.tools': _stub_module('lazymind.chat.engine.tools'),
@@ -97,8 +101,10 @@ def _load_writer_tools():
     sys.modules.update(stubs)
     try:
         root = Path(__file__).resolve().parents[2]
-        path = root / 'lazymind' / 'document_tools' / 'toolkits.py'
-        spec = importlib.util.spec_from_file_location('writer_tools_for_recovery_test', path)
+        package = stubs['lazymind.document_tools']
+        package.__path__ = [str(root / 'lazymind' / 'document_tools')]
+        path = root / 'lazymind' / 'document_tools' / 'writing.py'
+        spec = importlib.util.spec_from_file_location('lazymind.document_tools.writing', path)
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -175,7 +181,7 @@ def test_heading_validation_failure_is_recovered_and_checkpointed(monkeypatch, t
     (tmp_path / 'temporary').mkdir()
     checkpoint_dir = tmp_path / 'checkpoints'
     instructions = json.dumps({'instructions': [{'section_title': '研究方法'}]})
-    toolkit = writer.WriterToolkitBase()
+    toolkit = writer.WriterWritingCapabilities()
 
     first = json.loads(toolkit.stream_draft_blocks_markdown(
         writing_task_json='{}',

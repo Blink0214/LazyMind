@@ -17,19 +17,7 @@ from typing import Any, Callable, Iterator, Literal, Mapping
 
 from lazyllm import AutoModel
 from pydantic import BaseModel, ConfigDict
-from lazyllm.tools.writer.data_models import (
-    ContentRef,
-    MediaAssetLibrary,
-    ModifyInstruction,
-    ModifyPlan,
-    PatchResult,
-    PatchSet,
-    ShortWritingPlan,
-    StringReplaceSet,
-    TargetDocument,
-    VisualPlan,
-    WriterDocument,
-)
+from lazyllm.tools.writer.data_models import ShortWritingPlan, WriterDocument
 from lazyllm.tools.writer.numbering import (
     NumberingMap,
     NumberingView,
@@ -45,23 +33,7 @@ from lazyllm.tools.writer.numbering import (
     materialize_markdown,
 )
 from lazyllm.tools.writer.provider import match_writer_provider
-from lazyllm.tools.writer.tools import (
-    WriterDraftingTools,
-    WriterPlanningTools,
-    WriterRevisionTools,
-)
-from lazyllm.tools.writer.tools.revision_tools import apply_patch_to_ir
-from lazyllm.tools.writer.utils import (
-    load_artifact_json,
-    parse_document_markdown,
-    save_artifact_json,
-)
-from lazyllm.tools.tools.search import (
-    BingSearch,
-    BochaSearch,
-    GoogleSearch,
-    TavilySearch,
-)
+from lazyllm.tools.writer.utils import save_artifact_json
 from lazymind.chat.engine.subagent.context import require_context
 from lazymind.chat.engine.tools.multimodal import image_generator
 from lazymind.chat.engine.tools.writer import (
@@ -70,8 +42,19 @@ from lazymind.chat.engine.tools.writer import (
     WriterResourceToolkit,
     WriterRevisionToolkit,
     WriterToolkitBase,
-    sync_writer_documents,
     writer_schema,
+)
+from lazymind.document_tools.artifacts import markdown_to_writer_document
+from lazymind.document_tools.resources import find_provider_locator, sync_document
+from lazymind.document_tools.revision import preview_selection_rewrite
+from lazymind.document_tools.writing import (
+    acquire_visual_media as _acquire_visual_media,
+    acquire_web_search_resources as _acquire_web_search_resources,
+    drop_unregistered_markdown_images as _drop_unregistered_markdown_images,
+    fill_markdown_media_placeholders as _fill_markdown_media_placeholders,
+    generate_short_visual_plan,
+    generate_short_writing_plan,
+    stream_short_document,
 )
 from lazymind.model_config import is_model_role_available
 
@@ -389,10 +372,6 @@ _EXPLICIT_NEW_DOCUMENT_REQUEST = re.compile(
     r'\b(?:article|report|story|novel|copy|draft|document)\b)',
     re.IGNORECASE,
 )
-_PROVIDER_DOCUMENT_LOCATOR = re.compile(
-    r"(?:https?://|[a-z][a-z0-9+.-]*:(?://)?)[^\s<>\"'，。；！？、（）【】《》「」『』]+",
-    re.IGNORECASE,
-)
 _LOCAL_WRITER_DOCUMENT_SUFFIXES = {'.md', '.markdown', '.txt', '.lmd'}
 _CHINESE_CHAR_LIMIT_RE = re.compile(
     r'(?P<prefix>不超过|至多|最多|约|大约|大概)?\s*'
@@ -416,14 +395,7 @@ _NO_VISUALS = (
 
 
 def _provider_document_locator(value: str) -> str:
-    for match in _PROVIDER_DOCUMENT_LOCATOR.finditer(value or ''):
-        locator = match.group(0).rstrip(').,;!?]}，。；！？】》」』')
-        try:
-            match_writer_provider(locator)
-        except ValueError:
-            continue
-        return locator
-    return ''
+    return find_provider_locator(value)
 
 
 def _provider_document_reference(value: str) -> str:
@@ -1576,141 +1548,17 @@ def writer_execute_writing_subtasks(
     )
 
 
-_IMAGE_URL_KEYS = (
-    'contentUrl', 'content_url', 'imageUrl', 'image_url',
-    'thumbnailUrl', 'thumbnail_url', 'src', 'url',
-)
-
-
-def _is_image_url(value: str) -> bool:
-    lower = value.lower()
-    if not (lower.startswith('http://') or lower.startswith('https://')):
-        return False
-    for extension in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'):
-        if extension in lower:
-            return True
-    return any(token in lower for token in ('image', 'img', 'photo', 'pic'))
-
-
-def _collect_image_urls(node: Any, urls: list[str], seen: set[str]) -> None:
-    if isinstance(node, dict):
-        for key in _IMAGE_URL_KEYS:
-            value = node.get(key)
-            if isinstance(value, str) and _is_image_url(value) and value not in seen:
-                seen.add(value)
-                urls.append(value)
-        for value in node.values():
-            _collect_image_urls(value, urls, seen)
-    elif isinstance(node, list):
-        for value in node:
-            _collect_image_urls(value, urls, seen)
-
-
-def _tavily_image_urls(query: str, count: int) -> list[str]:
-    engine = TavilySearch()
-    if not engine.__key_source__():
-        return []
-    try:
-        results = engine.search(query, include_images=True, max_results=count)
-    except Exception as exc:
-        LOG.warning('[Writer] Tavily image search failed: %s', type(exc).__name__)
-        return []
-    urls: list[str] = []
-    seen: set[str] = set()
-    for item in results or []:
-        images = (item.get('extra') or {}).get('images') or []
-        for image in images:
-            if isinstance(image, str) and _is_image_url(image) and image not in seen:
-                seen.add(image)
-                urls.append(image)
-    return urls[:count]
-
-
-def _bocha_image_urls(query: str, count: int) -> list[str]:
-    engine = BochaSearch()
-    if not engine.__key_source__():
-        return []
-    try:
-        response = engine._request(
-            'POST',
-            f'{engine._base_url}/v1/web-search',
-            headers={'Content-Type': 'application/json'},
-            json={'query': query, 'count': min(max(count, 1), 20)},
-            timeout=engine._timeout,
-        )
-        payload = response.json()
-    except Exception as exc:
-        LOG.warning('[Writer] Bocha image search failed: %s', type(exc).__name__)
-        return []
-    urls: list[str] = []
-    _collect_image_urls(payload, urls, set())
-    return urls[:count]
-
-
-def _pick_search_engine() -> Any | None:
-    for search_type in (GoogleSearch, BingSearch, BochaSearch, TavilySearch):
-        try:
-            engine = search_type()
-            if engine.__key_source__():
-                return engine
-        except Exception:
-            continue
-    return None
-
-
-def _fallback_image_urls(query: str, count: int) -> list[str]:
-    engine = _pick_search_engine()
-    if engine is None:
-        return []
-    try:
-        results = engine.search(f'{query} reference image illustration')
-    except Exception as exc:
-        LOG.warning('[Writer] %s image search failed: %s', type(engine).__name__, type(exc).__name__)
-        return []
-    return [
-        str(item.get('url') or '').strip()
-        for item in results or []
-        if _is_image_url(str(item.get('url') or '').strip())
-    ][:count]
-
-
-def _acquire_web_search_resources(request: Mapping[str, Any]) -> list[dict]:
-    purpose = str(request.get('purpose') or '').strip()
-    query = ' '.join(part for part in (str(request.get('visual_type') or '').strip(), purpose) if part)
-    urls = _tavily_image_urls(query, count=5)
-    if not urls:
-        urls = _bocha_image_urls(query, count=5)
-    if not urls:
-        urls = _fallback_image_urls(query, count=5)
-    instruction_id = str(request.get('instruction_id') or uuid.uuid4().hex)
-    return [
-        {
-            'resource_id': f'web-search-{instruction_id}-{index}',
-            'resource_type': 'image',
-            'uri': url,
-            'title': purpose or url,
-            'summary': purpose,
-            'meta': {
-                'source_type': 'web_search',
-                'semantic_status': 'unverified',
-            },
-        }
-        for index, url in enumerate(urls, start=1)
-    ]
 def writer_generate_short_writing_plan(
     writing_task_path: str,
     writing_context_path: str,
 ) -> str:
     """Generate and persist one whole-document plan for a flat article."""
-    result = WriterPlanningTools(
-        llm=AutoModel(model='llm'),
-        artifact_store=str(_run_root('short-writing-plan-source')),
-    ).generate_short_writing_plan(
-        task=writing_task_path,
-        context=writing_context_path,
-    )
     content = ShortWritingPlan.model_validate(
-        _writer_tool_artifact_data(result),
+        generate_short_writing_plan(
+            writing_task_path,
+            writing_context_path,
+            artifact_store=str(_run_root('short-writing-plan-source')),
+        ),
     ).model_dump_json(exclude_defaults=True)
     return _save_json_artifact(
         'short_writing_plan',
@@ -1719,42 +1567,20 @@ def writer_generate_short_writing_plan(
         directory=_run_root('short-writing-plan'),
     )
 
-
 def writer_generate_short_visual_plan(
     writing_task_path: str,
     short_writing_plan_path: str,
     writing_context_path: str,
 ) -> dict:
-    """Generate and persist one strongly typed visual plan for a flat article."""
-    writing_task = _read_json_file(writing_task_path)
-    visual_policy = (writing_task.get('constraints') or {}).get('visual_policy') or {}
-    require_input_image_reuse = visual_policy.get('require_input_image_reuse') is True
-    warnings: list[str] = []
-    payload: Any = {'instructions': []}
-    if visual_policy.get('allow_visuals') is not False:
-        try:
-            result = WriterPlanningTools(
-                llm=AutoModel(model='llm'),
-                artifact_store=str(_run_root('short-visual-plan-source')),
-            ).generate_short_visual_plan(
-                task=writing_task_path,
-                short_writing_plan=short_writing_plan_path,
-                context=writing_context_path,
-            )
-            payload = _writer_tool_artifact_data(result)
-            warnings.extend((result.get('metadata') or {}).get('warnings') or [])
-        except Exception as exc:
-            if require_input_image_reuse:
-                raise RuntimeError(
-                    f'Required visual planning failed: {type(exc).__name__}: {exc}'
-                ) from exc
-            warnings.append(f'Visual planning failed: {type(exc).__name__}: {exc}')
-    visual_plan = VisualPlan.model_validate(
-        payload or {'instructions': []},
-    ).model_dump()
+    """Generate and persist one visual plan for a flat article."""
+    result = generate_short_visual_plan(
+        writing_task_path,
+        short_writing_plan_path,
+        writing_context_path,
+        artifact_store=str(_run_root('short-visual-plan-source')),
+    )
+    visual_plan = result['visual_plan']
     instructions = visual_plan['instructions']
-    if require_input_image_reuse and not instructions:
-        raise ValueError('Required input image reuse produced no visual plan instructions.')
     return {
         'visual_plan': _save_json_artifact(
             'visual_plan',
@@ -1764,9 +1590,8 @@ def writer_generate_short_visual_plan(
         ),
         'visual_need_count': len(instructions),
         'visual_need_ids': [str(need.get('need_id') or '') for need in instructions],
-        'warnings': warnings,
+        'warnings': result['warnings'],
     }
-
 
 def writer_generate_short_document(
     writing_task_path: str,
@@ -1781,24 +1606,15 @@ def writer_generate_short_document(
         slot='flat_draft_document',
     )
     try:
-        drafting = WriterDraftingTools(
-            llm=AutoModel(model='llm'),
+        document = stream_short_document(
+            writing_task_path,
+            short_writing_plan_path,
+            writing_context_path,
             artifact_store=str(_run_root('short-document-source')),
+            visual_plan_path=visual_plan_path,
+            media_assets_path=resolved_media_assets_path,
+            on_delta=events.feed,
         )
-        with drafting.stream_short_document(
-            task=writing_task_path,
-            short_writing_plan=short_writing_plan_path,
-            context=writing_context_path,
-            visual_plan=visual_plan_path or None,
-            media_assets=resolved_media_assets_path or None,
-        ) as stream:
-            for delta in stream:
-                try:
-                    events.feed(str(delta))
-                except Exception as exc:  # noqa: BLE001 - preview forwarding is best effort.
-                    LOG.warning('[Writer] Short document delta callback failed: %s', exc)
-            result = stream.result()
-        document = _writer_tool_artifact_data(result)
         if resolved_media_assets_path and isinstance(document, str):
             document = _fill_markdown_media_placeholders(
                 document,
@@ -1818,7 +1634,6 @@ def writer_generate_short_document(
         raise
     events.end()
     return path
-
 
 def _acquire_generated_image(
     request: Mapping[str, Any],
@@ -1855,35 +1670,6 @@ def _acquire_generated_image(
             'semantic_status': 'unverified',
         },
     }]
-
-
-def _acquire_visual_media(
-    request: Mapping[str, Any],
-    acquirers: Mapping[str, Callable[[Mapping[str, Any]], list[dict]]],
-) -> Iterator[dict]:
-    strategies = list(request['strategies'])
-    for strategy in strategies:
-        acquirer = acquirers.get(strategy)
-        if acquirer is None:
-            continue
-        try:
-            resources = acquirer(request)
-        except Exception as exc:
-            LOG.warning(
-                '[Writer] Failed to acquire %s for visual instruction %r: %s',
-                strategy,
-                request.get('instruction_id'),
-                type(exc).__name__,
-            )
-            continue
-        for candidate in resources:
-            resource = dict(candidate)
-            resource['meta'] = {
-                **dict(resource.get('meta') or {}),
-                'requested_strategy': strategies[0],
-                'acquisition_strategy': strategy,
-            }
-            yield resource
 
 
 def writer_resolve_visual_media(
@@ -2180,93 +1966,6 @@ def _assemble_draft_document_ir(
     )
 
 
-def _fill_markdown_media_placeholders(markdown: str, resolved_media_assets: Any) -> str:
-    """Replace resolved Markdown media placeholders with image paths."""
-    wiki_placeholder_pattern = re.compile(
-        r'!\[\[([^\]]*)\]\]\(media-placeholder://([A-Za-z0-9_-]+)\)'
-    )
-    placeholder_pattern = re.compile(
-        r'!\[([^\]]*)\]\(media-placeholder://([A-Za-z0-9_-]+)\)'
-    )
-    need_asset_ids = (resolved_media_assets or {}).get('visual_need_asset_ids') or {}
-    assets = (resolved_media_assets or {}).get('assets') or {}
-    dropped: list[str] = []
-
-    def replace_image(match: re.Match) -> str:
-        caption, need_id = match.group(1), match.group(2)
-        asset_ids = need_asset_ids.get(need_id) or []
-        if asset_ids:
-            asset = assets.get(asset_ids[0]) or {}
-            path = str(asset.get('local_path') or asset.get('uri') or '')
-            if path:
-                return f'![{caption}]({path})'
-        dropped.append(need_id)
-        return ''
-
-    normalized = wiki_placeholder_pattern.sub(
-        lambda match: f'![{match.group(1)}](media-placeholder://{match.group(2)})',
-        markdown or '',
-    )
-    filled = placeholder_pattern.sub(replace_image, normalized)
-    filled = re.sub(
-        r'\(media-placeholder://([A-Za-z0-9_-]+)\)',
-        lambda match: (dropped.append(match.group(1)), '')[1],
-        filled,
-    )
-    if dropped:
-        LOG.warning(
-            '[Writer] Markdown media fill dropped %d unresolved placeholder(s): %s',
-            len(dropped),
-            ', '.join(sorted(set(dropped))),
-        )
-    return filled
-
-
-def _drop_unregistered_markdown_images(
-    markdown: str,
-    resolved_media_assets: Any,
-) -> str:
-    assets = (resolved_media_assets or {}).get('assets') or {}
-    allowed = {
-        str(path).strip()
-        for asset in assets.values()
-        if isinstance(asset, Mapping)
-        for path in (asset.get('uri'), asset.get('local_path'))
-        if str(path or '').strip()
-    }
-    image_pattern = re.compile(r'!\[([^\]]*)\]\(([^)\n]+)\)')
-    fence: str | None = None
-    dropped: list[str] = []
-    output: list[str] = []
-
-    def replace_image(match: re.Match) -> str:
-        destination = match.group(2).strip()
-        if destination.startswith('<') and '>' in destination:
-            target = destination[1:destination.index('>')]
-        else:
-            target = destination.split(maxsplit=1)[0]
-        if target in allowed:
-            return match.group(0)
-        dropped.append(target)
-        return ''
-
-    for line in (markdown or '').splitlines(keepends=True):
-        fence_match = re.match(r'^\s*(```+|~~~+)', line)
-        if fence_match:
-            marker = fence_match.group(1)[0]
-            fence = marker if fence is None else None if fence == marker else fence
-            output.append(line)
-            continue
-        output.append(image_pattern.sub(replace_image, line) if fence is None else line)
-
-    if dropped:
-        LOG.warning(
-            '[Writer] Dropped %d unregistered Markdown image reference(s): %s',
-            len(dropped), ', '.join(sorted(set(dropped))),
-        )
-    return ''.join(output)
-
-
 def _assemble_draft_document_markdown(
     draft_sections_anchor_path: str,
     writing_context_path: str,
@@ -2549,81 +2248,35 @@ def writer_preview_selection_rewrite(
     slot: str = '',
 ) -> dict:
     """Preview a selected IR block or Markdown paragraph rewrite."""
-    instruction = str(instruction or '').strip()
-    if not instruction:
-        raise ValueError('instruction must not be empty.')
     document = _action_artifact_data(artifact)
-    context = _action_context(document)
-    revision = WriterRevisionTools(
-        llm=AutoModel(model='llm'),
-        artifact_store=str(_action_root(artifact_store, 'rewrite-preview')),
-    )
     if slot not in {'outline_document', 'flat_draft_document', 'draft_document'}:
         raise ValueError(
             'selection rewrite requires an outline_document, flat_draft_document, '
             'or draft_document slot.',
         )
-    selection_type = str((selection or {}).get('type') or '')
-    if isinstance(document, Mapping):
-        source = WriterDocument.model_validate(document)
-        if selection_type != 'ir':
-            raise ValueError("IR artifacts require selection.type='ir'.")
-        node_id = str(selection.get('node_id') or '')
-        target = source.block_by_id(node_id)
-        if target is None:
-            raise ValueError('The selected IR node no longer exists.')
-        plan = ModifyPlan(scope='block', instructions=[ModifyInstruction(
-            instruction_id='rewrite-selection',
-            content_ref=ContentRef(node_id=node_id),
-            modify_type='update',
-            instruction=instruction,
-        )])
-        output = revision.generate_patch_set(source, plan, context)
-        patch_set = load_artifact_json(_action_result_path(output), PatchSet)
-        revised, _ = apply_patch_to_ir(source, patch_set)
+    root = _action_root(artifact_store, 'rewrite-preview')
+    result = preview_selection_rewrite(
+        document,
+        instruction,
+        dict(selection or {}),
+        _action_context(document),
+        artifact_store=str(root),
+        flat_markdown=slot == 'flat_draft_document',
+    )
+    if result['representation'] == 'ir':
+        revised = result.pop('revised_document')
         candidate_path = Path(_save_writer_document(
             slot, revised,
             expected_stage='outline' if slot == 'outline_document' else None,
             editable=slot in {'flat_draft_document', 'draft_document'},
-            directory=Path(revision.artifact_store),
+            directory=root,
         ))
-        result = {
-            'representation': 'ir',
-            'target': {'type': 'block', 'block_type': target.type, 'node_id': node_id},
-            'preview': {
-                'old_text': target.content,
-                'new_text': revised.block_by_id(node_id).content,
-            },
-            'patch': {'type': 'writer_ir_patch', 'payload': patch_set.model_dump()},
-        }
     else:
-        if selection_type != 'markdown':
-            raise ValueError("Markdown artifacts require selection.type='markdown'.")
-        if slot == 'flat_draft_document':
-            instruction += (
-                '\nKeep the replacement as exactly one Markdown paragraph; do not split it.'
-            )
-        replace_set = StringReplaceSet.model_validate(
-            revision.build_selected_markdown_replace_set(
-                document, instruction, str(selection.get('selected_text') or ''), context,
-            ),
-        )
-        replacement = replace_set.replacements[0]
-        output = revision.apply_string_replace(document, replace_set, context)
-        candidate_path = Path(output['revised_document_md'])
+        candidate_path = Path(result.pop('revised_document_md'))
         canonical_path = candidate_path.with_name(f'{slot}.md')
         if candidate_path != canonical_path:
             candidate_path.replace(canonical_path)
             candidate_path = canonical_path
-        result = {
-            'representation': 'markdown',
-            'target': {'type': 'block', 'block_type': 'paragraph'},
-            'preview': {
-                'old_text': replacement.old_string,
-                'new_text': replacement.new_string,
-            },
-            'patch': {'type': 'string_replace_set', 'payload': replace_set.model_dump()},
-        }
     result['artifact'] = {
         'content_type': 'file',
         'value': {
@@ -2643,159 +2296,19 @@ def writer_sync_document(
     target_document: Mapping[str, Any] | None = None,
     title: str = '',
     artifact_store: str = '',
-    adapter: str = 'feishu',
+    adapter: str = '',
 ) -> dict:
-    """Persist the selected IR or Markdown draft through its provider adapter."""
-    if markdown_content:
-        return _sync_markdown_document(
-            markdown_content, target_document=target_document, title=title,
-            media_assets=media_assets, artifact_store=artifact_store, adapter=adapter,
-        )
-    if revised_document is None:
-        raise ValueError('revised_document is required for IR sync.')
-    if source_document is None:
-        document = WriterDocument.model_validate(revised_document)
-        return _replace_document_and_read_back(
-            document,
-            title=document.title,
-            media_assets=media_assets,
-            artifact_store=artifact_store,
-            source_format='lmd',
-            adapter=adapter,
-        )
-    return sync_writer_documents(
-        source_document,
-        revised_document,
-        media_assets,
-        str(_action_root(artifact_store, 'sync-document')),
-    )
-
-
-def _sync_markdown_document(
-    markdown_content: str,
-    *,
-    target_document: Mapping[str, Any] | None,
-    title: str,
-    media_assets: Mapping[str, Any] | None,
-    artifact_store: str,
-    adapter: str,
-) -> dict:
-    """Replace Markdown through a provider and read it back in its native representation."""
-    markdown = markdown_content.strip()
-    if not markdown:
-        raise ValueError('Markdown draft is empty.')
-    heading = re.search(r'^#\s+(.+?)\s*$', markdown, flags=re.MULTILINE)
-    document_title = (heading.group(1).strip() if heading else title.strip()) or '未命名文档'
-    return _replace_document_and_read_back(
-        markdown_content,
-        title=document_title,
-        target_document=target_document,
+    """Forward provider-neutral document synchronization to the shared Runtime."""
+    return sync_document(
+        source_document=source_document,
+        revised_document=revised_document,
         media_assets=media_assets,
-        artifact_store=artifact_store,
-        source_format='markdown',
+        markdown_content=markdown_content,
+        target_document=target_document,
+        title=title,
+        artifact_store=str(_action_root(artifact_store, 'sync-document')),
         adapter=adapter,
     )
-
-
-def _replace_document_and_read_back(
-    content: str | WriterDocument,
-    *,
-    title: str,
-    artifact_store: str,
-    source_format: str,
-    target_document: Mapping[str, Any] | None = None,
-    media_assets: Mapping[str, Any] | None = None,
-    adapter: str = 'feishu',
-) -> dict:
-    """Replace a provider document and return its synchronized representation."""
-    if target_document:
-        target = TargetDocument.model_validate(target_document)
-    else:
-        created = _json_loads(
-            WriterResourceToolkit().create_document(
-                title=title.strip() or '未命名文档',
-                adapter=adapter,
-            ), {},
-        )
-        target = TargetDocument.model_validate(created)
-
-    media_library = (
-        MediaAssetLibrary.model_validate(media_assets) if media_assets else None
-    )
-    if isinstance(content, WriterDocument):
-        publish_document = content.model_copy(deep=True)
-    elif str(target.adapter or '').strip().lower() == 'github':
-        publish_document = content
-    else:
-        publish_document = parse_document_markdown(
-            content,
-            document_id=f'writer-document-{uuid.uuid4()}',
-            stage='final',
-            media_assets=media_library,
-        )
-        if media_library is not None:
-            for block in publish_document.iter_blocks():
-                if block.type != 'image':
-                    continue
-                for reference in block.references:
-                    asset = media_library.assets.get(reference.get('id'))
-                    if asset is not None and asset.uri:
-                        reference.setdefault('path', asset.uri)
-    serialized_content = (
-        json.dumps(publish_document.model_dump(), ensure_ascii=False)
-        if isinstance(publish_document, WriterDocument)
-        else publish_document
-    )
-
-    payload = _json_loads(WriterResourceToolkit().replace_document(
-        content_json=serialized_content,
-        source_document_json=serialized_content,
-        target_document_json=json.dumps(target.model_dump(), ensure_ascii=False),
-        target_title=title,
-        media_assets_json=(
-            json.dumps(media_library.model_dump(), ensure_ascii=False)
-            if media_library is not None else ''
-        ),
-    ), {})
-    write_result = payload.get('publish_result') or {}
-    persisted = payload.get('draft_document')
-    if isinstance(persisted, dict):
-        persisted_document = WriterDocument.model_validate(persisted)
-        persisted_document.ui_editable = True
-        persisted = persisted_document.model_dump()
-    result = PatchResult(
-        success=True,
-        message=(
-            'Document written to GitHub successfully.'
-            if payload.get('provider') == 'github'
-            else 'Document written to provider and read back successfully.'
-        ),
-        meta={
-            'mode': 'replace',
-            'source_format': source_format,
-            'write_result': write_result,
-        },
-    )
-    return {
-        'success': True,
-        'changed': True,
-        'provider_synced': True,
-        'patch_result': result.model_dump(),
-        'persisted_document': persisted,
-        'representation': payload.get('representation'),
-        'provider': payload.get('provider'),
-        'write_result': write_result,
-        'target_document': payload.get('target_document'),
-    }
-
-
-def _action_result_path(result: dict, key: str | None = None) -> str:
-    path = result.get('artifact_path') if key is None else (
-        (result.get('metadata') or {}).get('artifact_paths') or {}
-    ).get(key)
-    if not path:
-        raise ValueError(f'Writer tool did not return artifact {key or "primary"!r}.')
-    return path
 
 
 def writer_locate_revision_target(
@@ -2939,7 +2452,7 @@ def writer_apply_revision(
 def writer_convert_markdown_to_ir(content_path: str, stage: str = 'final') -> str:
     """Convert the supported Markdown subset to Writer IR for provider delivery."""
     markdown = _read_json_string(content_path)
-    document = parse_document_markdown(
+    document = markdown_to_writer_document(
         markdown,
         document_id=f'writer-document-{uuid.uuid4()}',
         stage=stage,
@@ -3018,7 +2531,7 @@ def writer_append_document(
 def writer_create_document(
     title: str,
     parent_uri: str = '',
-    adapter: str = 'feishu',
+    adapter: str = '',
 ) -> str:
     """Create an empty provider document and return its target artifact."""
     root = _run_root('create-document')
