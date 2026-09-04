@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 from lazymind.chat.engine.tool_auth import inject_tool_config
 from lazyllm.tools.writer.data_models import WriterDocument
 from lazyllm.tools.writer.utils import convert_writer_content
-from lazymind.chat.engine.tools.writer import sync_writer_documents
+from lazymind.document_tools import sync_writer_documents
 from lazymind.config import config
 from lazymind.model_config import inject_model_config
 from lazymind.workflow_sdk import WorkflowClient

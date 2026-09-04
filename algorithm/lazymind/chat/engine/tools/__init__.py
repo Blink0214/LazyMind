@@ -21,8 +21,8 @@ _EXPORTS = {
     'url_fetch': ('.web_search', 'url_fetch'),
     'grep': ('.local_file.workspace', 'grep'),
     'read_file': ('.local_file.workspace', 'read_file'),
-    'WriterCreateToolkit': ('.writer', 'WriterCreateToolkit'),
-    'WriterRevisionToolkit': ('.writer', 'WriterRevisionToolkit'),
+    'WriterCreateToolkit': ('lazymind.document_tools', 'WriterCreateToolkit'),
+    'WriterRevisionToolkit': ('lazymind.document_tools', 'WriterRevisionToolkit'),
     'MailToolkit': ('.mail', 'MailToolkit'),
 }
 

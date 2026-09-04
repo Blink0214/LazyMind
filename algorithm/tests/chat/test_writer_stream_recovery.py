@@ -10,7 +10,13 @@ from types import SimpleNamespace
 def _stub_module(name, **attributes):
     module = types.ModuleType(name)
     module.__dict__.update(attributes)
-    if name in {'lazyllm', 'lazyllm.tools', 'lazyllm.tools.writer'}:
+    if name in {
+        'lazyllm', 'lazyllm.module', 'lazyllm.module.llms',
+        'lazyllm.module.llms.onlinemodule', 'lazyllm.module.llms.onlinemodule.base',
+        'lazyllm.tools', 'lazyllm.tools.tools', 'lazyllm.tools.writer',
+        'lazyllm.tools.writer.tools', 'lazymind', 'lazymind.chat',
+        'lazymind.chat.engine', 'lazymind.chat.engine.tools',
+    }:
         module.__path__ = []
     return module
 
@@ -22,7 +28,7 @@ def _load_writer_tools():
         'VisualPlan WriterBlock WriterDocument WritingTask'
     ).split()
     tool_names = (
-        'WriterContextTools WriterDraftingTools WriterMultimodalTools WriterPlanningTools '
+        'WriterContextTools WriterDraftingTools WriterExecutionTools WriterMultimodalTools WriterPlanningTools '
         'WriterQualityTools WriterResourceTools WriterRevisionTools'
     ).split()
     log = SimpleNamespace(warning=lambda *args, **kwargs: None, info=lambda *args, **kwargs: None)
@@ -32,6 +38,19 @@ def _load_writer_tools():
             ThreadPoolExecutor=ThreadPoolExecutor,
         ),
         'lazyllm.tools': _stub_module('lazyllm.tools'),
+        'lazyllm.module': _stub_module('lazyllm.module'),
+        'lazyllm.module.llms': _stub_module('lazyllm.module.llms'),
+        'lazyllm.module.llms.onlinemodule': _stub_module('lazyllm.module.llms.onlinemodule'),
+        'lazyllm.module.llms.onlinemodule.base': _stub_module(
+            'lazyllm.module.llms.onlinemodule.base',
+        ),
+        'lazyllm.module.llms.onlinemodule.base.model_call_runner': _stub_module(
+            'lazyllm.module.llms.onlinemodule.base.model_call_runner',
+            is_retryable_transport_error=lambda _exc: False,
+        ),
+        'lazyllm.tools.agent': _stub_module(
+            'lazyllm.tools.agent', ToolExecutionError=RuntimeError,
+        ),
         'lazyllm.tools.writer': _stub_module('lazyllm.tools.writer'),
         'lazyllm.tools.writer.data_models': _stub_module(
             'lazyllm.tools.writer.data_models', **{name: object for name in model_names},
@@ -39,8 +58,15 @@ def _load_writer_tools():
         'lazyllm.tools.writer.tools': _stub_module(
             'lazyllm.tools.writer.tools', **{name: object for name in tool_names},
         ),
+        'lazyllm.tools.writer.tools.revision_tools': _stub_module(
+            'lazyllm.tools.writer.tools.revision_tools',
+            apply_patch_to_ir=lambda *args, **kwargs: (args[0], None),
+        ),
         'lazyllm.tools.writer.numbering': _stub_module(
-            'lazyllm.tools.writer.numbering', materialize_markdown=lambda value: value,
+            'lazyllm.tools.writer.numbering',
+            build_numbering_view_from_markdown=lambda value: value,
+            compute_numbering=lambda value: value,
+            materialize_markdown=lambda value: value,
         ),
         'lazyllm.tools.writer.provider': _stub_module(
             'lazyllm.tools.writer.provider', match_writer_provider=lambda value: None,
@@ -52,12 +78,26 @@ def _load_writer_tools():
             save_artifact_json=lambda *args, **kwargs: '',
             writer_document_to_markdown=lambda value: str(value),
         ),
+        'lazyllm.tools.tools': _stub_module('lazyllm.tools.tools'),
+        'lazyllm.tools.tools.search': _stub_module(
+            'lazyllm.tools.tools.search',
+            **{name: object for name in (
+                'BingSearch', 'BochaSearch', 'GoogleSearch', 'SciverseSearch', 'TavilySearch',
+            )},
+        ),
+        'lazymind': _stub_module('lazymind'),
+        'lazymind.chat': _stub_module('lazymind.chat'),
+        'lazymind.chat.engine': _stub_module('lazymind.chat.engine'),
+        'lazymind.chat.engine.tools': _stub_module('lazymind.chat.engine.tools'),
+        'lazymind.chat.engine.tools.lazy_kb': _stub_module(
+            'lazymind.chat.engine.tools.lazy_kb', KBToolkit=object,
+        ),
     }
     previous = {name: sys.modules.get(name) for name in stubs}
     sys.modules.update(stubs)
     try:
         root = Path(__file__).resolve().parents[2]
-        path = root / 'lazymind' / 'chat' / 'engine' / 'tools' / 'writer.py'
+        path = root / 'lazymind' / 'document_tools' / 'toolkits.py'
         spec = importlib.util.spec_from_file_location('writer_tools_for_recovery_test', path)
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)

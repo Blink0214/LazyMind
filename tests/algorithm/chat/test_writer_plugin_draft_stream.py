@@ -111,7 +111,7 @@ def test_build_writing_task_extracts_document_length_constraints(query, expected
 
 
 def test_writer_retrieve_uses_configured_search_provider(monkeypatch):
-    from lazymind.chat.engine.tools import writer
+    from lazymind.document_tools import toolkits as writer
 
     class FakeSciverseSearch:
         def __key_source__(self):
@@ -248,7 +248,7 @@ def test_markdown_draft_blocks_do_not_pass_resolved_media(monkeypatch, tmp_path)
 
 
 def test_wrapped_idle_timeout_restarts_section_preview_and_retries(monkeypatch):
-    from lazymind.chat.engine.tools import writer
+    from lazymind.document_tools import toolkits as writer
     from lazyllm.module.module import ModuleExecutionError
 
     complete = '## 第一章\n\n完整正文。\n'
@@ -419,7 +419,7 @@ def test_markdown_revision_fills_resolved_media_placeholder(monkeypatch, tmp_pat
 
 
 def test_markdown_no_image_request_skips_visual_planning(monkeypatch, tmp_path):
-    from lazymind.chat.engine.tools import writer
+    from lazymind.document_tools import toolkits as writer
 
     calls = []
 
@@ -460,7 +460,7 @@ def test_markdown_no_image_request_skips_visual_planning(monkeypatch, tmp_path):
 
 
 def test_markdown_rewrite_no_image_request_skips_visual_planning(monkeypatch, tmp_path):
-    from lazymind.chat.engine.tools import writer
+    from lazymind.document_tools import toolkits as writer
 
     calls = []
 
