@@ -220,4 +220,4 @@ def test_workflow_action_route_uses_pinned_definition_and_server_owned_arguments
         workflow_routes.invoke_workflow_action(
             workflow_routes.WorkflowActionInvokeRequest.model_validate(payload),
         )
-    assert error.value.status_code == 400
+    assert error.value.status_code == 422

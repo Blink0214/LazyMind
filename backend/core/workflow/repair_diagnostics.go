@@ -3,6 +3,7 @@ package workflow
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -82,24 +83,34 @@ func builtinArtifactActionDiagnostics(workflowYAML string) []authoringDiagnostic
 		return nil // The graph compiler owns malformed-YAML diagnostics.
 	}
 	var diagnostics []authoringDiagnostic
-	for action, definition := range manifest.ArtifactActions {
-		tools := map[string]string{"preview": definition.PreviewTool, "execute": definition.ExecuteTool}
-		for phase, reference := range tools {
+	actions := make([]string, 0, len(manifest.ArtifactActions))
+	for action := range manifest.ArtifactActions {
+		actions = append(actions, action)
+	}
+	sort.Strings(actions)
+	for _, action := range actions {
+		definition := manifest.ArtifactActions[action]
+		tools := []struct{ phase, reference string }{
+			{phase: "preview", reference: definition.PreviewTool},
+			{phase: "execute", reference: definition.ExecuteTool},
+		}
+		for _, tool := range tools {
+			phase, reference := tool.phase, tool.reference
 			if !strings.HasPrefix(reference, "builtin:") {
 				continue
 			}
 			contract, exists := builtinArtifactActionContracts[reference]
 			path := fmt.Sprintf("workflow.yaml.artifact_actions.%s.%s_tool", action, phase)
 			if !exists {
-				diagnostics = append(diagnostics, authoringDiagnostic{Code: "DOCUMENT_ACTION_REFERENCE_INVALID", Severity: "error", Path: path, Message: "unknown built-in document Action reference: " + reference})
+				diagnostics = append(diagnostics, authoringDiagnostic{Code: "E_DOCUMENT_ACTION_REFERENCE_INVALID", Severity: "error", Path: path, Message: "unknown built-in document Action reference: " + reference})
 				continue
 			}
 			if contract.Action != action {
-				diagnostics = append(diagnostics, authoringDiagnostic{Code: "DOCUMENT_ACTION_REFERENCE_INVALID", Severity: "error", Path: path, Message: fmt.Sprintf("built-in reference %s belongs to Action %s", reference, contract.Action)})
+				diagnostics = append(diagnostics, authoringDiagnostic{Code: "E_DOCUMENT_ACTION_REFERENCE_INVALID", Severity: "error", Path: path, Message: fmt.Sprintf("built-in reference %s belongs to Action %s", reference, contract.Action)})
 				continue
 			}
 			if !contract.Phases[phase] {
-				diagnostics = append(diagnostics, authoringDiagnostic{Code: "DOCUMENT_ACTION_PHASE_UNSUPPORTED", Severity: "error", Path: path, Message: fmt.Sprintf("built-in reference %s does not support %s", reference, phase)})
+				diagnostics = append(diagnostics, authoringDiagnostic{Code: "E_DOCUMENT_ACTION_PHASE_UNSUPPORTED", Severity: "error", Path: path, Message: fmt.Sprintf("built-in reference %s does not support %s", reference, phase)})
 			}
 		}
 	}

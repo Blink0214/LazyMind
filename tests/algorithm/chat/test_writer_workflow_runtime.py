@@ -8,6 +8,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+import yaml
 
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -95,6 +96,7 @@ def test_yaml_tools_keep_only_private_orchestration_and_shared_execution_adapter
         assert invoke_call.func.attr == "invoke"
 
     workflow_text = _WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
     declared_tools = set(
         re.findall(
             r"\bwriter_[a-z_]+\b",
@@ -102,6 +104,26 @@ def test_yaml_tools_keep_only_private_orchestration_and_shared_execution_adapter
         )
     )
     assert declared_tools <= {adapter.name for adapter in adapters}
+    assert workflow["artifact_actions"] == {
+        "rewrite_selection": {
+            "slots": ["outline_document", "flat_draft_document", "draft_document"],
+            "preview_tool": "builtin:document.rewrite_selection.v1",
+            "execute_tool": "builtin:document.rewrite_selection.v1",
+        },
+        "sync_document": {
+            "slots": ["draft_document"],
+            "execute_tool": "builtin:document.sync_document.v1",
+        },
+        "render_document": {
+            "slots": ["source_document", "outline_document", "flat_draft_document", "draft_document"],
+            "preview_tool": "builtin:document.render_document.v1",
+            "execute_tool": "builtin:document.render_document.v1",
+        },
+        "save_document": {
+            "slots": ["outline_document", "flat_draft_document", "draft_document"],
+            "execute_tool": "builtin:document.save_document.v1",
+        },
+    }
 
     assert not (_SCRIPTS_PATH / "runtime.py").exists()
     assert not (_SCRIPTS_PATH / "orchestration.py").exists()

@@ -104,27 +104,27 @@ workflows/writer-workflow/scripts/
 
 | ID  | Task                                                                        | Status  |
 | --- | --------------------------------------------------------------------------- | ------- |
-| D1  | Define `DocumentActionSpec`.                                                | TODO    |
-| D2  | Define strict argument models for the four v1 Actions.                      | TODO    |
-| D3  | Define strict result models for the four v1 Actions.                        | TODO    |
-| D4  | Implement `rewrite_selection.preview.v1`.                                   | TODO    |
-| D5  | Implement deterministic `rewrite_selection.execute.v1`.                     | TODO    |
-| D6  | Implement `render_document.v1`.                                             | TODO    |
-| D7  | Implement `save_document.v1`.                                               | TODO    |
-| D8  | Implement `sync_document.v1`.                                               | TODO    |
+| D1  | Define `DocumentActionSpec`.                                                | DONE    |
+| D2  | Define strict argument models for the four v1 Actions.                      | DONE    |
+| D3  | Define strict result models for the four v1 Actions.                        | DONE    |
+| D4  | Implement `rewrite_selection.preview.v1`.                                   | DONE    |
+| D5  | Implement deterministic `rewrite_selection.execute.v1`.                     | DONE    |
+| D6  | Implement `render_document.v1`.                                             | DONE    |
+| D7  | Implement `save_document.v1`.                                               | DONE    |
+| D8  | Implement `sync_document.v1`.                                               | DONE    |
 | D9  | Reject duplicate registration and runtime replacement.                      | DONE    |
-| D10 | Resolve `builtin:document.<action>.v1` references.                          | TODO    |
+| D10 | Resolve `builtin:document.<action>.v1` references.                          | DONE    |
 | D11 | Preserve ordinary pinned Workflow package-tool resolution.                  | DONE    |
-| D12 | Validate built-in references, versions, and phases at Workflow publication. | TODO    |
+| D12 | Validate built-in references, versions, and phases at Workflow publication. | DONE    |
 | D13 | Reject Actions that are not declared in `workflow.yaml`.                    | DONE    |
-| D14 | Enforce side-effect-free preview handlers.                                  | TODO    |
-| D15 | Map invalid input, conflict, provider, and internal errors.                 | TODO    |
-| D16 | Update the Writer Workflow manifest to use explicit built-in references.    | TODO    |
+| D14 | Enforce side-effect-free preview handlers.                                  | DONE    |
+| D15 | Map invalid input, conflict, provider, and internal errors.                 | DONE    |
+| D16 | Update the Writer Workflow manifest to use explicit built-in references.    | DONE    |
 
 
-The current Writer Workflow has only a `rewrite_selection.preview_tool`, while
-the backend application path invokes the execute phase. D5/D16 must make the
-execute phase deterministic and must not call the model again.
+The Writer Workflow now declares both rewrite phases against the same versioned
+built-in contract. Preview may generate and stage a candidate; execute verifies
+and returns that exact candidate without another model call.
 
 ## E. Provider-neutral behavior
 
@@ -179,16 +179,16 @@ handoff.
 | T8  | Test outlining and subproblem execution.                                   | TODO    |
 | T9  | Regress Markdown and IR draft streaming.                                   | PARTIAL |
 | T10 | Regress checkpointing and failure recovery.                                | PARTIAL |
-| T11 | Test all Action argument and result contracts.                             | TODO    |
-| T12 | Test built-in resolution and publication validation.                       | TODO    |
-| T13 | Verify rewrite preview/execute content identity.                           | TODO    |
-| T14 | Verify preview handlers have no external side effects.                     | TODO    |
+| T11 | Test all Action argument and result contracts.                             | DONE    |
+| T12 | Test built-in resolution and publication validation.                       | DONE    |
+| T13 | Verify rewrite preview/execute content identity.                           | DONE    |
+| T14 | Verify preview handlers have no external side effects.                     | DONE    |
 | T15 | Test Feishu fake-provider first publication and binding.                   | TODO    |
 | T16 | Test Notion fake-provider first publication and binding.                   | TODO    |
 | T17 | Test bound write-back and revision conflicts for both providers.           | TODO    |
 | T18 | Test missing authorization, denied permission, and unsupported capability. | TODO    |
 | T19 | Regress academic, bid, and product Writer bridges.                         | PARTIAL |
-| T20 | Run existing backend Writer and Artifact Action Go tests.                  | TODO    |
+| T20 | Run existing backend Writer and Artifact Action Go tests.                  | DONE    |
 | T21 | Run final Python compilation, formatting, and `git diff --check`.          | TODO    |
 | T22 | Complete and record a real Feishu smoke test.                              | TODO    |
 | T23 | Complete and record a real Notion smoke test.                              | TODO    |
@@ -245,10 +245,10 @@ algorithm-local paths or provider-specific writing branches.
 | Approved design                    | 10/10 design and scaffold items done                  | Complete      |
 | Physical capability split          | 15/15 items done                                      | Complete      |
 | Writer Workflow thinning           | 9/9 items done                                        | Complete      |
-| Shared Artifact Actions            | 3 infrastructure rules done, 13 items not started     | Early stage   |
+| Shared Artifact Actions            | 16/16 Action implementation items done                | Complete      |
 | Provider-neutral behavior          | 1 done, 6 partial, 3 not started                      | In progress   |
 | LazyLLM provider contract          | 6 not started                                         | Not started   |
-| Compatibility and acceptance tests | 4 done, 4 partial, 15 not started                     | In progress   |
+| Compatibility and acceptance tests | 9 done, 4 partial, 10 not started                     | In progress   |
 | Backend handoff                    | 1 done, 2 partial, 7 not started                      | Early stage   |
 | Parallel knowledge-source work     | 6 integration items done, 1 final test, 1 external   | Parallel      |
 
@@ -285,8 +285,6 @@ Completed in the working tree:
 
 Not yet complete:
 
-- The four backend-facing v1 Actions do not yet have typed contracts or complete
-  built-in implementations. `actions.py` is still a registry scaffold.
 - Provider binding lifecycle, cross-provider copy semantics, structured
   capability errors, ambiguous-write handling, and conflict tests are not done.
 - GitHub Markdown handling and WeChat cover preparation still appear as
@@ -300,6 +298,23 @@ Not yet complete:
 
 ## Latest verification
 
+- All four v1 Actions now have immutable versioned specs, strict phase-specific
+  argument/result contracts, built-in resolution, and validated invocation.
+- Writer `rewrite_selection.execute.v1` reads the exact staged preview candidate,
+  verifies both source and candidate hashes, and performs no second model call.
+- The Writer manifest uses explicit built-in references for rewrite, render,
+  save, and sync. Backend Core publish diagnostics reject unknown versions,
+  mismatched Action names, and unsupported phases while leaving ordinary pinned
+  package-tool names unchanged.
+- 53 focused Python Action, document-tools, Workflow-adapter, and Writer stream
+  tests pass. Existing Backend Core Writer and Artifact Action tests pass across
+  the root, `algo`, `chat`, and `workflow` packages, including the new
+  publication-diagnostic cases.
+- An additional full Backend Core Workflow package run compiled and began
+  testing but could not complete in the restricted sandbox because an unrelated
+  `httptest` case cannot bind a local listener. The relevant Writer and Artifact
+  Action cases were rerun directly (with local-listener permission where needed)
+  and pass.
 - The 45-method Capability API snapshot, unchanged 36-tool Toolkit exposure,
   legacy imports, conversions, provider synchronization, and Action registry
   tests pass.
@@ -328,15 +343,11 @@ Not yet complete:
 
 ## Recommended execution order
 
-1. Review and commit the completed C-stage Workflow Runtime split as a stable
-   local checkpoint.
-2. Implement D1-D16: typed v1 Action contracts, deterministic rewrite execute,
-   built-in resolution, publication validation, and Workflow declarations.
-3. Complete E1-E10 and L1-L6: provider binding lifecycle, provider capabilities,
+1. Complete E1-E10 and L1-L6: provider binding lifecycle, provider capabilities,
    structured errors, conflict rules, and ambiguous-write behavior.
-4. Complete T5-T23, then prepare H2-H10 for backend handoff.
-5. Merge whichever provider integrations pass their own acceptance gates, adapt
+2. Complete T5-T23, then prepare H2-H10 for backend handoff.
+3. Merge whichever provider integrations pass their own acceptance gates, adapt
    the later side to the shared interface, and run the final joint regression.
 
-The immediate next task is therefore shared Artifact Actions (stage D), not
-further Writer Workflow business-logic migration.
+The immediate next task is the provider-neutral behavior and LazyLLM provider
+contract work in stages E and L, not further Writer Workflow migration.

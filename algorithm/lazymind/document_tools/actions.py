@@ -271,28 +271,38 @@ def invoke_document_action(reference: str, phase: DocumentActionPhase,
             "WORKFLOW_ACTION_INVALID",
             "Document Action arguments do not match the registered contract.",
             status_code=422,
-            details={"errors": exc.errors(include_url=False)},
+            details={"errors": _validation_errors(exc)},
         ) from exc
     context = DocumentActionContext(
         artifact=artifact, artifact_store=artifact_store, slot=slot
     )
     try:
-        result = spec.handler(**parsed.model_dump(), context=context)
+        call_arguments = {
+            name: getattr(parsed, name) for name in type(parsed).model_fields
+        }
+        result = spec.handler(**call_arguments, context=context)
     except DocumentActionError:
         raise
     except (TypeError, ValueError) as exc:
         code = str(getattr(exc, "error_code", "WORKFLOW_ACTION_INVALID"))
-        conflicts = {"SELECTION_AMBIGUOUS", "SELECTION_STALE",
-                     "ARTIFACT_CONFLICT", "REVISION_CONFLICT"}
+        status, retryable = _error_policy(code, 422)
         raise DocumentActionError(
-            code, str(exc), status_code=409 if code in conflicts else 422,
+            code, str(exc), status_code=status, retryable=retryable,
             details=getattr(exc, "details", None),
         ) from exc
     except Exception as exc:
+        code = str(
+            getattr(exc, "error_code", "")
+            or getattr(exc, "code", "")
+            or "WORKFLOW_ACTION_FAILED"
+        )
+        raw_status = int(getattr(exc, "status_code", 0) or 0)
+        status, retryable = _error_policy(
+            code, raw_status if 400 <= raw_status <= 599 else 502
+        )
         raise DocumentActionError(
-            str(getattr(exc, "error_code", "WORKFLOW_ACTION_FAILED")),
-            str(exc), status_code=int(getattr(exc, "status_code", 502)),
-            retryable=bool(getattr(exc, "retryable", False)),
+            code, str(exc), status_code=status,
+            retryable=bool(getattr(exc, "retryable", retryable)),
             details=getattr(exc, "details", None),
         ) from exc
     try:
@@ -302,9 +312,31 @@ def invoke_document_action(reference: str, phase: DocumentActionPhase,
             "WORKFLOW_ACTION_RESULT_INVALID",
             "Document Action returned a result outside its registered contract.",
             status_code=502,
-            details={"errors": exc.errors(include_url=False)},
+            details={"errors": _validation_errors(exc)},
         ) from exc
     return validated.model_dump(exclude_none=True)
+
+
+def _validation_errors(error: ValidationError) -> list[dict[str, Any]]:
+    """Return JSON-safe Pydantic diagnostics for the HTTP error envelope."""
+    return json.loads(json.dumps(
+        error.errors(include_url=False), ensure_ascii=False, default=str
+    ))
+
+
+def _error_policy(code: str, default_status: int) -> tuple[int, bool]:
+    if code in {"SELECTION_AMBIGUOUS", "SELECTION_STALE",
+                "ARTIFACT_CONFLICT", "REVISION_CONFLICT"}:
+        return 409, False
+    if code.endswith(("ACCOUNT_REQUIRED", "AUTH_REQUIRED", "CREDENTIAL_REQUIRED")):
+        return 401, False
+    if "PERMISSION" in code or code.endswith("FORBIDDEN"):
+        return 403, False
+    if code == "PROVIDER_CAPABILITY_UNSUPPORTED":
+        return 422, False
+    if code == "PROVIDER_WRITE_OUTCOME_AMBIGUOUS":
+        return 502, False
+    return default_status, False
 
 
 def _artifact_data(value: Any) -> Any:
@@ -321,8 +353,11 @@ def _artifact_data(value: Any) -> Any:
         return dict(value)
     if isinstance(value, str):
         candidate = Path(value)
-        if candidate.is_file():
-            return _read_artifact_data(value)
+        try:
+            if candidate.is_file():
+                return _read_artifact_data(value)
+        except OSError:
+            pass
         try:
             parsed = json.loads(value)
         except json.JSONDecodeError:
