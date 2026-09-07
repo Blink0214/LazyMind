@@ -28,6 +28,7 @@ import {
   basenameFromPath,
   resolveCoreAssetUrl,
   resolveMarkdownImageUrlAsync,
+  type MarkdownImageResolver,
 } from "@/modules/knowledge/utils/imageUrl";
 import {
   useTaskCenterStore,
@@ -101,6 +102,7 @@ const MarkdownRenderContext = createContext<{
   conversationId?: string;
   historyId?: string;
   onCiteMessage?: (text: string) => void;
+  resolveImageUrl?: MarkdownImageResolver;
 }>({
   isStreaming: false,
   markSources: [],
@@ -219,6 +221,7 @@ function normalizeMarkdownForDisplay(content: string) {
 
 const ImageComponent = (props: any) => {
   const { t } = useTranslation();
+  const { resolveImageUrl } = useContext(MarkdownRenderContext);
   const [imageLoadError, setImageLoadError] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [resolvedSrc, setResolvedSrc] = useState(() =>
@@ -231,7 +234,7 @@ const ImageComponent = (props: any) => {
     setImageLoadError(false);
     setResolvedSrc(resolveCoreAssetUrl(rawSrc));
 
-    resolveMarkdownImageUrlAsync(rawSrc)
+    (resolveImageUrl ?? resolveMarkdownImageUrlAsync)(rawSrc)
       .then((url) => {
         if (!cancelled && url) {
           setImageLoadError(false);
@@ -247,7 +250,7 @@ const ImageComponent = (props: any) => {
     return () => {
       cancelled = true;
     };
-  }, [props.src]);
+  }, [props.src, resolveImageUrl]);
 
   if (imageLoadError || !resolvedSrc) {
     return null;
@@ -687,6 +690,7 @@ const MarkdownViewer = memo((props: any) => {
     conversationId: conversationIdProp,
     historyId,
     onCiteMessage,
+    resolveImageUrl,
     ...markdownProps
   } = props;
   const normalizedChildren =
@@ -734,8 +738,17 @@ const MarkdownViewer = memo((props: any) => {
       conversationId,
       historyId,
       onCiteMessage,
+      resolveImageUrl,
     }),
-    [IS_STREAMING, markSources, artifacts, conversationId, historyId, onCiteMessage],
+    [
+      IS_STREAMING,
+      markSources,
+      artifacts,
+      conversationId,
+      historyId,
+      onCiteMessage,
+      resolveImageUrl,
+    ],
   );
 
   const markdownComponents = useMemo(

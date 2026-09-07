@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -75,6 +77,69 @@ func TestWriterProviderSelection(t *testing.T) {
 	}
 }
 
+func TestWriterProviderSelectionSupportsGitHubTarget(t *testing.T) {
+	target := json.RawMessage(
+		`{"adapter":"github","uri":"githubrepo:/acme/docs/README.md?ref=main"}`,
+	)
+	if got := writerDocumentProvider(target); got != "github" {
+		t.Fatalf("provider = %q, want github", got)
+	}
+}
+
+func TestAttachWriterMediaURLs(t *testing.T) {
+	uploadRoot := t.TempDir()
+	imagePath := filepath.Join(uploadRoot, "session", "diagram.png")
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatalf("create image directory: %v", err)
+	}
+	if err := os.WriteFile(imagePath, []byte("image"), 0o644); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	t.Setenv("LAZYMIND_UPLOAD_ROOT", uploadRoot)
+
+	db := orm.MigrateTestDB(t, &orm.WorkflowSlotRevision{})
+	digest := strings.Repeat("a", 64)
+	sourceURI := "https://example.test/diagram.png"
+	mediaArtifact, err := json.Marshal(map[string]any{
+		"data": map[string]any{
+			"assets": map[string]any{
+				"diagram": map[string]any{
+					"media_asset_id": "diagram-id",
+					"uri":            sourceURI,
+					"local_path":     imagePath,
+					"meta": map[string]any{
+						"source_reference": "docs/assets/diagram.png",
+						"sha256":           digest,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal media artifact: %v", err)
+	}
+	seedWriterRevision(t, db, "media", "media_assets", 1, true, "ai", mediaArtifact)
+	seedWriterRevision(t, db, "target", "target_document", 1, true, "ai", json.RawMessage(`{
+		"data":{"adapter":"github","meta":{"github_writer_media_aliases":{"assets/custom.png":"diagram-id"}}}
+	}`))
+
+	result := map[string]any{"representation": "markdown"}
+	attachWriterMediaURLs(context.Background(), db.DB, "session", "draft_document", result)
+	urls := result["media_urls"].(map[string]string)
+	for _, reference := range []string{
+		"docs/assets/diagram.png",
+		imagePath,
+		sourceURI,
+		"assets/custom.png",
+		"assets/aa/" + digest + ".png",
+	} {
+		if url := urls[reference]; !strings.HasPrefix(url, "/static-files/") ||
+			!strings.Contains(url, "sig=") || strings.Contains(url, uploadRoot) {
+			t.Fatalf("media URL for %q = %q", reference, url)
+		}
+	}
+}
+
 func TestWriteBackWriterDocumentRequiresFeishuConfiguration(t *testing.T) {
 	authService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -138,6 +203,47 @@ func TestWriteBackWriterDocumentRequiresFeishuConfiguration(t *testing.T) {
 	}
 	if revisionCount != 1 {
 		t.Fatalf("revision count = %d, want 1", revisionCount)
+	}
+}
+
+func TestWriteBackWriterDocumentUsesBoundGitHubProvider(t *testing.T) {
+	authService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"items":[]}}`))
+	}))
+	t.Cleanup(authService.Close)
+	t.Setenv("LAZYMIND_AUTH_SERVICE_URL", authService.URL)
+
+	db := orm.MigrateTestDB(t,
+		&orm.WorkflowSession{}, &orm.WorkflowSlotRevision{},
+		&orm.UserModelProvider{}, &orm.UserModelProviderGroup{},
+		&orm.UserSelectedProvider{},
+	)
+	store.Init(db.DB, db.DB, nil)
+	t.Cleanup(func() { store.Init(nil, nil, nil) })
+	now := time.Now().UTC()
+	if err := db.Create(&orm.WorkflowSession{
+		ID: "session", ConversationID: "conversation", WorkflowID: "writer-workflow",
+		Status: "completed", CreateUserID: "user-1", CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed writer session: %v", err)
+	}
+	seedWriterRevision(t, db, "github-draft", "draft_document", 1, true, "ai",
+		json.RawMessage(`{"schema":"text/markdown","data":"# Draft"}`))
+	seedWriterRevision(t, db, "github-target", "target_document", 1, true, "ai",
+		json.RawMessage(`{"schema":"target","data":{"adapter":"github","uri":"githubrepo:/acme/docs/README.md?ref=main"}}`))
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/core/workflow-sessions/session/writer-document:write-back",
+		strings.NewReader(`{"base_revision":1}`))
+	req.Header.Set("X-User-Id", "user-1")
+	req = mux.SetURLVars(req, map[string]string{"session_id": "session"})
+	recorder := httptest.NewRecorder()
+	WriteBackWriterDocument(recorder, req)
+
+	if recorder.Code != http.StatusBadRequest ||
+		!strings.Contains(recorder.Body.String(), "github_configuration_required") {
+		t.Fatalf("unexpected GitHub credential response: %d %s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -496,6 +602,27 @@ func TestLoadWriterWriteBackArtifact_InlineMarkdown(t *testing.T) {
 	}
 	if artifact.Format != "markdown" || artifact.Markdown != "# Draft\n" || artifact.Title != "Draft" {
 		t.Fatalf("unexpected inline Markdown artifact: %+v", artifact)
+	}
+}
+
+func TestWriterGitHubSyncedMarkdownUnchanged(t *testing.T) {
+	artifact := &selectedWriterArtifact{
+		Revision: orm.WorkflowSlotRevision{ChangeSource: "provider_sync"},
+		Value: json.RawMessage(`{
+			"schema":"text/markdown",
+			"data":"# Draft\n",
+			"meta":{"lazymind_provider_sync":{"confirmed":true,"provider":"github"}}
+		}`),
+	}
+	if !writerGitHubSyncedMarkdownUnchanged(artifact, "# Draft\n") {
+		t.Fatal("identical GitHub provider-sync Markdown should be a no-op")
+	}
+	if writerGitHubSyncedMarkdownUnchanged(artifact, "# Changed\n") {
+		t.Fatal("edited GitHub provider-sync Markdown must be saved")
+	}
+	artifact.Value = json.RawMessage(`{"meta":{"lazymind_provider_sync":{"confirmed":true,"provider":"feishu"}}}`)
+	if writerGitHubSyncedMarkdownUnchanged(artifact, "# Draft\n") {
+		t.Fatal("non-GitHub provider-sync Markdown must keep its existing save behavior")
 	}
 }
 

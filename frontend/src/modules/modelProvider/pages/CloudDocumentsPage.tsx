@@ -77,13 +77,14 @@ export default function CloudDocumentsPage() {
     (vm.canCreateLocalSource && vm.localSourceCount > 0 ? 1 : 0) +
     (vm.isFeishuAuthValid ? 1 : 0) +
     (vm.isNotionAuthValid ? 1 : 0) +
+    (vm.isGitHubAuthValid ? 1 : 0) +
     (vm.isGoogleDriveAuthValid ? 1 : 0);
   const hasConnectedProvider = providerReadyCount > 0;
   const hasKnowledgeSyncProvider =
     (vm.canCreateLocalSource && vm.localSourceCount > 0) ||
     vm.isFeishuAuthValid ||
     vm.isNotionAuthValid;
-  const googleOnly = hasConnectedProvider && !hasKnowledgeSyncProvider;
+  const chatOnly = hasConnectedProvider && !hasKnowledgeSyncProvider;
 
   useEffect(() => {
     if (vm.loading || guideInitializedRef.current) {
@@ -145,6 +146,8 @@ export default function CloudDocumentsPage() {
         vm.handleManageFeishuAuth();
       } else if (provider === "notion") {
         vm.handleOpenNotionSetup();
+      } else if (provider === "github") {
+        vm.handleOpenGitHubSetup();
       } else {
         vm.handleManageGoogleDrive();
       }
@@ -154,7 +157,7 @@ export default function CloudDocumentsPage() {
   };
 
   const successKnowledgePath =
-    guideProvider === "googledrive"
+    guideProvider === "googledrive" || guideProvider === "github"
       ? null
       : getCloudKnowledgeCreatePath(guideProvider);
 
@@ -270,7 +273,7 @@ export default function CloudDocumentsPage() {
                 className={
                   hasKnowledgeSyncProvider
                     ? "is-unlocked"
-                    : googleOnly
+                    : chatOnly
                       ? "is-partial"
                       : ""
                 }
@@ -302,10 +305,10 @@ export default function CloudDocumentsPage() {
                       <button
                         type="button"
                         disabled
-                        className={googleOnly ? "is-unavailable" : ""}
+                        className={chatOnly ? "is-unavailable" : ""}
                       >
                         <FolderOpenOutlined aria-hidden="true" />
-                        {googleOnly
+                        {chatOnly
                           ? t("modelProvider.cloudDocuments.guideKnowledgeUnavailable")
                           : t("modelProvider.cloudDocuments.guideKnowledgeCapability")}
                       </button>
@@ -313,7 +316,7 @@ export default function CloudDocumentsPage() {
                   </div>
                 </div>
                 <span className="model-provider-cloud-doc-guide-state">
-                  {googleOnly
+                  {chatOnly
                     ? t("modelProvider.cloudDocuments.onboardingPartiallyUnlocked")
                     : hasConnectedProvider
                       ? t("modelProvider.cloudDocuments.onboardingUnlocked")
@@ -383,7 +386,9 @@ export default function CloudDocumentsPage() {
             <p className="model-provider-cloud-doc-guide-description">
               {guideProvider === "googledrive"
                 ? t("modelProvider.cloudDocuments.connectionSuccessGoogleDescription")
-                : t("modelProvider.cloudDocuments.connectionSuccessDescription")}
+                : guideProvider === "github"
+                  ? t("modelProvider.cloudDocuments.connectionSuccessGitHubDescription")
+                  : t("modelProvider.cloudDocuments.connectionSuccessDescription")}
             </p>
             <div className="model-provider-cloud-doc-guide-next-list">
               <Link to={CHAT_PATH} onClick={closeGuide}>

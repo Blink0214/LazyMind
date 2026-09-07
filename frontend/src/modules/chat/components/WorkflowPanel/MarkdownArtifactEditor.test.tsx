@@ -2,6 +2,10 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const mdxMocks = vi.hoisted(() => ({
+  imagePreviewHandler: undefined as ((url: string) => Promise<string>) | undefined,
+}));
+
 vi.mock('@mdxeditor/editor', async () => {
   const React = await import('react');
   const { flushSync } = await import('react-dom');
@@ -78,7 +82,14 @@ vi.mock('@mdxeditor/editor', async () => {
     codeMirrorPlugin: emptyPlugin,
     frontmatterPlugin: emptyPlugin,
     headingsPlugin: emptyPlugin,
-    imagePlugin: emptyPlugin,
+    imagePlugin: ({
+      imagePreviewHandler,
+    }: {
+      imagePreviewHandler: (url: string) => Promise<string>;
+    }) => {
+      mdxMocks.imagePreviewHandler = imagePreviewHandler;
+      return {};
+    },
     jsxPlugin: emptyPlugin,
     linkDialogPlugin: emptyPlugin,
     linkPlugin: emptyPlugin,
@@ -187,6 +198,7 @@ const rangeClientRectsDescriptor = Object.getOwnPropertyDescriptor(
 );
 
 beforeEach(() => {
+  mdxMocks.imagePreviewHandler = undefined;
   Object.defineProperty(window.Range.prototype, 'getBoundingClientRect', {
     configurable: true,
     value: () => rect(),
@@ -381,6 +393,22 @@ describe('MarkdownArtifactEditor MDX compatibility', () => {
 });
 
 describe('MarkdownArtifactEditor rewrite selection highlight', () => {
+  it('uses the image resolver supplied by the writer document response', async () => {
+    const resolveImageUrl = vi.fn(async (url: string) => `/preview/${url}`);
+    render(
+      <MarkdownArtifactEditor
+        markdown='![diagram](docs/assets/diagram.png)'
+        resolveImageUrl={resolveImageUrl}
+        sourceRevision={1}
+        onSave={async () => 1}
+      />,
+    );
+
+    expect(mdxMocks.imagePreviewHandler).toBe(resolveImageUrl);
+    await expect(mdxMocks.imagePreviewHandler?.('docs/assets/diagram.png'))
+      .resolves.toBe('/preview/docs/assets/diagram.png');
+  });
+
   it('renders numbering from state in the outline without changing the heading title', () => {
     render(
       <MarkdownArtifactEditor

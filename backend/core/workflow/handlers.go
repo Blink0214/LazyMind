@@ -100,10 +100,13 @@ type slotDTO struct {
 	ProviderDocumentID string `json:"provider_document_id,omitempty"`
 	LastSyncedRevision *int   `json:"last_synced_revision,omitempty"`
 	LastSyncedVersion  *int   `json:"last_synced_version,omitempty"`
-	StepID             string `json:"step_id,omitempty"`
-	RevisionCount      int    `json:"revision_count,omitempty"`
-	VersionNumber      int    `json:"version_number,omitempty"`
-	OrderVersion       *int   `json:"order_version,omitempty"`
+	// EditorProfile is a server-selected, provider-agnostic UI capability.
+	// Clients must not infer provider behavior from filenames or artifact paths.
+	EditorProfile string `json:"editor_profile,omitempty"`
+	StepID        string `json:"step_id,omitempty"`
+	RevisionCount int    `json:"revision_count,omitempty"`
+	VersionNumber int    `json:"version_number,omitempty"`
+	OrderVersion  *int   `json:"order_version,omitempty"`
 
 	// Internal fields — used by enrichSlots, never serialised to the client.
 	ArtifactSeq     *int            `json:"-"`

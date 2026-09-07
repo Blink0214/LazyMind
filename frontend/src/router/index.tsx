@@ -118,6 +118,14 @@ export default function AppRouter() {
           element={<DataSourceFeishuCallback provider="notion" />}
         />
         <Route
+          path="/oauth/github/data-source/callback"
+          element={<DataSourceFeishuCallback provider="github" />}
+        />
+        <Route
+          path="/oauth/github/callback"
+          element={<DataSourceFeishuCallback provider="github" />}
+        />
+        <Route
           path="/oauth/googledrive/data-source/callback"
           element={<DataSourceFeishuCallback provider="googledrive" />}
         />

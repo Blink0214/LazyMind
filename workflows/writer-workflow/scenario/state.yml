@@ -188,6 +188,8 @@ steps:
         required: true
       - material: writing_context
         required: true
+      - material: target_document
+        required: false
     outputs:
       - material: flat_draft_document
       - material: flat_writing_context_after_draft

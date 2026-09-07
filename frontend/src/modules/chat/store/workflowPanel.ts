@@ -203,6 +203,8 @@ export interface SlotRevision {
   version_number?: number;
   /** User-visible version number most recently confirmed equal to the cloud document. */
   last_synced_version?: number;
+  /** Server-selected editing capability; it does not expose the backing provider. */
+  editor_profile?: string;
   /** Number of user-visible versions for this (slot_id, list_index). */
   revision_count?: number;
 }

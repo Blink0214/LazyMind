@@ -2,6 +2,7 @@ export type CloudDocumentGuideProvider =
   | "local"
   | "feishu"
   | "notion"
+  | "github"
   | "googledrive";
 
 const CONNECTION_SUCCESS_KEY =
@@ -12,6 +13,7 @@ const CONNECTION_PROVIDERS = new Set<CloudDocumentGuideProvider>([
   "local",
   "feishu",
   "notion",
+  "github",
   "googledrive",
 ]);
 

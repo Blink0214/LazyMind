@@ -65,6 +65,7 @@ from lazyllm.tools.tools.search import (
     TavilySearch,
 )
 from lazymind.chat.engine.subagent.context import require_context
+from lazymind.chat.engine.tools.multimodal import image_generator
 from lazymind.chat.engine.tools.writer import (
     DraftMarkdownStreamEventEmitter,
     WriterCreateToolkit,
@@ -74,7 +75,6 @@ from lazymind.chat.engine.tools.writer import (
     sync_writer_documents,
     writer_schema,
 )
-from lazymind.chat.engine.tools.multimodal import image_generator
 from lazymind.model_config import is_model_role_available
 
 WRITER_IMAGE_ACQUISITION_PROMPT = '''Create one professional visual for a document.
@@ -743,12 +743,13 @@ def _markdown_filename(title: str) -> str:
 def _save_publish_payload(payload: dict, root: Path) -> dict:
     draft_document = payload.get('draft_document') or {}
     publish_result = payload.get('publish_result') or {}
+    target_document = payload.get('target_document') or {}
     if isinstance(publish_result, dict):
         publish_result = {
             **publish_result,
             'success': bool(publish_result.get('success', draft_document)),
         }
-    return {
+    result = {
         'publish_result': _save_json_artifact(
             'publish_result',
             json.dumps(publish_result, ensure_ascii=False),
@@ -770,6 +771,14 @@ def _save_publish_payload(payload: dict, root: Path) -> dict:
         ),
         'published_link': str(payload.get('published_link') or ''),
     }
+    if target_document:
+        result['target_document'] = _save_json_artifact(
+            'target_document',
+            json.dumps(target_document, ensure_ascii=False),
+            writer_schema('task.TargetDocument'),
+            directory=root,
+        )
+    return result
 
 
 def writer_build_writing_task(query: str, representation: str = 'markdown') -> str:
@@ -829,6 +838,7 @@ def writer_load_document(user_input: str, stage: str = 'final') -> dict:
         WriterResourceToolkit().load_document(user_input=user_input, stage=stage),
         {},
     )
+    input_resources = payload.get('input_resources') or []
     return {
         'source_document': _save_writer_document(
             'source_document',
@@ -843,6 +853,13 @@ def writer_load_document(user_input: str, stage: str = 'final') -> dict:
             directory=root,
         ),
         'representation': str(payload.get('representation') or ''),
+        'input_resources': _save_json_artifact(
+            'provider_input_resources',
+            json.dumps(input_resources, ensure_ascii=False),
+            writer_schema('task.InputResource'),
+            directory=root,
+        ) if input_resources else '',
+        'resource_warnings': list(payload.get('resource_warnings') or []),
     }
 
 
@@ -887,6 +904,7 @@ def writer_profile_resources(
 def writer_collect_available_media(
     writing_task_path: str,
     source_document_path: str = '',
+    input_resources_path: str = '',
 ) -> dict:
     """Collect attached and source-document images into the authoritative media library."""
     ctx = require_context()
@@ -904,6 +922,9 @@ def writer_collect_available_media(
     resources = _json_loads(
         toolkit.build_resources(
             file_paths_json=json.dumps(file_paths, ensure_ascii=False),
+            input_resources_json=(
+                _read_json_string(input_resources_path) if input_resources_path else '[]'
+            ),
         ),
         [],
     )
@@ -1067,6 +1088,10 @@ def writer_prepare_workspace(
             has_cloud_source or source_filename or local_candidates
         ),
     )
+    create_target = (
+        _json_loads(WriterResourceToolkit().resolve_create_target(user_input), {})
+        if operation == 'create' else {}
+    )
 
     command_action = {
         'create': 'create',
@@ -1088,12 +1113,22 @@ def writer_prepare_workspace(
         source_role=source_role,
         target_stage=target_stage,
         source_ref=source_ref,
+        target_ref=str(create_target.get('target_ref') or ''),
     )
     command = _load_writer_command(writer_command)
 
     source_document = ''
     target_document = ''
+    provider_input_resources = ''
+    provider_warnings: list[str] = []
     representation = 'markdown'
+    if create_target.get('target_document'):
+        target_document = _save_json_artifact(
+            'target_document',
+            json.dumps(create_target['target_document'], ensure_ascii=False),
+            writer_schema('task.TargetDocument'),
+            directory=_run_root('resolve-create-target'),
+        )
     if operation != 'create':
         if source_kind == 'local':
             source_document = writer_load_local_document(source_filename)
@@ -1111,6 +1146,8 @@ def writer_prepare_workspace(
             source_document = loaded['source_document']
             target_document = loaded['target_document']
             representation = loaded['representation']
+            provider_input_resources = loaded.get('input_resources') or ''
+            provider_warnings = loaded.get('resource_warnings') or []
 
     writing_task = writer_build_writing_task(
         query=user_input,
@@ -1119,6 +1156,7 @@ def writer_prepare_workspace(
     media_result = writer_collect_available_media(
         writing_task_path=writing_task,
         source_document_path=source_document if operation != 'use_outline' else '',
+        input_resources_path=provider_input_resources,
     )
     resource_profiles = writer_profile_resources(
         writing_task_path=writing_task,
@@ -1142,7 +1180,7 @@ def writer_prepare_workspace(
         'structure_mode': command.structure_mode,
         'next_step': command.next_step,
         'control': {'next_step': command.next_step},
-        'warnings': media_result.get('warnings') or [],
+        'warnings': [*provider_warnings, *(media_result.get('warnings') or [])],
     }
     if source_document:
         result['source_document'] = source_document
@@ -2668,7 +2706,7 @@ def _replace_document_and_read_back(
     media_assets: Mapping[str, Any] | None = None,
     adapter: str = 'feishu',
 ) -> dict:
-    """Replace a provider document and return its confirmed representation."""
+    """Replace a provider document and return its synchronized representation."""
     if target_document:
         target = TargetDocument.model_validate(target_document)
     else:
@@ -2685,6 +2723,8 @@ def _replace_document_and_read_back(
     )
     if isinstance(content, WriterDocument):
         publish_document = content.model_copy(deep=True)
+    elif str(target.adapter or '').strip().lower() == 'github':
+        publish_document = content
     else:
         publish_document = parse_document_markdown(
             content,
@@ -2700,14 +2740,17 @@ def _replace_document_and_read_back(
                     asset = media_library.assets.get(reference.get('id'))
                     if asset is not None and asset.uri:
                         reference.setdefault('path', asset.uri)
-    serialized_content = json.dumps(
-        publish_document.model_dump(), ensure_ascii=False,
+    serialized_content = (
+        json.dumps(publish_document.model_dump(), ensure_ascii=False)
+        if isinstance(publish_document, WriterDocument)
+        else publish_document
     )
 
     payload = _json_loads(WriterResourceToolkit().replace_document(
         content_json=serialized_content,
         source_document_json=serialized_content,
         target_document_json=json.dumps(target.model_dump(), ensure_ascii=False),
+        target_title=title,
         media_assets_json=(
             json.dumps(media_library.model_dump(), ensure_ascii=False)
             if media_library is not None else ''
@@ -2721,7 +2764,11 @@ def _replace_document_and_read_back(
         persisted = persisted_document.model_dump()
     result = PatchResult(
         success=True,
-        message='Document written to provider and read back successfully.',
+        message=(
+            'Document written to GitHub successfully.'
+            if payload.get('provider') == 'github'
+            else 'Document written to provider and read back successfully.'
+        ),
         meta={
             'mode': 'replace',
             'source_format': source_format,
@@ -2736,6 +2783,8 @@ def _replace_document_and_read_back(
         'persisted_document': persisted,
         'representation': payload.get('representation'),
         'provider': payload.get('provider'),
+        'write_result': write_result,
+        'target_document': payload.get('target_document'),
     }
 
 
@@ -3051,14 +3100,46 @@ def _modify_plan_needs_media(path: str) -> bool:
     )
 
 
+def writer_prepare_markdown_for_editor(
+    document_path: str,
+    target_document_path: str,
+) -> tuple[str, str]:
+    """Save the editor document and target returned by the Writer resource tool."""
+    source = Path(str(document_path or ''))
+    if source.suffix.lower() not in {'.md', '.markdown'} or not source.is_file() \
+            or not target_document_path:
+        return str(document_path), ''
+    markdown = source.read_text(encoding='utf-8')
+    payload = _json_loads(WriterResourceToolkit().prepare_markdown_for_editor(
+        markdown=markdown,
+        target_document_json=_read_json_string(target_document_path),
+    ), {})
+    prepared = str(payload.get('markdown') or '')
+    updated_target = payload.get('target_document')
+    if prepared == markdown and not updated_target:
+        return str(document_path), ''
+    root = _run_root('prepare-markdown-for-editor')
+    prepared_path = root / source.name
+    prepared_path.write_text(prepared, encoding='utf-8')
+    target_path = (
+        _save_json_artifact(
+            'target_document', json.dumps(updated_target, ensure_ascii=False),
+            writer_schema('task.TargetDocument'), directory=root,
+        )
+        if updated_target else ''
+    )
+    return str(prepared_path), target_path
+
+
 def _save_draft_workspace_artifacts(result: Mapping[str, Any]) -> list[str]:
     from lazymind.chat.engine.subagent.tools import save_artifacts
 
     ctx = require_context()
     allowed = set(ctx.output_slots or [])
+    save_result = dict(result)
     entries: list[dict[str, Any]] = []
     saved_keys: list[str] = []
-    for key, value in result.items():
+    for key, value in save_result.items():
         if allowed and key not in allowed:
             continue
         if key == 'draft_blocks' and isinstance(value, list):
@@ -3315,7 +3396,7 @@ def writer_draft_workspace() -> dict:
             state['result'] = result
             _persist_draft_workspace_state(state, checkpoint_path)
 
-        should_write_back = bool(target_document_path) and (
+        should_write_back = representation == 'ir' and bool(target_document_path) and (
             operation == 'rewrite' or not draft_document_path
         )
         if should_write_back and not result.get('document_write_result'):
@@ -3324,10 +3405,12 @@ def writer_draft_workspace() -> dict:
                 content_path=result['draft_document'],
                 source_document_path=source_document_path,
                 target_document_path=target_document_path,
-                media_assets_path=resolved_media,
+                media_assets_path=resolved_media or media_assets_path,
             )
             result['document_write_result'] = published['publish_result']
             result['draft_document'] = published['draft_document']
+            if published.get('target_document'):
+                result['target_document'] = published['target_document']
             state['result'] = result
             _persist_draft_workspace_state(state, checkpoint_path)
     else:
@@ -3390,26 +3473,36 @@ def writer_draft_workspace() -> dict:
             result['draft_document'] = applied['draft_document']
             state['result'] = result
             _persist_draft_workspace_state(state, checkpoint_path)
-        if not draft_document_path and target_document_path \
+        if representation == 'ir' and not draft_document_path and target_document_path \
                 and not result.get('document_write_result'):
-            if representation == 'ir':
-                published = writer_publish_revision(
-                    source_document_path=source_document_path,
-                    revision_set_path=result['document_revision_set'],
-                    media_assets_path=resolved_media,
-                )
-            else:
-                published = writer_replace_document(
-                    content_path=result['draft_document'],
-                    source_document_path=source_document_path,
-                    target_document_path=target_document_path,
-                    media_assets_path=resolved_media,
-                )
+            published = writer_publish_revision(
+                source_document_path=source_document_path,
+                revision_set_path=result['document_revision_set'],
+                media_assets_path=resolved_media or media_assets_path,
+            )
             result['document_write_result'] = published['publish_result']
             result['draft_document'] = published['draft_document']
+            if published.get('target_document'):
+                result['target_document'] = published['target_document']
             state['result'] = result
             _persist_draft_workspace_state(state, checkpoint_path)
 
+    if representation == 'markdown' and target_document_path:
+        result.setdefault('target_document', target_document_path)
+        if media_assets_path and not result.get('resolved_media_assets'):
+            result['resolved_media_assets'] = resolved_media or media_assets_path
+    if representation == 'markdown' and target_document_path \
+            and result.get('draft_document') \
+            and not result.get('markdown_editor_prepared'):
+        prepared_draft, updated_target = writer_prepare_markdown_for_editor(
+            str(result['draft_document']), target_document_path,
+        )
+        result['draft_document'] = prepared_draft
+        if updated_target:
+            result['target_document'] = updated_target
+        result['markdown_editor_prepared'] = True
+        state['result'] = result
+        _persist_draft_workspace_state(state, checkpoint_path)
     if not result.get('writing_context_after_draft'):
         _emit_writer_progress('正在更新成稿上下文')
         result['writing_context_after_draft'] = writer_update_writing_context(
@@ -3458,6 +3551,7 @@ def writer_flat_draft_workspace() -> dict:
         'writing_context', require_workflow_binding=True,
     )
     media_assets_path = _authoritative_writer_input_path('media_assets')
+    target_document_path = _authoritative_writer_input_path('target_document')
     command = _load_writer_command(writer_command_path)
     if command.structure_mode != 'flat':
         raise ValueError(
@@ -3482,7 +3576,7 @@ def writer_flat_draft_workspace() -> dict:
         '',
         '',
         '',
-        '',
+        target_document_path,
     )
     state, checkpoint_path = _draft_workspace_state(fingerprint)
     result: dict[str, Any] = dict(state.get('result') or {})
@@ -3561,6 +3655,21 @@ def writer_flat_draft_workspace() -> dict:
         state['result'] = result
         _persist_draft_workspace_state(state, checkpoint_path)
 
+    if representation == 'markdown' and target_document_path:
+        result.setdefault('target_document', target_document_path)
+        if media_assets_path and not result.get('resolved_media_assets'):
+            result['resolved_media_assets'] = resolved_media or media_assets_path
+    if representation == 'markdown' and target_document_path \
+            and not result.get('markdown_editor_prepared'):
+        prepared_draft, updated_target = writer_prepare_markdown_for_editor(
+            str(result['draft_document']), target_document_path,
+        )
+        result['draft_document'] = prepared_draft
+        if updated_target:
+            result['target_document'] = updated_target
+        result['markdown_editor_prepared'] = True
+        state['result'] = result
+        _persist_draft_workspace_state(state, checkpoint_path)
     if not result.get('writing_context_after_draft'):
         _emit_writer_progress('正在更新短文成稿上下文')
         result['writing_context_after_draft'] = writer_update_writing_context(

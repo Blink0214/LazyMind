@@ -63,7 +63,10 @@ import type {
   WriterNumberingState,
   WriterNumberingUpdate,
 } from '@/modules/chat/utils/request';
-import { resolveMarkdownImageUrlAsync } from '@/modules/knowledge/utils/imageUrl';
+import {
+  resolveMarkdownImageUrlAsync,
+  type MarkdownImageResolver,
+} from '@/modules/knowledge/utils/imageUrl';
 import { WriterHeadingNumberingMenu } from './WriterHeadingNumberingMenu';
 import {
   applyWriterMarkdownInternalReference,
@@ -465,6 +468,7 @@ export type MarkdownSaveMode = 'draft' | 'checkpoint';
 
 interface MarkdownArtifactEditorProps {
   markdown: string;
+  resolveImageUrl?: MarkdownImageResolver;
   numbering?: WriterNumberingState;
   sourceRevision: number;
   maxHeight?: number;
@@ -535,6 +539,7 @@ function isMarkdownToolbarDropdownOpen(): boolean {
 
 export function MarkdownArtifactEditor({
   markdown,
+  resolveImageUrl,
   numbering,
   sourceRevision,
   maxHeight,
@@ -1849,7 +1854,7 @@ export function MarkdownArtifactEditor({
                 }],
               }),
               imagePlugin({
-                imagePreviewHandler: resolveMarkdownImageUrlAsync,
+                imagePreviewHandler: resolveImageUrl ?? resolveMarkdownImageUrlAsync,
               }),
               codeBlockPlugin({ defaultCodeBlockLanguage: 'text' }),
               codeMirrorPlugin({ codeBlockLanguages: MARKDOWN_CODE_LANGUAGES }),

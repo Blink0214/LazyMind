@@ -13,6 +13,9 @@ import (
 
 func TestEnrichWriterWriteBackSlots_UsesSourceAndLatestSync(t *testing.T) {
 	db := newTestDB(t)
+	mustCreateWriterRecord(t, db.DB.Create(&orm.WorkflowSession{
+		ID: "session", WorkflowID: "writer-workflow",
+	}).Error)
 	root := t.TempDir()
 	t.Setenv("LAZYMIND_SUBAGENT_WORKSPACE", root)
 	sourcePath := filepath.Join(root, "source_document.lmd")
@@ -46,6 +49,9 @@ func TestEnrichWriterWriteBackSlots_UsesSourceAndLatestSync(t *testing.T) {
 
 	slots := []slotDTO{toSlotDTO(&source), toSlotDTO(&human)}
 	enrichSlots(context.Background(), db.DB, "session", slots)
+	if slots[0].EditorProfile != "" {
+		t.Fatalf("non-GitHub source editor profile = %q, want empty", slots[0].EditorProfile)
+	}
 	draft := slots[1]
 	if !draft.WriteBackReady || !draft.WriteBackDirty || draft.WriteBackState != writerWriteBackSyncedDirty || draft.ProviderDocumentID != "doc-1" {
 		t.Fatalf("unexpected write-back state: %+v", draft)
@@ -69,6 +75,44 @@ func TestEnrichWriterWriteBackSlots_MarkdownInitialDelivery(t *testing.T) {
 	got := slots[0]
 	if !got.WriteBackReady || !got.WriteBackDirty || got.WriteBackState != writerWriteBackInitialDelivery || got.ProviderDocumentID != "" {
 		t.Fatalf("unexpected initial delivery state: %+v", got)
+	}
+}
+
+func TestEnrichWriterWriteBackSlots_UsesGitHubTarget(t *testing.T) {
+	db := newTestDB(t)
+	mustCreateWriterRecord(t, db.DB.Create(&orm.WorkflowSession{
+		ID: "session", WorkflowID: "writer-workflow",
+	}).Error)
+	root := t.TempDir()
+	t.Setenv("LAZYMIND_SUBAGENT_WORKSPACE", root)
+	sourcePath := filepath.Join(root, "source_document.md")
+	draftPath := filepath.Join(root, "draft_document.md")
+	targetPath := filepath.Join(root, "target_document.json")
+	mustWriteWriterArtifact(t, sourcePath, "# Imported from GitHub\n")
+	mustWriteWriterArtifact(t, draftPath, "# Ready for GitHub\n")
+	mustWriteWriterArtifact(t, targetPath, `{"data":{"doc_id":"acme/docs:main:README.md","adapter":"github","uri":"githubrepo:/acme/docs/README.md?ref=main","meta":{"browser_url":"https://github.com/acme/docs/blob/main/README.md"}}}`)
+	source := writerRevision("source", "session", "source_document", 1, "host", writerPathValue(sourcePath))
+	draft := writerRevision("draft", "session", "draft_document", 1, "ai", writerPathValue(draftPath))
+	target := writerRevision("target", "session", "target_document", 1, "ai", writerPathValue(targetPath))
+	mustCreateWriterRecord(t, db.DB.Create(&source).Error)
+	mustCreateWriterRecord(t, db.DB.Create(&draft).Error)
+	mustCreateWriterRecord(t, db.DB.Create(&target).Error)
+
+	slots := []slotDTO{toSlotDTO(&source), toSlotDTO(&target), toSlotDTO(&draft)}
+	enrichSlots(context.Background(), db.DB, "session", slots)
+	if slots[0].EditorProfile != writerMarkdownSourceEditor {
+		t.Fatalf("source editor profile = %q, want %q", slots[0].EditorProfile, writerMarkdownSourceEditor)
+	}
+	got := slots[2]
+	if got.Provider != "github" || got.ProviderDocumentID != "acme/docs:main:README.md" || !got.WriteBackReady {
+		t.Fatalf("unexpected GitHub write-back state: %+v", got)
+	}
+	mustCreateWriterRecord(t, db.DB.Model(&orm.WorkflowSession{}).
+		Where("id = ?", "session").Update("plugin_id", "other-workflow").Error)
+	otherWorkflowSlots := []slotDTO{toSlotDTO(&source), toSlotDTO(&target)}
+	enrichSlots(context.Background(), db.DB, "session", otherWorkflowSlots)
+	if otherWorkflowSlots[0].EditorProfile != "" {
+		t.Fatalf("other workflow editor profile = %q, want empty", otherWorkflowSlots[0].EditorProfile)
 	}
 }
 

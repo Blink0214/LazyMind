@@ -67,6 +67,29 @@ describe('WorkflowSessionApi.saveWriterDocument', () => {
   });
 });
 
+describe('WorkflowSessionApi.writeBackWriterDocument', () => {
+  beforeEach(() => {
+    postMock.mockReset();
+  });
+
+  it('passes the selected GitHub provider through the shared write-back endpoint', () => {
+    WorkflowSessionApi().writeBackWriterDocument(
+      'ps-github',
+      7,
+      undefined,
+      undefined,
+      'draft_document',
+      'github',
+    );
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/api/core/workflow-sessions/ps-github/writer-document:write-back',
+      { base_revision: 7, provider: 'github' },
+      undefined,
+    );
+  });
+});
+
 describe('chat entry defaults', () => {
   beforeEach(() => {
     patchMock.mockReset();

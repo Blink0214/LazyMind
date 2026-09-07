@@ -135,12 +135,12 @@ const enUS = {
       chatUseCaseTitle: "Document chat",
       chatUseCaseDescription: "Let AI read, create, edit, and delete Feishu documents within your account permissions.",
       chatUseCaseCapabilityNote:
-        "Feishu supports create, read, update, and delete. Local documents, Notion, and Google Drive currently support read-only access.",
+        "Feishu supports create, read, update, and delete. GitHub supports reading and writing repository Markdown and Wiki pages. Local documents, Notion, and Google Drive currently support read-only access.",
       chatCapabilityHelp: "View capability notes for other cloud document services",
       knowledgeUseCaseTitle: "Knowledge base sync",
       knowledgeUseCaseDescription: "Sync cloud documents on a schedule to keep knowledge bases up to date.",
       knowledgeUseCaseCapabilityNote:
-        "Local documents, Feishu, and Notion support sync tasks. Google Drive knowledge sync is not currently available.",
+        "Local documents, Feishu, and Notion support sync tasks. GitHub and Google Drive knowledge sync are not currently available.",
       providerSectionTitle: "Choose and connect a cloud document service",
       providerSectionSubtitle: "Once connected, the supported chat and sync capabilities become available automatically.",
       connectedNextStepsTitle: "Connected. Next, you can",
@@ -149,7 +149,7 @@ const enUS = {
       onboardingHeading: "Connect an account, then choose how to use it",
       onboardingIntro: "Complete these two steps to use connected documents in chat and knowledge bases.",
       onboardingConnectTitle: "Authenticate a cloud document account",
-      onboardingConnectDescription: "Configure the cloud document app credentials\nChoose from local documents, Feishu, Notion, or Google Drive.",
+      onboardingConnectDescription: "Configure the cloud document app credentials\nChoose from local documents, Feishu, Notion, GitHub, or Google Drive.",
       onboardingConnectAction: "Connect now",
       onboardingUseTitle: "Start using cloud document capabilities",
       onboardingUseDescription: "After authentication, these use cases become available:",
@@ -174,16 +174,19 @@ const enUS = {
         local: { title: "Local documents", description: "Configure directories and default retrieval" },
         feishu: { title: "Feishu", description: "Configure app credentials and authorize" },
         notion: { title: "Notion", description: "Configure Public Integration OAuth" },
+        github: { title: "GitHub", description: "Configure an OAuth App and authorize repository access" },
         googledrive: { title: "Google Drive", description: "Configure Google OAuth and authorize an account" },
       },
       connectionSuccessTitle: "Connected",
       connectionSuccessHeading: "Connection complete. Choose how to start:",
       connectionSuccessDescription: "Chat and knowledge base sync are now available. Choose either option for your next step.",
       connectionSuccessGoogleDescription: "Google Drive currently supports read-only access in chat and cannot be synced to a knowledge base.",
+      connectionSuccessGitHubDescription: "GitHub can now read and write repository Markdown or Wiki pages in chat. Knowledge base sync is not currently supported.",
       successChat: {
         local: { title: "Retrieve local documents in chat", description: "Search and answer from configured local directories" },
         feishu: { title: "Manage Feishu documents in chat", description: "Read, create, edit, or delete documents within account permissions" },
         notion: { title: "Read Notion documents in chat", description: "Ask questions over authorized Notion pages or databases" },
+        github: { title: "Manage GitHub documents in chat", description: "Read or write Markdown and Wiki pages in authorized repositories" },
         googledrive: { title: "Read Google Drive documents in chat", description: "Search and read original documents from the authorized account" },
       },
       successKnowledgeTitle: "Create a cloud document knowledge base",
@@ -207,6 +210,10 @@ const enUS = {
         "Once connected, sync selected Notion pages into a knowledge base for chat retrieval and Q&A.",
       notionPreviewScenario:
         "After connecting Notion, sync workspace pages to a knowledge base and retrieve them in chat.",
+      githubScenario:
+        "Once connected, read and write GitHub repository Markdown or Wiki pages in chat.",
+      githubPreviewScenario:
+        "After connecting, read and write GitHub repository documents in chat. Knowledge base sync is not supported.",
       googleDriveScenario:
         "Once authorized, search and read Google Drive originals in chat (they are not imported into a knowledge base).",
       googleDrivePreviewScenario:
@@ -251,8 +258,13 @@ const enUS = {
       notionConnected: "Active authentication: {{account}}",
       notionSetupRequiredHint: "Configure Notion OAuth app credentials first",
       notionAuthPendingHint: "Credentials saved. Complete OAuth authorization.",
+      githubTitle: "GitHub",
+      githubConnected: "Active authentication: {{account}}",
+      githubSetupRequiredHint: "Configure GitHub OAuth App credentials first",
+      githubAuthPendingHint: "Credentials saved. Complete OAuth authorization.",
       feishuCredentialModalTitle: "Configure Feishu OAuth App",
       notionCredentialModalTitle: "Configure Notion OAuth App",
+      githubCredentialModalTitle: "Configure GitHub OAuth App",
       credentialSaveAndAuthorize: "Save and authorize",
       feishuAccountName: "Account label",
       feishuAccountNamePlaceholder: "e.g. Product knowledge base Feishu app",
@@ -260,15 +272,19 @@ const enUS = {
       appIdRequired: "App ID is required",
       appIdPlaceholder: "Enter Feishu App ID",
       notionAppIdPlaceholder: "Enter Notion OAuth Client ID",
+      githubAppIdPlaceholder: "Enter GitHub OAuth App Client ID",
       appSecret: "App Secret",
       appSecretRequired: "App Secret is required",
       appSecretPlaceholder: "Enter App Secret",
       notionCredentialHint: "Enter the Notion Integration OAuth Client ID and Client Secret.",
+      githubCredentialHint: "Enter the GitHub OAuth App Client ID and Client Secret, then configure the callback URL in GitHub.",
+      githubCallbackLabel: "Authorization callback URL:",
       notionSetupGuideAction: "View Notion setup guide",
       notionSetupGuideHint: " and follow the steps to configure the OAuth app.",
       feishuSetupGuideAction: "View Feishu setup guide",
       feishuCredentialSaved: "Feishu credentials saved",
       notionCredentialSaved: "Notion credentials saved",
+      githubCredentialSaved: "GitHub credentials saved",
       backToProviders: "Back to cloud documents",
       feishuAccountManagementTitle: "Feishu Accounts",
       feishuAccountManagementSubtitle:
@@ -2202,13 +2218,14 @@ const enUS = {
       providerPickerHint: "Choose one platform. The current provider is updated in place; choosing another provider creates a new cloud document.",
       confirmWriteBack: "Write back",
       notionTargetRequired: "Bind a Notion target page first",
+      githubTargetRequired: "Provide a GitHub repository, directory, or file link in the conversation first",
       comingSoon: "Coming soon",
       providers: {
         feishu: "Feishu",
         notion: "Notion",
+        github: "GitHub",
         yuque: "Yuque",
         obsidian: "Obsidian",
-        githubWiki: "GitHub Wiki",
         wechatOfficialAccount: "WeChat Official Account",
       },
     },
@@ -3618,6 +3635,7 @@ const enUS = {
     dataSourceTypeNotion: "Notion",
     dataSourceTypeNotionDesc:
       "Connect Notion pages or databases; configure the OAuth Redirect URI with the HTTPS setup guide.",
+    dataSourceTypeGithub: "GitHub",
     dataSourceTypeGoogleDrive: "Google Drive",
     dataSourceGoogleDriveSetupHint:
       "Authorize a Google Drive account for online chat search. Files are not imported into a knowledge base.",
@@ -3688,6 +3706,9 @@ const enUS = {
     dataSourceNotionCredentialFirst:
       "Please enter and save the Notion Client ID / Client Secret before reauthorizing.",
     dataSourceNotionAuthWindowTitle: "Notion Authorization",
+    dataSourceGithubCredentialRequired:
+      "Please enter GitHub OAuth App Client ID and Client Secret.",
+    dataSourceGithubAuthWindowTitle: "GitHub Authorization",
     dataSourceNotionNotReady: "Notion data source setup is incomplete",
     dataSourceNotionNotReadyDesc:
       "Go back to set Client ID and Client Secret, then continue to connect your Notion account.",

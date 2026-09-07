@@ -20,11 +20,13 @@ function createVm(
     localSourceCount: 0,
     isFeishuAuthValid: false,
     isNotionAuthValid: false,
+    isGitHubAuthValid: false,
     isGoogleDriveAuthValid: false,
     isMailConnected: false,
     mailConnectionLabel: "",
     isFeishuSetupReady: true,
     isNotionSetupReady: true,
+    isGitHubSetupReady: true,
     validFeishuAccounts: [],
     notionOauthConnection: null,
     googleDriveConnection: null,
@@ -33,6 +35,7 @@ function createVm(
     handleManageGoogleDrive: vi.fn(),
     handleManageMail: vi.fn(),
     handleOpenNotionSetup: vi.fn(),
+    handleOpenGitHubSetup: vi.fn(),
     ...overrides,
   } as unknown as CloudDocumentProvidersVm;
 }
@@ -52,7 +55,7 @@ describe("CloudDocumentProviderPanel", () => {
   it("shows only the missing-credentials status for unverified providers", () => {
     render(<CloudDocumentProviderPanel vm={createVm()} />);
 
-    expect(screen.getAllByText("待设置凭据")).toHaveLength(4);
+    expect(screen.getAllByText("待设置凭据")).toHaveLength(5);
     expect(screen.queryByText("待授权")).not.toBeInTheDocument();
   });
 
@@ -62,13 +65,14 @@ describe("CloudDocumentProviderPanel", () => {
         vm={createVm({
           isFeishuAuthValid: true,
           isNotionAuthValid: true,
+          isGitHubAuthValid: true,
           isGoogleDriveAuthValid: true,
           isMailConnected: true,
         })}
       />,
     );
 
-    expect(screen.getAllByText("认证有效")).toHaveLength(4);
+    expect(screen.getAllByText("认证有效")).toHaveLength(5);
     expect(screen.queryByText("待设置凭据")).not.toBeInTheDocument();
     expect(screen.queryByText("待授权")).not.toBeInTheDocument();
   });

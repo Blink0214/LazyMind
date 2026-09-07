@@ -65,6 +65,14 @@ export const cloudProviderCapabilityConfigs: Record<
     previewScenarioKey: 'modelProvider.cloudDocuments.notionPreviewScenario',
     quickActions: ['knowledge', 'chat'],
   },
+  github: {
+    type: 'github',
+    enabledCapabilities: ['linkCite'],
+    previewCapabilities: ['linkCite'],
+    scenarioKey: 'modelProvider.cloudDocuments.githubScenario',
+    previewScenarioKey: 'modelProvider.cloudDocuments.githubPreviewScenario',
+    quickActions: ['chat'],
+  },
   googledrive: {
     type: 'googledrive',
     enabledCapabilities: ['chatSearch'],
