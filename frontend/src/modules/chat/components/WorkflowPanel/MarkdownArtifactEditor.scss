@@ -354,6 +354,27 @@
   color: #0f172a;
 }
 
+.writer-markdown-editor .mdxeditor-root-contenteditable
+  [data-editor-block-type='image'][data-writer-image-caption] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+}
+
+.writer-markdown-editor .mdxeditor-root-contenteditable
+  [data-editor-block-type='image'][data-writer-image-caption]::after {
+  max-width: 100%;
+  margin-top: 6px;
+  color: #64748b;
+  content: attr(data-writer-image-caption);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .writer-markdown-editor .mdxeditor-root-contenteditable [data-writer-numbering-label]::before {
   margin-right: 0.35em;
   color: #2563eb;

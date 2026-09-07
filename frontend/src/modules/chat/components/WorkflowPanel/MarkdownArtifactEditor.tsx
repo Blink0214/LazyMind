@@ -687,8 +687,19 @@ export function MarkdownArtifactEditor({
           delete element.dataset.writerHeadingMode;
           delete element.dataset.writerNumberingLabel;
         });
+      editable.querySelectorAll<HTMLElement>(
+        '[data-editor-block-type="image"][data-writer-image-caption]',
+      ).forEach((element) => {
+        delete element.dataset.writerImageCaption;
+      });
       const headings = editable.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6');
       const images = editable.querySelectorAll<HTMLElement>('img');
+      images.forEach((image) => {
+        const caption = image.getAttribute('alt') ?? '';
+        if (!caption.trim()) return;
+        const imageBlock = image.closest<HTMLElement>('[data-editor-block-type="image"]');
+        if (imageBlock) imageBlock.dataset.writerImageCaption = caption;
+      });
       collectWriterMarkdownDomAnchors(materializedDraftMarkdown).forEach((anchor) => {
         const target = anchor.type === 'heading'
           ? headings.item(anchor.targetIndex)
@@ -763,7 +774,7 @@ export function MarkdownArtifactEditor({
       // Image previews resolve asynchronously. Reconcile again when the
       // editor updates the real image node after the Markdown render.
       attributes: true,
-      attributeFilter: ['src'],
+      attributeFilter: ['src', 'alt'],
     });
     applyDomAnchors();
     scheduleDomAnchors();

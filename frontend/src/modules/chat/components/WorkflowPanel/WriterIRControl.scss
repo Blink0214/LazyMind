@@ -1216,6 +1216,12 @@
   color: #64748b;
 }
 
+.writer-ir__document--editable .writer-ir__block--readonly {
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #64748b;
+}
+
 .writer-ir__document--editable .writer-ir__title[contenteditable='false'] {
   background: transparent;
   color: #0f172a;

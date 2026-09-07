@@ -23,6 +23,7 @@ type writerProviderBinding struct {
 	Provider   string `json:"provider"`
 	DocumentID string `json:"document_id"`
 	URI        string `json:"uri"`
+	BrowserURL string `json:"browser_url"`
 }
 
 type writerDocumentIdentity struct {
@@ -102,7 +103,6 @@ func writerWriteBackState(
 	if err != nil {
 		return info
 	}
-
 	var binding writerProviderBinding
 	hasBinding := false
 	if target != nil {
@@ -178,7 +178,11 @@ func writerWriteBackState(
 func applyWriterProviderBinding(info *writerWriteBackInfo, binding writerProviderBinding) {
 	info.Provider = binding.Provider
 	info.ProviderDocumentID = binding.DocumentID
-	info.URL = writerProviderURL(binding.URI)
+	url := binding.BrowserURL
+	if strings.TrimSpace(url) == "" {
+		url = binding.URI
+	}
+	info.URL = writerProviderURL(binding.Provider, url)
 }
 
 func writerRevisionPointer(revision int) *int {
@@ -375,24 +379,34 @@ func writerArtifactPathAllowed(path string) bool {
 
 func writerProviderSupported(provider string) bool {
 	switch canonicalWriterWriteBackProvider(provider) {
-	case "feishu", "notion", "github":
+	case "feishu", "notion", "github", "wechat":
 		return true
 	default:
 		return false
 	}
 }
 
-func writerProviderURL(uri string) string {
+func writerProviderURL(provider, uri string) string {
 	if !strings.HasPrefix(uri, "https://") {
 		return ""
 	}
+	provider = canonicalWriterWriteBackProvider(provider)
 	host := strings.ToLower(strings.Split(strings.TrimPrefix(uri, "https://"), "/")[0])
-	if host == "feishu.cn" || strings.HasSuffix(host, ".feishu.cn") ||
-		host == "larksuite.com" || strings.HasSuffix(host, ".larksuite.com") ||
-		host == "app.notion.com" || host == "notion.so" ||
-		strings.HasSuffix(host, ".notion.so") || host == "notion.site" ||
-		strings.HasSuffix(host, ".notion.site") ||
-		host == "github.com" || host == "www.github.com" {
+	valid := false
+	switch provider {
+	case "feishu":
+		valid = host == "feishu.cn" || strings.HasSuffix(host, ".feishu.cn") ||
+			host == "larksuite.com" || strings.HasSuffix(host, ".larksuite.com")
+	case "notion":
+		valid = host == "app.notion.com" || host == "notion.so" ||
+			strings.HasSuffix(host, ".notion.so") || host == "notion.site" ||
+			strings.HasSuffix(host, ".notion.site")
+	case "github":
+		valid = host == "github.com" || host == "www.github.com"
+	case "wechat":
+		valid = host == "mp.weixin.qq.com"
+	}
+	if valid {
 		return uri
 	}
 	return ""
@@ -406,6 +420,8 @@ func canonicalWriterWriteBackProvider(provider string) string {
 		return "github"
 	case "notion":
 		return "notion"
+	case "wechat":
+		return "wechat"
 	default:
 		return ""
 	}

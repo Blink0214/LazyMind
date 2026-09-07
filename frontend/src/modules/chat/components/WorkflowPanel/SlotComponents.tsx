@@ -19,6 +19,7 @@ import {
   type RewriteSelectionPreview,
   type WriterDocumentSlot,
   type WriterNumberingUpdate,
+  type WriterWriteBackProvider,
 } from "@/modules/chat/utils/request";
 import { FilePreviewDrawer } from "./FilePreviewDrawer";
 import {
@@ -61,7 +62,7 @@ import { SlotJsonSlide } from './ppt/SlotJsonSlide';
 import { isSlideSpecArtifact } from './ppt/slideSchema';
 import type { TaskArtifactStream } from '@/modules/chat/store/taskCenter';
 import { Modal, Radio, type RadioChangeEvent } from 'antd';
-import { GithubOutlined, WechatOutlined } from '@ant-design/icons';
+import { GithubOutlined } from '@ant-design/icons';
 import { cloudProviderOptions } from '@/modules/modelProvider/constants/cloudProviderOptions';
 import { isVideoArtifactValue } from './artifactMedia';
 
@@ -2632,13 +2633,13 @@ function isWriterWriteBackDisabled(
   );
 }
 
-export type WriterWriteBackProvider = 'feishu' | 'notion' | 'github';
+export type { WriterWriteBackProvider } from '@/modules/chat/utils/request';
 
-const writerWriteBackProviders = ['feishu', 'notion', 'github'] as const;
-const futureWriterProviders = ['yuque', 'obsidian', 'wechatOfficialAccount'] as const;
+const writerWriteBackProviders = ['feishu', 'notion', 'github', 'wechat'] as const;
+const futureWriterProviders = ['yuque', 'obsidian'] as const;
 
 function writerWriteBackProvider(provider?: string): WriterWriteBackProvider {
-  return provider === 'notion' || provider === 'github' ? provider : 'feishu';
+  return provider === 'notion' || provider === 'github' || provider === 'wechat' ? provider : 'feishu';
 }
 
 export function WriterProviderChoice({
@@ -2690,7 +2691,7 @@ export function WriterProviderChoice({
           <Radio key={item} value={item} disabled>
             <span className='workflow-writer-provider-picker__option'>
               <span className='workflow-writer-provider-picker__fallback-icon' aria-hidden='true'>
-                {item === 'wechatOfficialAccount' ? <WechatOutlined /> : '◇'}
+                ◇
               </span>
               <span>{tr(`chat.writerIR.providers.${item}`)}</span>
               <small>{tr('chat.writerIR.comingSoon')}</small>

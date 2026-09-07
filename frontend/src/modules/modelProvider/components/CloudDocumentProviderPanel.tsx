@@ -32,6 +32,9 @@ function getProviderTitle(
   if (type === "googledrive") {
     return t("modelProvider.external.googleDriveTitle");
   }
+  if (type === "wechat") {
+    return t("modelProvider.wechatOfficialAccount.title");
+  }
   if (type === "github") {
     return t("modelProvider.cloudDocuments.githubTitle");
   }
@@ -66,6 +69,15 @@ function getProviderDescription(
           account: vm.googleDriveConnection.accountName,
         })
       : t("modelProvider.external.googleDriveDesc");
+  }
+  if (type === "wechat") {
+    if (vm.isWeChatOfficialAccountAuthValid) {
+      return t("modelProvider.wechatOfficialAccount.hubConnected");
+    }
+    if (vm.hasWeChatOfficialAccount) {
+      return t("modelProvider.wechatOfficialAccount.hubPending");
+    }
+    return t("modelProvider.wechatOfficialAccount.hubDescription");
   }
   if (type === "github") {
     if (vm.isGitHubAuthValid) {
@@ -135,6 +147,8 @@ export default function CloudDocumentProviderPanel({ vm }: { vm: CloudDocumentPr
     isNotionAuthValid,
     isGitHubAuthValid,
     isGoogleDriveAuthValid,
+    isWeChatOfficialAccountAuthValid,
+    hasWeChatOfficialAccount,
     isFeishuSetupReady,
     isNotionSetupReady,
     isGitHubSetupReady,
@@ -144,6 +158,7 @@ export default function CloudDocumentProviderPanel({ vm }: { vm: CloudDocumentPr
     handleManageLocalSource,
     handleManageGoogleDrive,
     handleManageMail,
+    handleManageWeChatOfficialAccount,
     handleOpenNotionSetup,
     handleOpenGitHubSetup,
   } = vm;
@@ -188,11 +203,14 @@ export default function CloudDocumentProviderPanel({ vm }: { vm: CloudDocumentPr
         const isFeishu = item.type === "feishu";
         const isGitHub = item.type === "github";
         const isGoogleDrive = item.type === "googledrive";
+        const isWeChatOfficialAccount = item.type === "wechat";
         const isAuthValid = isFeishu
           ? isFeishuAuthValid
           : isGoogleDrive
             ? isGoogleDriveAuthValid
-            : isGitHub
+            : isWeChatOfficialAccount
+              ? isWeChatOfficialAccountAuthValid
+              : isGitHub
               ? isGitHubAuthValid
               : isNotionAuthValid;
         const isSetupReady = isFeishu
@@ -200,10 +218,14 @@ export default function CloudDocumentProviderPanel({ vm }: { vm: CloudDocumentPr
           : isGitHub
             ? isGitHubSetupReady
             : isNotionSetupReady;
-        const isProviderLocked = !isGoogleDrive && !isAuthValid && !isSetupReady;
+        const isProviderLocked = isWeChatOfficialAccount
+          ? !hasWeChatOfficialAccount
+          : !isGoogleDrive && !isAuthValid && !isSetupReady;
         const authStatusText = isAuthValid
           ? t("modelProvider.cloudDocuments.authValid")
-          : t("modelProvider.cloudDocuments.credentialMissing");
+          : isWeChatOfficialAccount && hasWeChatOfficialAccount
+            ? t("modelProvider.cloudDocuments.authPending")
+            : t("modelProvider.cloudDocuments.credentialMissing");
 
         const handleManage = () => {
           if (isFeishu) {
@@ -212,6 +234,10 @@ export default function CloudDocumentProviderPanel({ vm }: { vm: CloudDocumentPr
           }
           if (isGoogleDrive) {
             handleManageGoogleDrive();
+            return;
+          }
+          if (isWeChatOfficialAccount) {
+            handleManageWeChatOfficialAccount();
             return;
           }
           if (isGitHub) {
@@ -233,7 +259,7 @@ export default function CloudDocumentProviderPanel({ vm }: { vm: CloudDocumentPr
             </div>
             <Tag
               className="model-provider-cloud-doc-resource-status"
-              color={isAuthValid ? "success" : "default"}
+              color={isAuthValid ? "success" : isProviderLocked ? "default" : "processing"}
             >
               {authStatusText}
             </Tag>

@@ -439,7 +439,7 @@ describe('MarkdownArtifactEditor rewrite selection highlight', () => {
       />,
     );
     expect(container.querySelector<HTMLElement>('.writer-markdown-editor__surface')?.dataset.markdown)
-      .toBe('$\\mathcal\\{D}=\\{(x_i,y_i)\\}_\\{i=1}^\\{N}$ and $y_\\{\\<t}$');
+      .toBe('$\\mathcal\\{D\\}=\\{(x_i,y_i)\\}_\\{i=1\\}^\\{N\\}$ and $y_\\{\\<t\\}$');
   });
 
   it('navigates internal references without opening the link editor', () => {
@@ -814,6 +814,7 @@ describe('MarkdownArtifactEditor rewrite selection highlight', () => {
       ].join('\n'),
       11,
       'draft',
+      undefined,
     );
   });
 
@@ -900,7 +901,7 @@ describe('MarkdownArtifactEditor autosave', () => {
       expect(await flush?.()).toBe(true);
     });
 
-    expect(onSave).toHaveBeenCalledWith('Checkpoint edit', 7, 'checkpoint');
+    expect(onSave).toHaveBeenCalledWith('Checkpoint edit', 7, 'checkpoint', undefined);
   });
 
   it('replaces clean backend updates without remounting or moving the viewport', async () => {
@@ -956,7 +957,7 @@ describe('MarkdownArtifactEditor autosave', () => {
       await act(async () => {
         vi.advanceTimersByTime(1_000);
       });
-      expect(onSave).toHaveBeenCalledWith('Local draft', 7, 'draft');
+      expect(onSave).toHaveBeenCalledWith('Local draft', 7, 'draft', undefined);
       await act(async () => {
         resolveSave?.({ markdown: 'Backend normalized draft', revision: 8 });
         await Promise.resolve();
@@ -1007,7 +1008,7 @@ describe('MarkdownArtifactEditor autosave', () => {
         await Promise.resolve();
       });
       expect(onSave).toHaveBeenCalledTimes(1);
-      expect(onSave).toHaveBeenCalledWith('Final edit', 7, 'draft');
+      expect(onSave).toHaveBeenCalledWith('Final edit', 7, 'draft', undefined);
       expect(screen.queryByText('chat.writerMarkdown.saved')).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -1037,7 +1038,7 @@ describe('MarkdownArtifactEditor autosave', () => {
       await act(async () => {
         vi.advanceTimersByTime(1_000);
       });
-      expect(onSave).toHaveBeenCalledWith('First edit', 7, 'draft');
+      expect(onSave).toHaveBeenCalledWith('First edit', 7, 'draft', undefined);
 
       editable.textContent = 'Second edit';
       fireEvent.input(editable);
@@ -1055,7 +1056,7 @@ describe('MarkdownArtifactEditor autosave', () => {
         await Promise.resolve();
       });
       expect(onSave).toHaveBeenCalledTimes(2);
-      expect(onSave).toHaveBeenLastCalledWith('Second edit', 8, 'draft');
+      expect(onSave).toHaveBeenLastCalledWith('Second edit', 8, 'draft', undefined);
     } finally {
       vi.useRealTimers();
     }

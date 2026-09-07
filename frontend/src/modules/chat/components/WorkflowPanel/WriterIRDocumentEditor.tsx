@@ -566,7 +566,9 @@ function renderBlock(
       foldable ? ' writer-ir__block--foldable' : ''
     }${draggable ? ' writer-ir__block--draggable' : ''}${
       collapsed ? ' writer-ir__block--folded' : ''
-    }${hiddenByAncestor ? ' writer-ir__section-hidden' : ''}"`,
+    }${block.editable === false ? ' writer-ir__block--readonly' : ''}${
+      hiddenByAncestor ? ' writer-ir__section-hidden' : ''
+    }"`,
     block.editable === false ? 'contenteditable="false"' : '',
     hiddenByAncestor ? 'hidden' : '',
   ].filter(Boolean).join(' ');

@@ -25,6 +25,7 @@ from services.providers import (
     GoogleDriveOAuthProvider,
     IMAPMailProvider,
     NotionOAuthProvider,
+    WeChatProvider,
 )
 
 
@@ -32,6 +33,7 @@ _AUTH_MODES = {'tenant', 'oauth_user', 'service_account'}
 _OAUTH_APP_AUTH_MODE = 'oauth_app'
 _TOKEN_REFRESH_BUFFER_SECONDS = 300
 _OAUTH_STATE_TTL_MINUTES = 10
+_WECHAT_PROVIDER = 'wechat'
 
 
 @dataclass
@@ -107,11 +109,13 @@ class CloudOAuthService:
         feishu = FeishuOAuthProvider()
         google_drive = GoogleDriveOAuthProvider()
         notion = NotionOAuthProvider()
+        wechat = WeChatProvider()
         github = GitHubOAuthProvider()
         self._providers: dict[str, CloudOAuthProvider] = {
             feishu.provider_name(): feishu,
             google_drive.provider_name(): google_drive,
             notion.provider_name(): notion,
+            wechat.provider_name(): wechat,
             github.provider_name(): github,
         }
         for imap_name in MAIL_IMAP_PROVIDERS:
@@ -278,6 +282,7 @@ class CloudOAuthService:
         auth_mode: str,
         client_id: str,
         client_secret: str,
+        display_name: str = '',
         redirect_uri: str = '',
         scope: str = '',
         provider_options: dict[str, Any] | None = None,
@@ -294,6 +299,7 @@ class CloudOAuthService:
         normalized_provider = (provider or '').strip().lower()
         normalized_auth_mode = (auth_mode or '').strip().lower()
         normalized_client_id = (client_id or '').strip()
+        normalized_display_name = (display_name or '').strip()
         credential = {
             'client_id': normalized_client_id,
             'client_secret': client_secret,
@@ -320,6 +326,8 @@ class CloudOAuthService:
             row.credential_ciphertext = credential_ciphertext
             row.auth_state_ciphertext = auth_state_ciphertext
             row.scope = (scope or '').strip()
+            if normalized_display_name:
+                row.display_name = normalized_display_name
             row.status = (status or '').strip().upper() or 'ACTIVE'
             row.last_error = ''
             row.last_used_at = None
@@ -369,6 +377,7 @@ class CloudOAuthService:
                     client_id=normalized_client_id,
                     credential_ciphertext=credential_ciphertext,
                     auth_state_ciphertext=auth_state_ciphertext,
+                    display_name=normalized_display_name,
                     scope=(scope or '').strip(),
                     status=status,
                     last_error='',
@@ -585,6 +594,7 @@ class CloudOAuthService:
         auth_mode: str,
         client_id: str,
         client_secret: str,
+        display_name: str = '',
         provider_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         provider_impl = self._provider(provider)
@@ -593,6 +603,8 @@ class CloudOAuthService:
             raise_error(ErrorCodes.CLOUD_OAUTH_AUTHORIZE_MODE_REQUIRED)
         if is_mail_imap_provider(provider_impl.provider_name()) and mode != 'service_account':
             raise_error(ErrorCodes.MAIL_PROVIDER_AUTH_MODE_INVALID)
+        if provider_impl.provider_name() == _WECHAT_PROVIDER and mode != 'service_account':
+            raise_error(ErrorCodes.WECHAT_OFFICIAL_ACCOUNT_SERVICE_ACCOUNT_ONLY)
         tid, cid, csec = self._validate_required_credentials(
             tenant_id=tenant_id,
             client_id=client_id,
@@ -602,6 +614,10 @@ class CloudOAuthService:
         if is_mail_imap_provider(provider_impl.provider_name()):
             options.setdefault('chat_enabled', True)
             options.setdefault('chatEnabled', True)
+        requires_validation = provider_impl.provider_name() == _WECHAT_PROVIDER
+        if requires_validation:
+            options.update({'chat_enabled': False, 'chatEnabled': False})
+        initial_status = 'PENDING' if requires_validation else 'ACTIVE'
         connection_id = self._create_connection_record(
             provider=provider_impl.provider_name(),
             tenant_id=tid,
@@ -609,7 +625,9 @@ class CloudOAuthService:
             auth_mode=mode,
             client_id=cid,
             client_secret=csec,
+            display_name=display_name,
             provider_options=options,
+            status=initial_status,
             reuse_existing=True,
         )
         if is_mail_imap_provider(provider_impl.provider_name()):
@@ -627,7 +645,7 @@ class CloudOAuthService:
             'provider': provider_impl.provider_name(),
             'auth_mode': mode,
             'scope': '',
-            'status': 'ACTIVE',
+            'status': initial_status,
         }
 
     def get_app_credentials(
@@ -781,6 +799,8 @@ class CloudOAuthService:
         mode = self._validate_auth_mode(auth_mode)
         if mode != 'oauth_user':
             raise_error(ErrorCodes.CLOUD_AUTHORIZE_URL_OAUTH_USER_ONLY)
+        if provider_impl.provider_name() == _WECHAT_PROVIDER:
+            raise_error(ErrorCodes.WECHAT_OFFICIAL_ACCOUNT_SERVICE_ACCOUNT_ONLY)
         tenant_id = _reserved_tenant_id(tenant_id)
         normalized_owner = _normalize_owner_user_id(owner_user_id)
         reauthorize_target_id, reauthorize_account_id, reauthorize_tenant_key = self._get_reauthorize_target(
@@ -1444,6 +1464,8 @@ class CloudOAuthService:
                 raise_error(ErrorCodes.CLOUD_CONNECTION_NOT_FOUND)
 
             credential = self._decrypt_payload(row.credential_ciphertext, field_name='credential')
+            original_client_id = (credential.get('client_id') or '').strip()
+            original_client_secret = (credential.get('client_secret') or '').strip()
             options = credential.get('provider_options')
             if not isinstance(options, dict):
                 options = {}
@@ -1480,8 +1502,28 @@ class CloudOAuthService:
             if requested_client_secret is not None and normalized_client_secret:
                 credential['client_secret'] = normalized_client_secret
 
+            credentials_changed = (
+                requested_client_id is not None
+                and normalized_client_id
+                and normalized_client_id != original_client_id
+            ) or (
+                requested_client_secret is not None
+                and normalized_client_secret
+                and normalized_client_secret != original_client_secret
+            )
+            if (
+                (row.provider or '').strip().lower() == _WECHAT_PROVIDER
+                and credentials_changed
+            ):
+                row.status = 'PENDING'
+                row.last_error = ''
+                row.last_used_at = None
+                options.update({'chat_enabled': False, 'chatEnabled': False})
+
             requested_chat_enabled = chat_enabled if chat_enabled is not None else chatEnabled
             if requested_chat_enabled is not None:
+                if requested_chat_enabled and (row.status or '').strip().upper() != 'ACTIVE':
+                    raise_error(ErrorCodes.CLOUD_CONNECTION_VERIFICATION_REQUIRED)
                 options['chat_enabled'] = bool(requested_chat_enabled)
                 options['chatEnabled'] = bool(requested_chat_enabled)
             credential['provider_options'] = options
@@ -1518,6 +1560,62 @@ class CloudOAuthService:
 
         self._cache_delete(connection_id)
         return payload
+
+    def refresh_connection_token(
+        self,
+        connection_id: str,
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        connection_id = (connection_id or '').strip()
+        if not connection_id:
+            raise_error(ErrorCodes.CLOUD_CONNECTION_NOT_FOUND)
+
+        with SessionLocal() as db:
+            row = CloudAuthConnectionRepository.get_by_id(db, connection_id)
+            if row is None or (row.status or '').strip().upper() == 'REVOKED':
+                raise_error(ErrorCodes.CLOUD_CONNECTION_NOT_FOUND)
+            self._ensure_connection_owner(row, tenant_id='', user_id=user_id)
+            mode = (row.auth_mode or '').strip().lower()
+            if mode not in {'tenant', 'service_account'}:
+                raise_error(ErrorCodes.CLOUD_AUTH_MODE_INVALID, extra_msg=row.auth_mode)
+            provider_impl = self._provider(row.provider)
+            credential = self._decrypt_payload(row.credential_ciphertext, field_name='credential')
+            try:
+                token_payload = self._acquire_tenant_token(provider_impl, credential)
+            except Exception as exc:
+                self._record_refresh_failure(db, row, exc)
+                self._cache_delete(connection_id)
+                if isinstance(exc, AppException):
+                    raise
+                raise_error(ErrorCodes.CLOUD_TOKEN_UNAVAILABLE, extra_msg=_truncate_error(exc))
+
+            row.status = 'ACTIVE'
+            row.last_error = ''
+            row.last_used_at = _utcnow()
+            CloudAuthConnectionRepository.save(db, row)
+
+        self._cache_set(connection_id, row.provider, token_payload)
+        return {
+            'connection_id': row.connection_id,
+            'tenant_id': row.tenant_id or '',
+            'owner_user_id': row.owner_user_id or '',
+            'provider': row.provider,
+            'status': row.status,
+        }
+
+    @staticmethod
+    def _acquire_tenant_token(
+        provider_impl: CloudOAuthProvider,
+        credential: dict[str, Any],
+    ) -> CloudTokenPayload:
+        token = provider_impl.acquire_tenant_access_token(
+            client_id=(credential.get('client_id') or '').strip(),
+            client_secret=(credential.get('client_secret') or '').strip(),
+        )
+        if not token.access_token:
+            raise_error(ErrorCodes.CLOUD_PROVIDER_ACCESS_TOKEN_EMPTY)
+        return token
 
     def _refresh_oauth_user_token(
         self,
@@ -1731,10 +1829,7 @@ class CloudOAuthService:
                     })
                     row.auth_state_ciphertext = self._encrypt_payload(auth_state_payload, field_name='auth_state')
                 elif mode in {'tenant', 'service_account'}:
-                    token_payload = provider_impl.acquire_tenant_access_token(
-                        client_id=(credential.get('client_id') or '').strip(),
-                        client_secret=(credential.get('client_secret') or '').strip(),
-                    )
+                    token_payload = self._acquire_tenant_token(provider_impl, credential)
                 else:
                     raise_error(ErrorCodes.CLOUD_AUTH_MODE_INVALID, extra_msg=row.auth_mode)
             except Exception as exc:

@@ -42,14 +42,12 @@ from lazyllm.tools.writer.numbering import (
     dematerialize_ir,
     ensure_markdown_heading_anchors,
     format_target_number,
-    materialize_ir,
     materialize_markdown,
 )
 from lazyllm.tools.writer.provider import match_writer_provider
 from lazyllm.tools.writer.tools import (
     WriterDraftingTools,
     WriterPlanningTools,
-    WriterResourceTools,
     WriterRevisionTools,
 )
 from lazyllm.tools.writer.tools.revision_tools import apply_patch_to_ir
@@ -359,11 +357,6 @@ def writer_resolve_command(
     )
 
 
-_EXPLICIT_WRITER_MUTATION = re.compile(
-    r'(?:修改|改写|重写|扩写|续写|润色|新增|添加|插入|删除|替换|调整|合并|重排|增强)'
-    r'|\b(?:modify|revise|rewrite|expand|continue|polish|add|insert|delete|replace|edit)\b',
-    re.IGNORECASE,
-)
 _EXPLICIT_OUTLINE_TARGET = re.compile(
     r'(?:\b(?:only|just)\b.{0,16}\b(?:outline|plan)\b)'
     r'|(?:(?:只|仅|只需|仅需).{0,12}(?:大纲|提纲))'
@@ -431,6 +424,16 @@ def _provider_document_locator(value: str) -> str:
             continue
         return locator
     return ''
+
+
+def _provider_document_reference(value: str) -> str:
+    locator = _provider_document_locator(value)
+    if locator:
+        return locator
+    try:
+        return match_writer_provider(value).provider
+    except ValueError:
+        return ''
 
 
 _REQUIRE_INPUT_IMAGE_REUSE = re.compile(
@@ -1040,8 +1043,8 @@ def writer_prepare_workspace(
         if Path(path).suffix.lower() in _LOCAL_WRITER_DOCUMENT_SUFFIXES
     ]
     source_filename = str(source_filename or '').strip()
-    cloud_source_locator = _provider_document_locator(user_input or '')
-    has_cloud_source = bool(cloud_source_locator)
+    cloud_source_ref = _provider_document_reference(user_input)
+    has_cloud_source = bool(cloud_source_ref)
 
     # Models occasionally copy a provider locator into both fields.
     # Treat that as one cloud source, never as a local filename override.
@@ -1073,9 +1076,7 @@ def writer_prepare_workspace(
     source_kind = 'cloud' if has_cloud_source else (
         'local' if source_filename or local_candidates else 'cloud'
     )
-    source_ref = (
-        cloud_source_locator if cloud_source_locator else source_filename
-    )
+    source_ref = cloud_source_ref or source_filename
 
     # The model may suggest an operation for ambiguous supplied documents, but it
     # does not own the terminal target. Resolve impossible combinations from the

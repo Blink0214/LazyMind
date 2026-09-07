@@ -636,7 +636,7 @@ def test_load_local_lmd_removes_cloud_binding(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize(
     ('representation', 'expected_writer'),
-    [('ir', 'publish_revision'), ('markdown', 'replace_document')],
+    [('ir', 'publish_revision'), ('markdown', None)],
 )
 def test_draft_workspace_revise_uses_writing_task_representation(
     monkeypatch,
@@ -726,4 +726,8 @@ def test_draft_workspace_revise_uses_writing_task_representation(
     result = tools.writer_draft_workspace()
 
     assert result['status'] == 'completed'
-    assert calls == [expected_writer]
+    assert calls == ([expected_writer] if expected_writer else [])
+    if representation == 'markdown':
+        assert state['result']['target_document'] == target_document
+        assert state['result']['markdown_editor_prepared'] is True
+        assert 'document_write_result' not in state['result']

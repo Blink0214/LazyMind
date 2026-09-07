@@ -41,6 +41,7 @@ def create_connection(
         auth_mode=body.auth_mode,
         client_id=body.client_id,
         client_secret=body.client_secret,
+        display_name=body.display_name,
         provider_options=body.provider_options,
     )
 
@@ -207,6 +208,18 @@ def patch_connection(
     user: User = Depends(current_user),  # noqa: B008
 ):
     return update_connection(connection_id, body, user)
+
+
+@router.post('/connections/{connection_id}/token:refresh', response_model=CloudConnectionVerifyResponse)
+@permission_required('model.write')
+def refresh_connection_token(
+    connection_id: str,
+    user: User = Depends(current_user),  # noqa: B008
+):
+    return cloud_oauth_service.refresh_connection_token(
+        connection_id,
+        user_id=str(user.id),
+    )
 
 
 @router.get('/connections/internal/chat-enabled', response_model=CloudConnectionListResponse)

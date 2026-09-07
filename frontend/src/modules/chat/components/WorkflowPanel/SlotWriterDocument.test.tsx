@@ -135,6 +135,10 @@ describe('Writer write-back provider choice', () => {
     );
 
     expect(container.querySelector<HTMLInputElement>('input[value="github"]')).toBeDisabled();
+    const wechat = container.querySelector<HTMLInputElement>('input[value="wechat"]')!;
+    expect(wechat).toBeEnabled();
+    fireEvent.click(wechat);
+    expect(onChange).toHaveBeenCalledWith('wechat');
 
     rerender(
       <WriterProviderChoice
@@ -172,6 +176,7 @@ describe('SlotWriterDocument render refresh', () => {
           title: 'Writer document',
           representation: 'markdown',
           document: '# Edited draft',
+          numbering: { ordered_style: 'hierarchical', entries: {} },
           revision: 3,
         },
       },
@@ -195,6 +200,7 @@ describe('SlotWriterDocument render refresh', () => {
         '# Edited draft',
         'draft_document',
         'draft',
+        undefined,
         { silentError: true },
       );
     });
@@ -214,6 +220,7 @@ describe('SlotWriterDocument render refresh', () => {
           title: 'Writer document',
           representation: 'markdown',
           document: '# Edited draft',
+          numbering: { ordered_style: 'hierarchical', entries: {} },
           revision: 3,
         },
       },
@@ -270,6 +277,7 @@ describe('SlotWriterDocument render refresh', () => {
         '# Edited draft',
         'draft_document',
         'draft',
+        undefined,
         { silentError: true },
       );
     });
@@ -343,7 +351,7 @@ describe('SlotWriterDocument render refresh', () => {
     );
 
     await screen.findByRole('button', { name: 'save markdown draft' });
-    const editorProps = markdownEditorRender.mock.calls.at(-1)?.[0];
+    const editorProps = markdownEditorRender.mock.calls[markdownEditorRender.mock.calls.length - 1]?.[0];
     await expect(editorProps.resolveImageUrl('_assets/logo.png')).resolves.toBe(
       'https://example.test/signed-logo.png',
     );

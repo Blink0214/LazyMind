@@ -78,7 +78,8 @@ export default function CloudDocumentsPage() {
     (vm.isFeishuAuthValid ? 1 : 0) +
     (vm.isNotionAuthValid ? 1 : 0) +
     (vm.isGitHubAuthValid ? 1 : 0) +
-    (vm.isGoogleDriveAuthValid ? 1 : 0);
+    (vm.isGoogleDriveAuthValid ? 1 : 0) +
+    (vm.isWeChatOfficialAccountAuthValid ? 1 : 0);
   const hasConnectedProvider = providerReadyCount > 0;
   const hasKnowledgeSyncProvider =
     (vm.canCreateLocalSource && vm.localSourceCount > 0) ||
@@ -146,6 +147,8 @@ export default function CloudDocumentsPage() {
         vm.handleManageFeishuAuth();
       } else if (provider === "notion") {
         vm.handleOpenNotionSetup();
+      } else if (provider === "wechat") {
+        vm.handleManageWeChatOfficialAccount();
       } else if (provider === "github") {
         vm.handleOpenGitHubSetup();
       } else {
@@ -157,7 +160,7 @@ export default function CloudDocumentsPage() {
   };
 
   const successKnowledgePath =
-    guideProvider === "googledrive" || guideProvider === "github"
+    guideProvider === "googledrive" || guideProvider === "github" || guideProvider === "wechat"
       ? null
       : getCloudKnowledgeCreatePath(guideProvider);
 
@@ -386,9 +389,11 @@ export default function CloudDocumentsPage() {
             <p className="model-provider-cloud-doc-guide-description">
               {guideProvider === "googledrive"
                 ? t("modelProvider.cloudDocuments.connectionSuccessGoogleDescription")
-                : guideProvider === "github"
-                  ? t("modelProvider.cloudDocuments.connectionSuccessGitHubDescription")
-                  : t("modelProvider.cloudDocuments.connectionSuccessDescription")}
+                : guideProvider === "wechat"
+                  ? t("modelProvider.cloudDocuments.connectionSuccessWeChatDescription")
+                  : guideProvider === "github"
+                    ? t("modelProvider.cloudDocuments.connectionSuccessGitHubDescription")
+                    : t("modelProvider.cloudDocuments.connectionSuccessDescription")}
             </p>
             <div className="model-provider-cloud-doc-guide-next-list">
               <Link to={CHAT_PATH} onClick={closeGuide}>

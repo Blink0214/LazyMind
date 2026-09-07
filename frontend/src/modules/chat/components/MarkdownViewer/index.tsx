@@ -259,25 +259,28 @@ const ImageComponent = (props: any) => {
   const { node: _node, src: _src, ...imageProps } = props;
 
   return (
-    <Image
-      {...imageProps}
-      src={resolvedSrc}
-      preview={{
-        visible: previewVisible,
-        onVisibleChange: setPreviewVisible,
-      }}
-      role="button"
-      tabIndex={0}
-      aria-label={props.alt || t("chat.previewImage")}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          setPreviewVisible(true);
-        }
-      }}
-      onError={() => setImageLoadError(true)}
-      onLoad={() => setImageLoadError(false)}
-    />
+    <figure className="md-image-figure">
+      <Image
+        {...imageProps}
+        src={resolvedSrc}
+        preview={{
+          visible: previewVisible,
+          onVisibleChange: setPreviewVisible,
+        }}
+        role="button"
+        tabIndex={0}
+        aria-label={props.alt || t("chat.previewImage")}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setPreviewVisible(true);
+          }
+        }}
+        onError={() => setImageLoadError(true)}
+        onLoad={() => setImageLoadError(false)}
+      />
+      {props.alt ? <figcaption>{props.alt}</figcaption> : null}
+    </figure>
   );
 };
 

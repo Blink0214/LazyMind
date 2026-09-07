@@ -185,8 +185,8 @@ class WorkflowActionInvokeRequest(BaseModel):
 
 @router.post('/api/writer/documents:sync', summary='Persist an edited WriterDocument to its provider')
 def sync_writer_document(request: WriterDocumentSyncRequest) -> dict:
-    if not request.tool_config.get('feishu'):
-        raise HTTPException(status_code=400, detail='tool_config.feishu is required.')
+    if not request.tool_config:
+        raise HTTPException(status_code=400, detail='A provider credential is required.')
 
     try:
         inject_tool_config(request.tool_config)

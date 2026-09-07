@@ -5,6 +5,7 @@ import {
   FolderOpenOutlined,
   GithubOutlined,
   GoogleOutlined,
+  WechatOutlined,
 } from "@ant-design/icons";
 
 export type CloudProviderType =
@@ -12,7 +13,8 @@ export type CloudProviderType =
   | "feishu"
   | "notion"
   | "github"
-  | "googledrive";
+  | "googledrive"
+  | "wechat";
 
 export const cloudProviderOptions: Array<{
   type: CloudProviderType;
@@ -42,6 +44,10 @@ export const cloudProviderOptions: Array<{
   {
     type: "googledrive",
     icon: <GoogleOutlined />,
+  },
+  {
+    type: "wechat",
+    icon: <WechatOutlined />,
   },
 ];
 

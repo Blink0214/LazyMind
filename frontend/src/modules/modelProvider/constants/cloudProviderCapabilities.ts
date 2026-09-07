@@ -81,4 +81,12 @@ export const cloudProviderCapabilityConfigs: Record<
     previewScenarioKey: 'modelProvider.cloudDocuments.googleDrivePreviewScenario',
     quickActions: ['chat'],
   },
+  wechat: {
+    type: 'wechat',
+    enabledCapabilities: [],
+    previewCapabilities: [],
+    scenarioKey: 'modelProvider.cloudDocuments.wechatOfficialAccountScenario',
+    previewScenarioKey: 'modelProvider.cloudDocuments.wechatOfficialAccountPreviewScenario',
+    quickActions: ['chat'],
+  },
 };

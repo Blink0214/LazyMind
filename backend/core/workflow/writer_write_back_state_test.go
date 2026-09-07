@@ -182,8 +182,21 @@ func TestEnrichWriterWriteBackSlots_NotionProviderSyncIsClean(t *testing.T) {
 }
 
 func TestWriterProviderURLRejectsUntrustedNotionLookalike(t *testing.T) {
-	if got := writerProviderURL("https://app.notion.com.evil.example/p/page-2"); got != "" {
+	if got := writerProviderURL("notion", "https://app.notion.com.evil.example/p/page-2"); got != "" {
 		t.Fatalf("expected lookalike domain to be rejected, got %q", got)
+	}
+}
+
+func TestApplyWriterProviderBindingUsesWeChatBrowserURL(t *testing.T) {
+	info := writerWriteBackInfo{}
+	applyWriterProviderBinding(&info, writerProviderBinding{
+		Provider:   "wechat",
+		DocumentID: "draft-1",
+		URI:        "",
+		BrowserURL: "https://mp.weixin.qq.com/",
+	})
+	if info.URL != "https://mp.weixin.qq.com/" {
+		t.Fatalf("write-back URL = %q, want WeChat console URL", info.URL)
 	}
 }
 

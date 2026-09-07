@@ -121,6 +121,16 @@ class ErrorCodes:
         1000828,
         'this mailbox provider does not support the requested auth mode',
     )
+    WECHAT_OFFICIAL_ACCOUNT_SERVICE_ACCOUNT_ONLY: ErrorTuple = (
+        400,
+        1000827,
+        'WeChat Official Account only supports service_account connections',
+    )
+    CLOUD_CONNECTION_VERIFICATION_REQUIRED: ErrorTuple = (
+        409,
+        1000829,
+        'cloud connection must be verified before it can be enabled',
+    )
 
     JWT_SECRET_REQUIRED: ErrorTuple = (500, 1000901, 'JWT signing secret is not configured')
     CLOUD_PROVIDER_HTTP_ERROR: ErrorTuple = (502, 1000902, 'cloud provider returned an HTTP error')

@@ -12,7 +12,8 @@ when_to_use: >
   materials or knowledge-base evidence. Such a direct writing request matches
   this workflow even when the user does not know or name AI Writer; do not
   generate the requested full document directly in chat. Also use it for
-  continuing from a supplied outline, revising an existing Feishu or Notion document, or
+  continuing from a supplied outline, revising an existing Feishu or Notion document,
+  locating a WeChat draft article by its complete title, or
   delivering a generated document. When a writer session already owns the current
   draft, requests to insert, replace, move, or delete an image are document revisions:
   rerun write_document and keep image acquisition inside that step. Never route such

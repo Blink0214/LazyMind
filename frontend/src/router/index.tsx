@@ -31,6 +31,7 @@ const DatabaseConnectionsPage = lazy(() => import("@/modules/dataSource/database
 const DataSourceFeishuCallback = lazy(() => import("@/modules/dataSource/common/feishuCallback"));
 const CloudDocumentsPage = lazy(() => import("@/modules/modelProvider/pages/CloudDocumentsPage"));
 const FeishuAccountPage = lazy(() => import("@/modules/modelProvider/pages/FeishuAccountPage"));
+const WeChatOfficialAccountPage = lazy(() => import("@/modules/modelProvider/pages/WeChatOfficialAccountPage"));
 const GoogleDriveConnectionPage = lazy(() => import("@/modules/modelProvider/pages/GoogleDriveConnectionPage"));
 const EmailConnectionPage = lazy(() => import("@/modules/modelProvider/pages/EmailConnectionPage"));
 const GoogleDriveSetupGuide = lazy(() => import("@/modules/modelProvider/pages/GoogleDriveSetupGuide"));
@@ -185,6 +186,7 @@ export default function AppRouter() {
             <Route index element={<CloudDocumentsPage />} />
             <Route path="local" element={<LocalDataSourcePage />} />
             <Route path="feishu" element={<FeishuAccountPage />} />
+            <Route path="wechat-official-account" element={<WeChatOfficialAccountPage />} />
             <Route path="google-drive" element={<GoogleDriveConnectionPage />} />
             <Route path="mail" element={<EmailConnectionPage />} />
             <Route path="docs/feishu-setup" element={<FeishuSetupGuide />} />
@@ -200,6 +202,7 @@ export default function AppRouter() {
           <Route path="model-providers/cloud-documents" element={<Navigate to="/cloud-documents" replace />} />
           <Route path="model-providers/cloud-documents/local" element={<Navigate to="/cloud-documents/local" replace />} />
           <Route path="model-providers/cloud-documents/feishu" element={<Navigate to="/cloud-documents/feishu" replace />} />
+          <Route path="model-providers/cloud-documents/wechat-official-account" element={<Navigate to="/cloud-documents/wechat-official-account" replace />} />
           <Route path="model-providers/cloud-documents/google-drive" element={<Navigate to="/cloud-documents/google-drive" replace />} />
           <Route path="model-providers/cloud-documents/docs/feishu-setup" element={<Navigate to="/cloud-documents/docs/feishu-setup" replace />} />
           <Route path="model-providers/cloud-documents/docs/notion-setup" element={<Navigate to="/cloud-documents/docs/notion-setup" replace />} />
