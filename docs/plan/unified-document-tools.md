@@ -34,8 +34,10 @@ not depend directly on individual writing methods or algorithm-local paths.
 
 ### Capability and Toolkit exposure
 
-All 43 existing public methods on `WriterToolkitBase` belong to the algorithm
-Capability API. The following seven capabilities are included in that API but
+All 43 pre-integration public methods on `WriterToolkitBase`, plus the two
+provider-integration capabilities `resolve_create_target` and
+`prepare_markdown_for_editor`, belong to the 45-method algorithm Capability
+API. The following nine capabilities are included in that API but
 are not added to the Chat Agent Toolkit API:
 
 - `collect_available_media`
@@ -45,6 +47,8 @@ are not added to the Chat Agent Toolkit API:
 - `execute_writing_subtasks`
 - `stream_draft_blocks_ir`
 - `stream_draft_blocks_markdown`
+- `resolve_create_target`
+- `prepare_markdown_for_editor`
 
 The Chat Agent exposure remains compatible with the pre-refactoring version:
 the existing 36 entries in the toolkit `__public_apis__` lists are neither
@@ -346,7 +350,7 @@ Status: confirmed.
 The algorithm implementation is eligible for backend handoff only after the
 relevant automated suites are green:
 
-- Capability ownership and the complete 43-method API snapshot.
+- Capability ownership and the complete 45-method API snapshot.
 - The unchanged 36-tool Chat Agent exposure and legacy import, class-name, and
   tool-name compatibility.
 - Golden regression fixtures for the pre-refactoring MD/LMD conversions.

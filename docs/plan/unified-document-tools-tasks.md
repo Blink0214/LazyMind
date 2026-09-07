@@ -1,10 +1,10 @@
 # Unified Document Tools Task Tracker
 
-Last updated: 2026-09-04
+Last updated: 2026-09-07
 
-Branch: `unify-doc-tools`
+Branch: `dev-plugin`
 
-Checkpoint: `d3629e28` (`wip(writer): checkpoint unified document tools`)
+Base checkpoint: `0931cda8` (`refactor(writer): split shared document tools`)
 
 This file tracks implementation progress for the decisions recorded in
 `[unified-document-tools.md](./unified-document-tools.md)`. Update an item only
@@ -26,7 +26,7 @@ criteria are not complete.
 | ID  | Task                                                                | Status |
 | --- | ------------------------------------------------------------------- | ------ |
 | A1  | Define Capability, Toolkit, and Action API layers.                  | DONE   |
-| A2  | Fix the public scope at 43 Capability APIs and 36 Chat Agent tools. | DONE   |
+| A2  | Fix the public scope at 45 Capability APIs and 36 Chat Agent tools. | DONE   |
 | A3  | Preserve the pre-refactoring MD/LMD conversion behavior.            | DONE   |
 | A4  | Define legacy `writer.py` import compatibility.                     | DONE   |
 | A5  | Define the scope of the four v1 backend-facing Actions.             | DONE   |
@@ -46,7 +46,7 @@ criteria are not complete.
 | --- | ------------------------------------------------------------------------------------------------ | ------- |
 | B1  | Move schemas, JSON helpers, Artifact files, and path handling into `artifacts.py`.               | DONE |
 | B2  | Move MD/LMD reading, writing, conversion, and Markdown rendering into `artifacts.py`.            | DONE |
-| B3  | Move cross-reference discovery, binding, and refresh into `references.py`.                       | DONE |
+| B3  | Move the existing cross-reference target aggregation and binding into `references.py`.           | DONE |
 | B4  | Move revision-task construction, target location, and modification planning into `revision.py`.  | DONE |
 | B5  | Move Patch generation, validation, and application into `revision.py`.                           | DONE |
 | B6  | Move provider locator and target resolution into `resources.py`.                                 | DONE |
@@ -58,7 +58,7 @@ criteria are not complete.
 | B12 | Restrict each concrete Toolkit to its own capability set.                                        | DONE |
 | B13 | Reduce `toolkits.py` to composition and Chat Agent exposure.                                     | DONE |
 | B14 | Reduce `WriterToolkitBase` to a legacy compatibility aggregate.                                  | DONE |
-| B15 | Keep the seven Workflow capabilities available without exposing them to Chat Agents.             | DONE |
+| B15 | Keep the nine Workflow-only capabilities available without exposing them to Chat Agents.          | DONE |
 
 
 Implementation order:
@@ -138,7 +138,7 @@ execute phase deterministic and must not call the model again.
 | E4  | Treat explicit cross-provider publication as unbind-and-copy.                  | PARTIAL |
 | E5  | Remove the three default-Feishu arguments from Writer Workflow functions.      | DONE    |
 | E6  | Generalize or clearly deprecate `/api/writer/documents:sync`.                  | PARTIAL |
-| E7  | Audit `document_tools` for provider-specific branches.                         | DONE    |
+| E7  | Audit and remove provider-specific branches from `document_tools`.             | PARTIAL |
 | E8  | Add the structured `PROVIDER_CAPABILITY_UNSUPPORTED` error.                    | TODO    |
 | E9  | Prevent provider switching or document creation after failed bound write-back. | TODO    |
 | E10 | Prevent automatic retry after ambiguous external write outcomes.               | TODO    |
@@ -158,7 +158,7 @@ handoff.
 | L1  | Add the `WriterProviderCapabilities` data model.                              | TODO     |
 | L2  | Make optional provider capabilities unsupported by default.                   | TODO     |
 | L3  | Declare the tested Feishu and Notion capabilities.                            | TODO     |
-| L4  | Declare GitHub and WeChat capabilities after their provider PRs stabilize.    | EXTERNAL |
+| L4  | Declare GitHub and WeChat capabilities after their provider PRs stabilize.    | TODO     |
 | L5  | Remove the default Feishu adapter from `WriterResourceTools.create_document`. | TODO     |
 | L6  | Require revision checks for safe Patch-by-replace implementations.            | TODO     |
 
@@ -171,7 +171,7 @@ handoff.
 | ID  | Task                                                                       | Status  |
 | --- | -------------------------------------------------------------------------- | ------- |
 | T1  | Verify legacy `writer.py` imports.                                         | DONE |
-| T2  | Snapshot all 43 Capability APIs and their owners.                          | DONE |
+| T2  | Snapshot all 45 Capability APIs and their owners.                          | DONE |
 | T3  | Snapshot the unchanged 36 Chat Agent tools.                                | DONE |
 | T4  | Verify class names and registered tool names.                              | DONE |
 | T5  | Add pre-refactoring MD/LMD golden fixtures.                                | PARTIAL |
@@ -229,9 +229,9 @@ algorithm-local paths or provider-specific writing branches.
 | I1  | Do not chase every intermediate GitHub/WeChat PR update from this branch.             | DONE     |
 | I2  | Merge whichever implementation first passes its acceptance gate.                      | DONE     |
 | I3  | Make the later-merging side adapt to the latest shared interface.                     | DONE     |
-| I4  | Update the LazyLLM submodule SHA after provider PRs stabilize.                        | EXTERNAL |
-| I5  | Merge the latest `dev-plugin` into this branch if a provider integration lands first. | EXTERNAL |
-| I6  | Require provider PRs to migrate to `document_tools` if this refactoring lands first.  | EXTERNAL |
+| I4  | Update the LazyLLM submodule SHA after provider PRs stabilize.                        | DONE     |
+| I5  | Merge the latest `dev-plugin` provider integrations into the refactoring.             | DONE     |
+| I6  | Adapt merged provider integrations to `document_tools`.                              | DONE     |
 | I7  | Run final Feishu/Notion/GitHub/WeChat joint regression.                               | TODO     |
 | I8  | Integrate Obsidian through the shared interface when its work is available.           | EXTERNAL |
 
@@ -247,22 +247,22 @@ algorithm-local paths or provider-specific writing branches.
 | Physical capability split          | 15/15 items done                                      | Complete      |
 | Writer Workflow thinning           | 3 done, 3 partial, 3 not started                      | In progress   |
 | Shared Artifact Actions            | 3 infrastructure rules done, 13 items not started     | Early stage   |
-| Provider-neutral behavior          | 2 done, 5 partial, 3 not started                      | In progress   |
-| LazyLLM provider contract          | 5 not started, 1 waiting on provider PRs              | Not started   |
+| Provider-neutral behavior          | 1 done, 6 partial, 3 not started                      | In progress   |
+| LazyLLM provider contract          | 6 not started                                         | Not started   |
 | Compatibility and acceptance tests | 4 done, 4 partial, 15 not started                     | In progress   |
 | Backend handoff                    | 1 done, 2 partial, 7 not started                      | Early stage   |
-| Parallel knowledge-source work     | 3 coordination rules done, 4 external, 1 final test  | Parallel      |
+| Parallel knowledge-source work     | 6 integration items done, 1 final test, 1 external   | Parallel      |
 
 
 ## Current implementation boundary
 
 Completed in the working tree:
 
-- The 57 existing document capability methods are physically owned by
-  `artifacts.py`, `writing.py`, `revision.py`, and `resources.py` without adding
-  or removing a capability method.
+- All 43 pre-integration document capability methods remain physically owned by
+  `artifacts.py`, `writing.py`, `revision.py`, and `resources.py`. GitHub and
+  WeChat integration add two Workflow-only resource capabilities, for 45 total.
 - `toolkits.py` now contains composition and compatibility only. The three
-  concrete Toolkits retain the existing 36 Chat Agent tools, while the seven
+  concrete Toolkits retain the existing 36 Chat Agent tools, while the nine
   Workflow-only capabilities remain algorithm APIs.
 - Legacy imports through `lazymind.chat.engine.tools.writer` remain available.
 - Reusable short-writing, media, selection-revision, provider-locator, and
@@ -283,6 +283,9 @@ Not yet complete:
   built-in implementations. `actions.py` is still a registry scaffold.
 - Provider binding lifecycle, cross-provider copy semantics, structured
   capability errors, ambiguous-write handling, and conflict tests are not done.
+- GitHub Markdown handling and WeChat cover preparation still appear as
+  provider-specific branches in `document_tools`; E7 remains partial until
+  these differences move behind the LazyLLM provider capability contract.
 - The LazyLLM provider-capability contract has not started.
 - The backend handoff package and final acceptance suite are incomplete.
 
@@ -291,19 +294,18 @@ Not yet complete:
 
 ## Latest verification
 
-- Python compilation and Pyflakes checks pass for `document_tools`, the Writer
-  Workflow adapter, and the modified Workflow route.
-- `git diff --check` passes.
-- 12 focused module ownership, API snapshot, legacy import, conversion,
-  provider-neutral sync, and action-registry tests pass.
-- All 20 Writer Workflow drafting, revision, stream, local LMD, and media tests
-  pass with a temporary `rapidfuzz` import shim; the shim is outside the repo.
-- 2 hermetic stream-recovery tests pass.
-- 22 academic and bid Writer bridge tests pass.
+- The 45-method Capability API snapshot, unchanged 36-tool Toolkit exposure,
+  legacy imports, conversions, provider synchronization, and Action registry
+  tests pass.
+- 27 focused `document_tools` and WeChat/GitHub integration tests pass.
+- 23 Writer Workflow drafting, revision, stream, local LMD, media, and
+  stream-recovery tests pass with a process-local `rapidfuzz` import shim; no
+  shim file is stored in the repository.
+- `git diff --check` and focused Python compilation pass.
 - Shared MD/LMD conversion, short-document planning/streaming, media search and
-  filtering, cross-reference discovery/refresh, provider locator resolution,
+  filtering, cross-reference target binding, provider locator resolution,
   and provider-neutral synchronization now live under `document_tools`.
-- 54 relevant tests pass in the final focused run.
+- 50 relevant tests pass in the current focused run.
 - The focused MD/LMD test now asserts the exact established envelope data and
   rendered Markdown instead of checking only for substrings.
 - The broader local suite remains unavailable until the real optional Runtime/RAG

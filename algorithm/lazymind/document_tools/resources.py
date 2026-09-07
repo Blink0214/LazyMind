@@ -329,11 +329,14 @@ def _source_document_target(
         return targets[0]
     try:
         provider = match_writer_provider(user_input)
-        target = provider.resolve(user_input)
     except ValueError as exc:
         raise ToolExecutionError(
             "A supported provider document locator is required."
         ) from exc
+    try:
+        target = provider.resolve(user_input)
+    except ValueError as exc:
+        raise ToolExecutionError(str(exc)) from exc
     target.meta = {**target.meta, "stage": stage}
     return target
 

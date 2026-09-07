@@ -4,7 +4,13 @@ New code should import from :mod:`lazymind.document_tools`.  This module keeps
 existing Chat Agent and Workflow package imports stable during migration.
 """
 
-from lazymind.document_tools.resources import sync_writer_documents  # noqa: F401
+from lazyllm.tools.agent import ToolExecutionError  # noqa: F401
+from lazyllm.tools.writer.tools import WriterResourceTools  # noqa: F401
+from lazymind.document_tools.resources import (  # noqa: F401
+    _prepare_wechat_cover,
+    _published_link,
+    sync_writer_documents,
+)
 from lazymind.document_tools.toolkits import (  # noqa: F401
     DraftMarkdownStreamEventEmitter,
     WriterCreateToolkit,
@@ -16,10 +22,14 @@ from lazymind.document_tools.toolkits import (  # noqa: F401
 
 __all__ = [
     'DraftMarkdownStreamEventEmitter',
+    'ToolExecutionError',
     'WriterCreateToolkit',
+    'WriterResourceTools',
     'WriterResourceToolkit',
     'WriterRevisionToolkit',
     'WriterToolkitBase',
+    '_prepare_wechat_cover',
+    '_published_link',
     'sync_writer_documents',
     'writer_schema',
 ]

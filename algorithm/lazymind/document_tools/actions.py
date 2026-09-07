@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Literal
 
-DocumentActionPhase = Literal["preview", "apply", "execute"]
+DocumentActionPhase = Literal["preview", "execute"]
 DocumentAction = Callable[..., Any]
 
 _DOCUMENT_ACTIONS: dict[str, dict[DocumentActionPhase, DocumentAction]] = {}
@@ -24,6 +24,8 @@ def register_document_action(
     action = name.strip()
     if not action:
         raise ValueError("document action name must not be empty")
+    if phase not in {"preview", "execute"}:
+        raise ValueError(f"unsupported document action phase: {phase!r}")
     if not callable(handler):
         raise TypeError("document action handler must be callable")
     phases = _DOCUMENT_ACTIONS.setdefault(action, {})

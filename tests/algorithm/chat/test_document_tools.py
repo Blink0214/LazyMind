@@ -85,6 +85,8 @@ WORKFLOW_ONLY_APIS = {
     "execute_writing_subtasks",
     "stream_draft_blocks_ir",
     "stream_draft_blocks_markdown",
+    "resolve_create_target",
+    "prepare_markdown_for_editor",
 }
 
 
@@ -94,6 +96,20 @@ def test_legacy_writer_import_uses_shared_document_toolkit():
     assert DocumentRevisionToolkit is WriterRevisionToolkit
     assert DocumentResourceToolkit is WriterResourceToolkit
     assert RegisteredWriterRevisionToolkit is WriterRevisionToolkit
+
+
+def test_legacy_writer_import_retains_provider_integration_symbols():
+    from lazymind.chat.engine.tools.writer import (
+        ToolExecutionError as LegacyToolExecutionError,
+        WriterResourceTools as LegacyWriterResourceTools,
+        _prepare_wechat_cover,
+        _published_link,
+    )
+
+    assert LegacyToolExecutionError is ToolExecutionError
+    assert LegacyWriterResourceTools.__name__ == "WriterResourceTools"
+    assert callable(_prepare_wechat_cover)
+    assert callable(_published_link)
 
 
 def test_document_action_registry_is_explicit_and_deterministic():
@@ -107,6 +123,9 @@ def test_document_action_registry_is_explicit_and_deterministic():
 
     with pytest.raises(ValueError, match="already registered"):
         register_document_action("test_document_action", "preview", preview)
+
+    with pytest.raises(ValueError, match="unsupported document action phase"):
+        register_document_action("test_document_action", "apply", preview)
 
 
 def test_concrete_toolkits_own_disjoint_capability_sets():
@@ -122,6 +141,37 @@ def test_concrete_toolkits_own_disjoint_capability_sets():
     assert issubclass(WriterResourceToolkit, WriterResourceCapabilities)
     assert not issubclass(WriterResourceToolkit, WriterWritingCapabilities)
     assert not issubclass(WriterResourceToolkit, WriterRevisionCapabilities)
+
+
+def test_all_45_capabilities_have_one_physical_owner():
+    owners = (
+        WriterWritingCapabilities,
+        WriterArtifactCapabilities,
+        WriterRevisionCapabilities,
+        WriterResourceCapabilities,
+    )
+    owned = {
+        owner: {
+            name
+            for name, value in vars(owner).items()
+            if not name.startswith("_") and callable(value)
+        }
+        for owner in owners
+    }
+
+    resource_workflow_apis = {
+        "resolve_create_target",
+        "prepare_markdown_for_editor",
+    }
+    assert owned[WriterWritingCapabilities] == (
+        WRITING_CHAT_APIS - {"render_markdown"}
+    ) | (WORKFLOW_ONLY_APIS - resource_workflow_apis)
+    assert owned[WriterArtifactCapabilities] == {"render_markdown"}
+    assert owned[WriterRevisionCapabilities] == REVISION_CHAT_APIS
+    assert owned[WriterResourceCapabilities] == (
+        RESOURCE_CHAT_APIS | resource_workflow_apis
+    )
+    assert sum(len(names) for names in owned.values()) == 45
 
 
 def test_chat_toolkit_exposure_remains_the_36_tool_snapshot():
@@ -142,9 +192,10 @@ def test_chat_toolkit_exposure_remains_the_36_tool_snapshot():
         == 36
     )
     assert WORKFLOW_ONLY_APIS.isdisjoint(WriterCreateToolkit.__public_apis__)
+    assert WORKFLOW_ONLY_APIS.isdisjoint(WriterResourceToolkit.__public_apis__)
 
 
-def test_legacy_aggregate_retains_all_43_capabilities():
+def test_legacy_aggregate_retains_all_45_capabilities():
     expected = (
         WRITING_CHAT_APIS | REVISION_CHAT_APIS | RESOURCE_CHAT_APIS | WORKFLOW_ONLY_APIS
     )
@@ -154,6 +205,7 @@ def test_legacy_aggregate_retains_all_43_capabilities():
         if not name.startswith("_") and callable(getattr(WriterToolkitBase, name))
     }
     assert capabilities == expected
+    assert len(capabilities) == 45
 
 
 def test_markdown_heading_normalization_accepts_tab_separator():
