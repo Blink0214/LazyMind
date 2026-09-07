@@ -84,17 +84,18 @@ tool_scripts:
 artifact_actions:
   rewrite_selection:
     slots: [outline_document, flat_draft_document, draft_document]
-    preview_tool: writer_preview_selection_rewrite
+    preview_tool: builtin:document.rewrite_selection.v1
+    execute_tool: builtin:document.rewrite_selection.v1
   sync_document:
     slots: [draft_document]
-    execute_tool: writer_sync_document
+    execute_tool: builtin:document.sync_document.v1
   render_document:
     slots: [source_document, outline_document, flat_draft_document, draft_document]
-    preview_tool: writer_render_document
-    execute_tool: writer_render_document
+    preview_tool: builtin:document.render_document.v1
+    execute_tool: builtin:document.render_document.v1
   save_document:
     slots: [outline_document, flat_draft_document, draft_document]
-    execute_tool: writer_save_document
+    execute_tool: builtin:document.save_document.v1
 
 steps:
   - id: prepare

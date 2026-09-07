@@ -319,9 +319,7 @@ def _provider_target(user_input: str, *, stage: str | None = None) -> TargetDocu
     return targets[0]
 
 
-def _source_document_target(
-    user_input: str, *, stage: str = "final"
-) -> TargetDocument:
+def _source_document_target(user_input: str, *, stage: str = "final") -> TargetDocument:
     targets = _provider_targets(user_input, stage=stage)
     if len(targets) > 1:
         raise ToolExecutionError("Exactly one provider document locator is required.")
@@ -400,7 +398,9 @@ def _target_from_document(value: Any) -> TargetDocument | None:
 def _published_link(target: TargetDocument) -> str:
     link = str(
         target.meta.get("browser_url")
-        or (target.uri if (target.uri or "").startswith(("http://", "https://")) else "")
+        or (
+            target.uri if (target.uri or "").startswith(("http://", "https://")) else ""
+        )
     ).strip()
     if not link:
         raise ToolExecutionError(
@@ -432,11 +432,7 @@ def _prepare_wechat_cover(
     model_available: Callable[[str], bool] | None = None,
     generator: Callable[..., dict[str, Any]] | None = None,
 ) -> TargetDocument:
-    if (
-        target.adapter != "wechat"
-        or target.doc_id
-        or target.meta.get("thumb_media_id")
-    ):
+    if target.adapter != "wechat" or target.doc_id or target.meta.get("thumb_media_id"):
         return target
     if isinstance(document, WriterDocument):
         binding = document.provider_binding
@@ -514,7 +510,8 @@ class WriterResourceCapabilities:
                     if artifact_paths.get("input_resources")
                     else []
                 ),
-                "resource_warnings": (result.get("metadata") or {}).get("warnings") or [],
+                "resource_warnings": (result.get("metadata") or {}).get("warnings")
+                or [],
             }
         )
 
@@ -697,7 +694,11 @@ class WriterResourceCapabilities:
         target = _resolve_target(source, target_document_json, target_uri)
         if target is None:
             raise ToolExecutionError("A target provider document is required.")
-        if target.meta.get("create_pending") and not target.title and target_title.strip():
+        if (
+            target.meta.get("create_pending")
+            and not target.title
+            and target_title.strip()
+        ):
             target.title = target_title.strip()
         publish_document = (
             _set_document_editable(document, stage="final")
@@ -732,7 +733,9 @@ class WriterResourceCapabilities:
                         else publish_document
                     ),
                     "representation": (
-                        "ir" if isinstance(publish_document, WriterDocument) else "markdown"
+                        "ir"
+                        if isinstance(publish_document, WriterDocument)
+                        else "markdown"
                     ),
                     "provider": "github",
                     "published_link": _published_link(target),
@@ -740,7 +743,9 @@ class WriterResourceCapabilities:
                 }
             )
         refreshed_target = target.model_dump(exclude_defaults=True)
-        artifact_paths = (write_result.get("metadata") or {}).get("artifact_paths") or {}
+        artifact_paths = (write_result.get("metadata") or {}).get(
+            "artifact_paths"
+        ) or {}
         persisted_path = artifact_paths.get("persisted_document")
         if persisted_path:
             published_value = _read_artifact_data(persisted_path)
@@ -795,6 +800,17 @@ def resolve_provider_target(
     return _provider_target(user_input, stage=stage)
 
 
+def provider_reference(value: str) -> str:
+    """Return a concrete provider locator or the matched provider name."""
+    locator = find_provider_locator(value)
+    if locator:
+        return locator
+    try:
+        return match_writer_provider(value).provider
+    except ValueError:
+        return ""
+
+
 def extract_provider_resources(user_input: str) -> list[dict]:
     return _extract_provider_resources(user_input)
 
@@ -810,6 +826,7 @@ def resolve_document_target(
 __all__ = [
     "WriterResourceCapabilities",
     "extract_provider_resources",
+    "provider_reference",
     "resolve_provider_target",
     "resolve_provider_targets",
     "sync_document",

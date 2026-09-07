@@ -37,6 +37,110 @@ from .artifacts import (
 from .resources import _target_from_document
 
 
+def modify_plan_needs_media(plan: dict[str, Any]) -> bool:
+    """Return whether a normalized revision plan requests visual changes."""
+    return any(
+        isinstance(instruction, dict) and bool(instruction.get("visual_instruction"))
+        for instruction in (plan.get("instructions") or [])
+    )
+
+
+def finalize_markdown_revision(
+    markdown: str, resolved_media_assets: Any = None
+) -> str:
+    """Resolve media placeholders introduced by a Markdown revision."""
+    if resolved_media_assets is None:
+        return markdown
+    from .writing import fill_markdown_media_placeholders
+
+    return fill_markdown_media_placeholders(markdown, resolved_media_assets)
+
+
+def generate_revision_set(
+    document: Any,
+    writing_context: Any,
+    modify_plan: dict[str, Any],
+    *,
+    media_assets: Any = None,
+) -> dict[str, Any]:
+    """Generate the representation-appropriate deterministic revision set."""
+    toolkit = WriterRevisionCapabilities()
+    if isinstance(document, str):
+        return {
+            "revision_set": _json_loads(
+                toolkit.generate_string_replace_set(
+                    markdown_document=document,
+                    modify_plan_json=_json_dumps(modify_plan),
+                    writing_context_json=_json_dumps(writing_context),
+                ),
+                {},
+            ),
+            "schema_name": writer_schema("revision.StringReplaceSet"),
+        }
+    return {
+        "revision_set": _json_loads(
+            toolkit.generate_patch_set(
+                writer_document_json=_json_dumps(document),
+                modify_plan_json=_json_dumps(modify_plan),
+                writing_context_json=_json_dumps(writing_context),
+                media_assets_json=(
+                    _json_dumps(media_assets) if media_assets is not None else ""
+                ),
+            ),
+            {},
+        ),
+        "schema_name": writer_schema("revision.PatchSet"),
+    }
+
+
+def apply_document_revision(
+    document: Any,
+    writing_context: Any,
+    revision_set: dict[str, Any],
+    *,
+    media_assets: Any = None,
+    sync_provider: bool = False,
+    allow_outline: bool = True,
+) -> dict[str, Any]:
+    """Apply the representation-appropriate revision and normalize its result."""
+    toolkit = WriterRevisionCapabilities()
+    if isinstance(document, str):
+        payload = _json_loads(
+            toolkit.apply_string_replace(
+                markdown_document=document,
+                string_replace_set_json=_json_dumps(revision_set),
+                writing_context_json=_json_dumps(writing_context),
+            ),
+            {},
+        )
+        payload["revised_document"] = finalize_markdown_revision(
+            payload.get("revised_document") or "", media_assets
+        )
+        return {
+            "payload": payload,
+            "result": payload.get("string_replace_result") or {},
+            "schema_name": writer_schema("revision.StringReplaceResult"),
+        }
+    payload = _json_loads(
+        toolkit.apply_revision(
+            writer_document_json=_json_dumps(document),
+            patch_set_json=_json_dumps(revision_set),
+            writing_context_json=_json_dumps(writing_context),
+            media_assets_json=(
+                _json_dumps(media_assets) if media_assets is not None else ""
+            ),
+            sync_provider=sync_provider,
+            allow_outline=allow_outline,
+        ),
+        {},
+    )
+    return {
+        "payload": payload,
+        "result": payload.get("patch_result") or {},
+        "schema_name": writer_schema("revision.PatchResult"),
+    }
+
+
 def preview_selection_rewrite(
     document: str | dict,
     instruction: str,
@@ -568,5 +672,9 @@ from .resources import sync_writer_documents
 
 __all__ = [
     "WriterRevisionCapabilities",
+    "apply_document_revision",
+    "finalize_markdown_revision",
+    "generate_revision_set",
+    "modify_plan_needs_media",
     "sync_writer_documents",
 ]

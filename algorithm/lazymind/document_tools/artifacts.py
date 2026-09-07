@@ -6,7 +6,7 @@ import re
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from lazyllm.tools.agent import ToolExecutionError
 from lazyllm.tools.writer.data_models import (
     SectionInstruction,
@@ -14,8 +14,15 @@ from lazyllm.tools.writer.data_models import (
     WriterDocument,
 )
 from lazyllm.tools.writer.numbering import (
+    apply_numbering_update_ir,
+    apply_numbering_update_markdown,
+    build_numbering_view_from_ir,
     build_numbering_view_from_markdown,
     compute_numbering,
+    dematerialize_ir,
+    dematerialize_markdown,
+    ensure_markdown_heading_anchors,
+    format_target_number,
     materialize_markdown,
 )
 from lazyllm.tools.writer.utils import (
@@ -40,6 +47,73 @@ _MARKDOWN_DRAFT_ROOT_ERROR = (
 
 def writer_schema(name: str) -> str:
     return f"{WRITER_DATA_MODEL_SCHEMA_PREFIX}.{name}"
+
+
+def persist_artifact_json(
+    data: Any,
+    path: str,
+    *,
+    schema_name: str,
+    created_by: str,
+    extra_meta: dict[str, Any] | None = None,
+) -> str:
+    """Persist an LMD/JSON envelope through the shared Writer artifact format."""
+    return save_artifact_json(
+        data,
+        path,
+        schema_name=schema_name,
+        created_by=created_by,
+        extra_meta=extra_meta,
+    )
+
+
+def normalize_writer_document(
+    value: str | dict[str, Any],
+    *,
+    expected_stage: str | None = None,
+    editable: bool = False,
+) -> str:
+    """Normalize Writer IR while preserving Markdown as plain text."""
+    if isinstance(value, str):
+        try:
+            payload = _json_loads(value, {})
+        except json.JSONDecodeError:
+            return value
+    else:
+        payload = dict(value or {})
+    if isinstance(payload, str):
+        return payload
+    document = WriterDocument.model_validate(payload)
+    if expected_stage is not None and document.stage != expected_stage:
+        raise ValueError(
+            f"WriterDocument must have stage={expected_stage!r}; "
+            f"got {document.stage!r}."
+        )
+    if document.metadata.get("kind") == "step_status":
+        raise ValueError("A writer status placeholder cannot be used as a document artifact.")
+    if expected_stage == "outline" and len(document.blocks) < 3:
+        raise ValueError(
+            "An outline WriterDocument must contain at least three top-level blocks."
+        )
+    if editable:
+        document.ui_editable = True
+    return document.model_dump_json(exclude_defaults=True)
+
+
+def detach_provider_binding(value: Any) -> dict[str, Any]:
+    """Turn imported Writer IR into an independent local document."""
+    document = WriterDocument.model_validate(value)
+    document.provider_binding.clear()
+    document.metadata.pop("source", None)
+    for block in document.iter_blocks():
+        block.provider_binding.clear()
+    return document.model_dump(exclude_defaults=True)
+
+
+def markdown_filename(title: str) -> str:
+    """Return a safe Markdown download filename for a document title."""
+    filename = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", title).strip(" ._")
+    return f"{filename[:80] or '文稿'}.md"
 
 
 def _json_dumps(value: Any) -> str:
@@ -269,6 +343,81 @@ def lmd_to_markdown(value: str) -> str:
     return writer_document_to_markdown(writer_document_from_lmd(value))
 
 
+def _numbering_payload(view: Any, numbering: Mapping[str, Any]) -> dict[str, Any]:
+    entries: dict[str, dict[str, Any]] = {}
+    for node_id, entry in numbering.items():
+        payload: dict[str, Any] = {"label": format_target_number(entry)}
+        if entry.kind == "section":
+            payload.update(mode=entry.mode, restart=entry.restart)
+        entries[node_id] = payload
+    return {"ordered_style": view.ordered_style, "entries": entries}
+
+
+def render_document(value: Any) -> dict[str, Any]:
+    """Render canonical editable content and its generated numbering sidecar."""
+    if isinstance(value, str):
+        document = ensure_markdown_heading_anchors(value)
+        view = build_numbering_view_from_markdown(document)
+        numbering = compute_numbering(view)
+        title_match = re.search(r"^#\s+(.+)$", document, re.MULTILINE)
+        return {
+            "title": title_match.group(1).strip() if title_match else "",
+            "representation": "markdown",
+            "document": document,
+            "export_document": materialize_markdown(document, view, numbering),
+            "numbering": _numbering_payload(view, numbering),
+        }
+    source = WriterDocument.model_validate(value)
+    view = build_numbering_view_from_ir(source)
+    numbering = compute_numbering(view)
+    return {
+        "title": source.title,
+        "representation": "ir",
+        "document": source.model_dump(exclude_defaults=True),
+        "numbering": _numbering_payload(view, numbering),
+    }
+
+
+def save_document(
+    value: Any,
+    base_value: Any,
+    numbering_update: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Normalize an editor value to canonical source plus numbering sidecar."""
+    if isinstance(value, str):
+        if not isinstance(base_value, str):
+            raise ValueError(
+                "base artifact representation does not match Markdown edit"
+            )
+        base_numbering = compute_numbering(
+            build_numbering_view_from_markdown(base_value)
+        )
+        clean = ensure_markdown_heading_anchors(
+            dematerialize_markdown(value, base_numbering)
+        )
+        if numbering_update is not None:
+            clean = apply_numbering_update_markdown(clean, numbering_update)
+        rendered = render_document(clean)
+        return {"source_document": clean, **rendered}
+
+    current = WriterDocument.model_validate(value)
+    base = WriterDocument.model_validate(base_value)
+    base_numbering = compute_numbering(build_numbering_view_from_ir(base))
+    clean = dematerialize_ir(current, base_numbering)
+    if numbering_update is not None:
+        clean = apply_numbering_update_ir(clean, numbering_update)
+    view = build_numbering_view_from_ir(clean)
+    numbering = compute_numbering(view)
+    document = clean.model_dump(exclude_defaults=True)
+    return {
+        "source_document": document,
+        "title": clean.title,
+        "representation": "ir",
+        "document": document,
+        "numbering": _numbering_payload(view, numbering),
+    }
+
+
 class WriterArtifactCapabilities:
     WRITER_IR_SCHEMA = WRITER_IR_SCHEMA
     WRITER_BLOCK_SCHEMA = WRITER_BLOCK_SCHEMA
@@ -301,8 +450,15 @@ __all__ = [
     "WRITER_DATA_MODEL_SCHEMA_PREFIX",
     "WRITER_IR_SCHEMA",
     "WriterArtifactCapabilities",
+    "WriterDocument",
     "lmd_to_markdown",
     "markdown_to_lmd",
+    "markdown_filename",
     "markdown_to_writer_document",
+    "normalize_writer_document",
+    "detach_provider_binding",
+    "persist_artifact_json",
+    "render_document",
+    "save_document",
     "writer_schema",
 ]

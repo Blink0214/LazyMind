@@ -61,6 +61,12 @@ func authoringDiagnosticsForDraft(db *gorm.DB, draft orm.WorkflowDraft) authorin
 			blocking = true
 		}
 	}
+	for _, diagnostic := range builtinArtifactActionDiagnostics(draft.WorkflowYAMLContent) {
+		out.Diagnostics = append(out.Diagnostics, diagnostic)
+		if diagnostic.Severity == "error" {
+			blocking = true
+		}
+	}
 	if !frameworkToolsAvailableForPublish(db, draft) {
 		out.Diagnostics = append(out.Diagnostics, authoringDiagnostic{Code: "FRAMEWORK_TOOL_UNAVAILABLE", Severity: "error", Message: "a mapped framework tool is unavailable"})
 	}

@@ -107,11 +107,36 @@ def test_markdown_writeback_preserves_multiple_generated_image_references(monkey
     ],
 )
 def test_build_writing_task_extracts_document_length_constraints(query, expected):
+    from lazymind.document_tools.writing import parse_writer_request_constraints
+
+    assert parse_writer_request_constraints(query) == expected
+
+
+def test_workflow_build_task_is_a_thin_shared_execution_call(monkeypatch, tmp_path):
+    from lazymind.document_tools import execution as document_execution
+
     tools = _load_tools_module()
+    runtime = tools
+    context = SimpleNamespace(
+        workspace_path=str(tmp_path),
+        params={'session_id': 'session-1'},
+    )
 
-    task = json.loads(tools.WriterCreateToolkit().build_writing_task(query))
+    class FakeWriterCreateToolkit:
+        def build_writing_task(self, query, task_id):
+            return json.dumps({'query': query, 'task_id': task_id})
 
-    assert task.get('constraints', {}) == expected
+    monkeypatch.setattr(runtime, 'require_context', lambda: context)
+    monkeypatch.setattr(
+        document_execution, '_WriterCreateToolkit', FakeWriterCreateToolkit,
+    )
+
+    path = tools.writer_build_writing_task('写一篇 800 字左右的小说')
+    task = runtime._read_json_file(path)
+
+    assert task['task_id'] == 'session-1'
+    assert task['constraints'] == {'target_chars': 800, 'max_chars': 880}
+    assert task['output']['representation'] == 'markdown'
 
 
 def test_writer_retrieve_uses_configured_search_provider(monkeypatch):
@@ -131,6 +156,65 @@ def test_writer_retrieve_uses_configured_search_provider(monkeypatch):
 
     assert tool_name == 'sciverse_search'
     assert result == [{'title': 'evidence'}]
+
+
+def test_shared_media_collection_applies_input_reuse_policy(monkeypatch, tmp_path):
+    from lazymind import model_config
+    from lazymind.document_tools import writing as writer
+
+    captured = {}
+
+    class FakeWritingCapabilities:
+        def build_resources(self, **_kwargs):
+            return json.dumps([{'resource_id': 'upload-1', 'meta': {}}])
+
+        def collect_available_media(self, **kwargs):
+            captured.update(kwargs)
+            return json.dumps({
+                'media_assets': {'library_id': 'media-1', 'assets': {}},
+                'profile_input_resources': json.loads(kwargs['input_resources_json']),
+                'warnings': [],
+            })
+
+    monkeypatch.setattr(writer, 'WriterWritingCapabilities', FakeWritingCapabilities)
+    monkeypatch.setattr(model_config, 'is_model_role_available', lambda _role: False)
+
+    result = writer.collect_document_media(
+        {'task_id': 'task-1', 'constraints': {
+            'visual_policy': {'require_input_image_reuse': True},
+        }},
+        file_paths=['/tmp/reference.png'],
+        media_store=str(tmp_path),
+    )
+
+    assert result['media_assets']['library_id'] == 'media-1'
+    resources = json.loads(captured['input_resources_json'])
+    assert resources[0]['meta']['origin'] == 'user_upload'
+    assert captured['use_vision_model'] is False
+
+
+def test_shared_visual_resolution_preserves_non_strict_failure(monkeypatch, tmp_path):
+    from lazymind import model_config
+    from lazymind.document_tools import writing as writer
+
+    class FakeWritingCapabilities:
+        def resolve_visual_needs(self, **_kwargs):
+            raise RuntimeError('resolver unavailable')
+
+    monkeypatch.setattr(writer, 'WriterWritingCapabilities', FakeWritingCapabilities)
+    monkeypatch.setattr(model_config, 'is_model_role_available', lambda _role: False)
+    media_assets = {'library_id': 'media-1', 'assets': {}}
+
+    result = writer.resolve_visual_media(
+        {'instructions': []},
+        media_assets,
+        media_store=str(tmp_path),
+    )
+
+    assert result['media_assets'] == media_assets
+    assert result['warnings'] == [
+        'Visual media resolution failed: RuntimeError: resolver unavailable',
+    ]
 
 
 @pytest.mark.parametrize(
@@ -153,9 +237,9 @@ def test_prepare_control_distinguishes_reference_from_edit_source(
     suggested_operation,
     expected_operation,
 ):
-    tools = _load_tools_module()
+    from lazymind.document_tools.writing import resolve_prepare_control
 
-    operation, target_stage = tools._resolve_prepare_control(
+    operation, target_stage = resolve_prepare_control(
         query,
         suggested_operation,
         has_document_source=True,
@@ -165,7 +249,10 @@ def test_prepare_control_distinguishes_reference_from_edit_source(
 
 
 def test_write_document_revision_emits_markdown_draft_stream(monkeypatch, tmp_path):
+    from lazymind.document_tools import revision as document_revision
+
     tools = _load_tools_module()
+    runtime = tools
     events: list[dict] = []
     context = SimpleNamespace(
         workspace_path=str(tmp_path),
@@ -180,8 +267,10 @@ def test_write_document_revision_emits_markdown_draft_stream(monkeypatch, tmp_pa
                 'revised_document': '# Revised title\n\nUpdated body.\n',
             })
 
-    monkeypatch.setattr(tools, 'require_context', lambda: context)
-    monkeypatch.setattr(tools, 'WriterRevisionToolkit', FakeWriterRevisionToolkit)
+    monkeypatch.setattr(runtime, 'require_context', lambda: context)
+    monkeypatch.setattr(
+        document_revision, 'WriterRevisionCapabilities', FakeWriterRevisionToolkit,
+    )
     base_document_path = tmp_path / 'draft.md'
     base_document_path.write_text('# Original\n', encoding='utf-8')
     writing_context_path = tmp_path / 'context.json'
@@ -215,7 +304,10 @@ def test_write_document_revision_emits_markdown_draft_stream(monkeypatch, tmp_pa
 
 
 def test_markdown_draft_blocks_do_not_pass_resolved_media(monkeypatch, tmp_path):
+    from lazymind.document_tools import execution as document_execution
+
     tools = _load_tools_module()
+    runtime = tools
     context = SimpleNamespace(
         workspace_path=str(tmp_path),
         params={'step_id': 'write_document'},
@@ -228,8 +320,10 @@ def test_markdown_draft_blocks_do_not_pass_resolved_media(monkeypatch, tmp_path)
             captured.update(kwargs)
             return json.dumps(['## 第一章\n\n正文。\n'])
 
-    monkeypatch.setattr(tools, 'require_context', lambda: context)
-    monkeypatch.setattr(tools, 'WriterCreateToolkit', FakeWriterCreateToolkit)
+    monkeypatch.setattr(runtime, 'require_context', lambda: context)
+    monkeypatch.setattr(
+        document_execution, '_WriterCreateToolkit', FakeWriterCreateToolkit,
+    )
     writing_task_path = tmp_path / 'writing_task.json'
     writing_task_path.write_text('{}', encoding='utf-8')
     section_instructions_path = tmp_path / 'section_instructions.json'
@@ -327,7 +421,10 @@ def test_wrapped_idle_timeout_restarts_section_preview_and_retries(monkeypatch):
 
 
 def test_markdown_assembly_drops_unregistered_images(monkeypatch, tmp_path):
+    from lazymind.document_tools import execution as document_execution
+
     tools = _load_tools_module()
+    runtime = tools
     context = SimpleNamespace(workspace_path=str(tmp_path), emit=lambda _event: None)
     media_assets = {
         'assets': {
@@ -348,8 +445,10 @@ def test_markdown_assembly_drops_unregistered_images(monkeypatch, tmp_path):
             sections = json.loads(kwargs['draft_sections_json'])
             return json.dumps({'draft_document': '\n'.join(sections)})
 
-    monkeypatch.setattr(tools, 'require_context', lambda: context)
-    monkeypatch.setattr(tools, 'WriterCreateToolkit', FakeWriterCreateToolkit)
+    monkeypatch.setattr(runtime, 'require_context', lambda: context)
+    monkeypatch.setattr(
+        document_execution, '_WriterCreateToolkit', FakeWriterCreateToolkit,
+    )
     sections = tmp_path / 'sections'
     sections.mkdir()
     (sections / 'draft_section_0001.md').write_text('\n'.join([
@@ -366,7 +465,7 @@ def test_markdown_assembly_drops_unregistered_images(monkeypatch, tmp_path):
     media_path = tmp_path / 'resolved_media_assets.json'
     media_path.write_text(json.dumps({'data': media_assets}), encoding='utf-8')
 
-    result_path = tools._assemble_draft_document_markdown(
+    result_path = runtime._assemble_draft_document_markdown(
         str(sections),
         str(context_path),
         resolved_media_assets_path=str(media_path),
@@ -382,7 +481,10 @@ def test_markdown_assembly_drops_unregistered_images(monkeypatch, tmp_path):
 
 
 def test_markdown_revision_fills_resolved_media_placeholder(monkeypatch, tmp_path):
+    from lazymind.document_tools import revision as document_revision
+
     tools = _load_tools_module()
+    runtime = tools
     context = SimpleNamespace(
         workspace_path=str(tmp_path),
         params={'step_id': 'write_document'},
@@ -396,8 +498,10 @@ def test_markdown_revision_fills_resolved_media_placeholder(monkeypatch, tmp_pat
                 'revised_document': '![Visual](media-placeholder://need-1)',
             })
 
-    monkeypatch.setattr(tools, 'require_context', lambda: context)
-    monkeypatch.setattr(tools, 'WriterRevisionToolkit', FakeWriterRevisionToolkit)
+    monkeypatch.setattr(runtime, 'require_context', lambda: context)
+    monkeypatch.setattr(
+        document_revision, 'WriterRevisionCapabilities', FakeWriterRevisionToolkit,
+    )
     base_document_path = tmp_path / 'draft.md'
     base_document_path.write_text('# Original\n', encoding='utf-8')
     writing_context_path = tmp_path / 'context.json'
@@ -611,13 +715,14 @@ def test_selection_rewrite_uses_slot_ir_artifact_filename(monkeypatch, tmp_path)
 
 def test_load_local_lmd_rejects_invalid_document(monkeypatch, tmp_path):
     tools = _load_tools_module()
+    runtime = tools
     source = tmp_path / 'broken.lmd'
     source.write_text('{"stage":"outline","blocks":[]}', encoding='utf-8')
     context = SimpleNamespace(
         workspace_path=str(tmp_path),
         params={'history_files_per_turn': {'turn-1': [str(source)]}},
     )
-    monkeypatch.setattr(tools, 'require_context', lambda: context)
+    monkeypatch.setattr(runtime, 'require_context', lambda: context)
 
     with pytest.raises(ValueError, match=r'Cannot parse LMD file broken\.lmd'):
         tools.writer_load_local_document('broken.lmd')
@@ -625,6 +730,7 @@ def test_load_local_lmd_rejects_invalid_document(monkeypatch, tmp_path):
 
 def test_load_local_lmd_removes_cloud_binding(monkeypatch, tmp_path):
     tools = _load_tools_module()
+    runtime = tools
     source = tmp_path / 'bound.lmd'
     source.write_text(json.dumps({'document_id': 'local-doc', 'blocks': [{
         'node_id': 'p1', 'type': 'paragraph', 'content': 'body',
@@ -636,9 +742,9 @@ def test_load_local_lmd_removes_cloud_binding(monkeypatch, tmp_path):
         workspace_path=str(tmp_path),
         params={'history_files_per_turn': {'turn-1': [str(source)]}},
     )
-    monkeypatch.setattr(tools, 'require_context', lambda: context)
+    monkeypatch.setattr(runtime, 'require_context', lambda: context)
 
-    loaded = tools._read_json_file(tools.writer_load_local_document('bound.lmd'))
+    loaded = runtime._read_json_file(tools.writer_load_local_document('bound.lmd'))
 
     assert loaded['document_id'] == 'local-doc'
     assert not loaded.get('provider_binding')
@@ -657,6 +763,7 @@ def test_draft_workspace_revise_uses_writing_task_representation(
     expected_writer,
 ):
     tools = _load_tools_module()
+    runtime = tools
     instruction = '修改文档'
 
     def write_json(name, payload):
@@ -670,7 +777,7 @@ def test_draft_workspace_revise_uses_writing_task_representation(
         'target_stage': 'document',
         'next_step': 'write_document',
         'user_instruction': instruction,
-        'request_fingerprint': tools._writer_request_fingerprint(instruction),
+        'request_fingerprint': runtime._writer_request_fingerprint(instruction),
     })
     writing_task = write_json(
         'writing_task.json',
@@ -719,21 +826,21 @@ def test_draft_workspace_revise_uses_writing_task_representation(
         calls.append('replace_document')
         return {'publish_result': {'success': True}, 'draft_document': draft_document}
 
-    monkeypatch.setattr(tools, 'require_context', lambda: context)
+    monkeypatch.setattr(runtime, 'require_context', lambda: context)
     monkeypatch.setattr(
-        tools,
+        runtime,
         '_draft_workspace_state',
         lambda _fingerprint: (state, tmp_path / 'checkpoint.json'),
     )
-    monkeypatch.setattr(tools, '_persist_draft_workspace_state', lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(tools, '_save_draft_workspace_artifacts', lambda _result: ['draft_document'])
+    monkeypatch.setattr(runtime, '_persist_draft_workspace_state', lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runtime, '_save_draft_workspace_artifacts', lambda _result: ['draft_document'])
     monkeypatch.setattr(
-        tools,
+        runtime,
         'writer_update_writing_context',
         lambda **_kwargs: context_after_draft,
     )
-    monkeypatch.setattr(tools, 'writer_publish_revision', publish_revision)
-    monkeypatch.setattr(tools, 'writer_replace_document', replace_document)
+    monkeypatch.setattr(runtime, 'writer_publish_revision', publish_revision)
+    monkeypatch.setattr(runtime, 'writer_replace_document', replace_document)
 
     result = tools.writer_draft_workspace()
 

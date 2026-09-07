@@ -4,7 +4,7 @@ Last updated: 2026-09-07
 
 Branch: `dev-plugin`
 
-Base checkpoint: `0931cda8` (`refactor(writer): split shared document tools`)
+Base checkpoint: `36cedb2d` (`fix(writer): complete document tool compatibility`)
 
 This file tracks implementation progress for the decisions recorded in
 `[unified-document-tools.md](./unified-document-tools.md)`. Update an item only
@@ -79,23 +79,22 @@ artifacts/references
 
 | ID  | Task                                                                         | Status |
 | --- | ---------------------------------------------------------------------------- | ------ |
-| C1  | Create the Writer Workflow private `runtime.py`.                             | TODO   |
-| C2  | Move checkpoint, fingerprint, and recovery behavior into `runtime.py`.       | TODO   |
-| C3  | Move private step, slot, and workspace state handling into `runtime.py`.     | TODO   |
-| C4  | Move reusable writing business logic into `document_tools`.                  | PARTIAL |
-| C5  | Move reusable revision and provider logic into `document_tools`.             | DONE    |
+| C1  | Consolidate Writer Workflow Python entry points in `scripts/tools.py`.        | DONE   |
+| C2  | Keep checkpoint, fingerprint, and recovery behavior Workflow-private.        | DONE   |
+| C3  | Keep private step, slot, and workspace state handling in the Workflow.       | DONE   |
+| C4  | Move reusable writing business logic into `document_tools`.                  | DONE   |
+| C5  | Move reusable revision and provider logic into `document_tools`.             | DONE   |
 | C6  | Preserve all `writer_*` entry-point names and signatures referenced by YAML. | DONE    |
-| C7  | Reduce every `writer_*` function to Runtime/path adaptation and forwarding.  | PARTIAL |
-| C8  | Preserve current progress and draft-stream event behavior.                   | DONE    |
-| C9  | Remove direct LazyLLM Writer implementation imports from Workflow adapters.  | PARTIAL |
+| C7  | Reduce non-orchestration `writer_*` functions to adaptation and forwarding.  | DONE   |
+| C8  | Preserve current progress and draft-stream event behavior.                   | DONE   |
+| C9  | Remove direct LazyLLM Writer implementation imports from Workflow adapters.  | DONE   |
 
 
 Target structure:
 
 ```text
 workflows/writer-workflow/scripts/
-├── tools.py       # thin YAML-callable adapters
-└── runtime.py     # private Workflow state and recovery
+└── tools.py       # YAML adapters plus private state/orchestration only
 ```
 
 
@@ -245,7 +244,7 @@ algorithm-local paths or provider-specific writing branches.
 | ---------------------------------- | ----------------------------------------------------- | ------------- |
 | Approved design                    | 10/10 design and scaffold items done                  | Complete      |
 | Physical capability split          | 15/15 items done                                      | Complete      |
-| Writer Workflow thinning           | 3 done, 3 partial, 3 not started                      | In progress   |
+| Writer Workflow thinning           | 9/9 items done                                        | Complete      |
 | Shared Artifact Actions            | 3 infrastructure rules done, 13 items not started     | Early stage   |
 | Provider-neutral behavior          | 1 done, 6 partial, 3 not started                      | In progress   |
 | LazyLLM provider contract          | 6 not started                                         | Not started   |
@@ -271,14 +270,21 @@ Completed in the working tree:
   signature-default changes remove the two remaining `adapter='feishu'`
   defaults from `writer_sync_document` and `writer_create_document`.
 - MD/LMD conversion delegates to the existing LazyLLM Writer conversion rules.
+- Writer Workflow request fingerprints, authoritative step inputs, checkpoint
+  recovery, atomic persistence, and its four private step state machines remain
+  together in `scripts/tools.py`; no Workflow-internal Python forwarding layer
+  is retained.
+- Stateless Workflow-facing document execution and Artifact I/O adaptation are
+  owned by shared `document_tools/execution.py`, rather than being hidden in a
+  Workflow-local helper module.
+- Workflow adapters no longer import `lazyllm.tools.writer.*` implementation
+  modules. Request parsing, structure policy, document normalization, local-copy
+  binding cleanup, media acquisition/resolution, document assembly, numbering,
+  and revision media finalization are delegated to shared `document_tools`
+  capabilities.
 
 Not yet complete:
 
-- `workflows/writer-workflow/scripts/runtime.py` does not exist. Checkpoint,
-  fingerprint, recovery, step, slot, and workspace state still live in
-  `scripts/tools.py`.
-- Some document assembly and numbering policy still lives in the Workflow
-  adapter, so `tools.py` is not yet a uniformly thin forwarding layer.
 - The four backend-facing v1 Actions do not yet have typed contracts or complete
   built-in implementations. `actions.py` is still a registry scaffold.
 - Provider binding lifecycle, cross-provider copy semantics, structured
@@ -298,14 +304,21 @@ Not yet complete:
   legacy imports, conversions, provider synchronization, and Action registry
   tests pass.
 - 27 focused `document_tools` and WeChat/GitHub integration tests pass.
-- 23 Writer Workflow drafting, revision, stream, local LMD, media, and
-  stream-recovery tests pass with a process-local `rapidfuzz` import shim; no
-  shim file is stored in the repository.
+- 42 focused document-tools, Workflow smoke, and Writer Workflow tests pass without a dependency
+  shim, including the new adapter-boundary test.
 - `git diff --check` and focused Python compilation pass.
 - Shared MD/LMD conversion, short-document planning/streaming, media search and
   filtering, cross-reference target binding, provider locator resolution,
   and provider-neutral synchronization now live under `document_tools`.
-- 50 relevant tests pass in the current focused run.
+- The adapter-boundary test verifies that the 37 stateless `writer_*` execution
+  entry points call shared `document_tools.execution`, while only the five
+  Workflow-private control/state-machine entries retain orchestration and the
+  structure classifier directly calls shared writing policy. `tools.py` imports
+  no LazyLLM Writer implementation modules. Dedicated state tests cover
+  authoritative bindings, checkpoint round trips, stale fingerprints, corrupt
+  state, and atomic temporary-file cleanup.
+- All 43 existing `writer_*` Python entry-point names and signatures are
+  unchanged relative to the C-stage base checkpoint.
 - The focused MD/LMD test now asserts the exact established envelope data and
   rendered Markdown instead of checking only for substrings.
 - The broader local suite remains unavailable until the real optional Runtime/RAG
@@ -315,19 +328,15 @@ Not yet complete:
 
 ## Recommended execution order
 
-1. Review and commit the completed B-stage physical split as a stable local
-   checkpoint. Keep the task tracker in the same checkpoint or a separate docs
-   commit, but do not leave the implementation only in the working tree.
-2. Finish C1-C9: create the private Writer Workflow Runtime, move remaining
-   state/recovery behavior into it, and reduce `scripts/tools.py` to path,
-   Runtime, and event adapters.
-3. Implement D1-D16: typed v1 Action contracts, deterministic rewrite execute,
+1. Review and commit the completed C-stage Workflow Runtime split as a stable
+   local checkpoint.
+2. Implement D1-D16: typed v1 Action contracts, deterministic rewrite execute,
    built-in resolution, publication validation, and Workflow declarations.
-4. Complete E1-E10 and L1-L6: provider binding lifecycle, provider capabilities,
+3. Complete E1-E10 and L1-L6: provider binding lifecycle, provider capabilities,
    structured errors, conflict rules, and ambiguous-write behavior.
-5. Complete T5-T23, then prepare H2-H10 for backend handoff.
-6. Merge whichever provider integrations pass their own acceptance gates, adapt
+4. Complete T5-T23, then prepare H2-H10 for backend handoff.
+5. Merge whichever provider integrations pass their own acceptance gates, adapt
    the later side to the shared interface, and run the final joint regression.
 
-The immediate next task is therefore the remaining Writer Workflow thinning,
-not the backend handoff and not waiting for every knowledge-source PR.
+The immediate next task is therefore shared Artifact Actions (stage D), not
+further Writer Workflow business-logic migration.

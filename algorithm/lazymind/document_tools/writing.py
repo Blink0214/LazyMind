@@ -80,6 +80,14 @@ _MARKDOWN_DRAFT_ROOT_ERROR = (
 _SECTION_STREAM_IDLE_ERROR_RE = re.compile(
     r"(?:^|:\s)Draft (?:Markdown|IR) stream was idle for " r"\d+(?:\.\d+)? seconds\.$",
 )
+_IMAGE_ACQUISITION_PROMPT = """Create one professional visual for a document.
+
+Visual type: {visual_type}
+The visual must communicate: {purpose}
+
+Keep the composition clear and suitable for insertion into a document. Avoid watermarks,
+brand logos, decorative filler, and small unreadable text. Return exactly one image.
+"""
 
 
 class _WriterRetrievalError(RuntimeError):
@@ -159,6 +167,178 @@ def _extract_length_constraints(query: str) -> dict[str, int]:
         "target_chars": target_chars,
         "max_chars": target_chars * 11 // 10 if approximate else target_chars,
     }
+
+
+_STRUCTURE_CLASSIFIER_PROMPT = """Classify the final presentation structure for a new
+Writer document. Return exactly one JSON object and nothing else:
+{"structure_mode":"flat|sectioned|unclear"}
+
+Apply these rules in order:
+1. An explicit presentation requirement overrides length. Chapters, sections, or subheadings
+   mean sectioned. Continuous prose, or explicitly no chapters, sections, or subheadings, means
+   flat. Asking for an outline as a planning step does not by itself require sectioned output.
+2. With no explicit presentation requirement, a requested length at or below 1200 Chinese
+   characters/words means flat; above 1200 means sectioned. An unquantified short article means
+   flat and an unquantified long article means sectioned.
+3. Return unclear when presentation and length are both unclear, when explicit requirements
+   conflict, or when a mentioned length is not clearly the requested output length. Never infer
+   length from topic complexity.
+"""
+_EXPLICIT_OUTLINE_TARGET = re.compile(
+    r"(?:\b(?:only|just)\b.{0,16}\b(?:outline|plan)\b)"
+    r"|(?:(?:只|仅|只需|仅需).{0,12}(?:大纲|提纲))"
+    r"|(?:(?:生成|写|创建|整理|修改|调整|完善|输出).{0,12}"
+    r"(?:大纲|提纲)(?:即可|就行|就可以|[。！!？?]?\s*$))"
+    r"|(?:(?:大纲|提纲)(?:即可|就行|就可以|[。！!？?]?\s*$))",
+    re.IGNORECASE,
+)
+_EXPLICIT_PREPARE_ONLY = re.compile(
+    r"(?:(?:只|仅|只需|仅需).{0,8}(?:准备|解析|读取|加载).{0,8}"
+    r"(?:材料|文档|源文件)?(?:即可|就行|就可以|[。！!？?]?\s*$))"
+    r"|(?:(?:不要|无需).{0,8}(?:生成|撰写|写).{0,8}(?:大纲|正文|文档|文章))"
+    r"|(?:\b(?:prepare|read|load)\s+only\b)",
+    re.IGNORECASE,
+)
+_SUPPLIED_OUTLINE_REQUEST = re.compile(
+    r"(?:(?:根据|基于|使用|采用|用|从|提供|上传).{0,12}(?:大纲|提纲))"
+    r"|(?:\b(?:from|using|supplied|uploaded)\b.{0,16}\b(?:outline|plan)\b)",
+    re.IGNORECASE,
+)
+_EXPLICIT_REWRITE_REQUEST = re.compile(
+    r"(?:重写|整体改写|整篇改写|重新组织|重构全文)|(?:\b(?:rewrite|restructure)\b)",
+    re.IGNORECASE,
+)
+_EXPLICIT_NEW_DOCUMENT_REQUEST = re.compile(
+    r"(?:(?<![改重续扩])写|撰写|创作|生成|产出).{0,32}"
+    r"(?:文章|报告|小说|故事|文案|稿件|正文|文档)"
+    r"|(?:\b(?:write|draft|create|produce)\b.{0,32}"
+    r"\b(?:article|report|story|novel|copy|draft|document)\b)",
+    re.IGNORECASE,
+)
+_REQUIRE_INPUT_IMAGE_REUSE = re.compile(
+    r"(?:必须|务必|只能|仅限|只).{0,12}复用.{0,16}(?:我)?(?:上传(?:的)?(?:原图|图片|图像)|原图)"
+    r"|(?:必须|务必|只能|仅限|只).{0,12}(?:使用|采用).{0,16}"
+    r"(?:我)?(?:上传(?:的)?(?:原图|图片|图像)|原图).{0,20}(?:插入|放入|嵌入)"
+    r"|(?:must|only).{0,20}reuse.{0,20}(?:uploaded|original).{0,12}(?:image|picture|photo)"
+    r"|(?:must|only).{0,20}use.{0,20}(?:uploaded|original).{0,12}"
+    r"(?:image|picture|photo).{0,20}(?:insert|embed|include)",
+    re.IGNORECASE,
+)
+_FORBID_IMAGE_GENERATION = re.compile(
+    r"(?:不要|禁止|不得).{0,12}(?:生成|改用|替换|替代).{0,12}(?:图|图片|图像)"
+    r"|(?:do\s+not|don't|never).{0,20}(?:generate|replace|substitute).{0,20}"
+    r"(?:image|picture|photo)",
+    re.IGNORECASE,
+)
+_REQUIRE_VISUALS = (
+    re.compile(
+        r"(?:必须|务必|一定要|要求).{0,12}"
+        r"(?:包含|带有|加入|添加|插入|生成|绘制|制作|提供|使用|配上|附上|放入|嵌入|展示).{0,8}"
+        r"(?:图片|图像|插图|配图|封面图|示意图|图表|表格)"
+        r"|(?:请|帮我|需要|想要).{0,8}(?:加入|添加|插入|绘制|制作|提供|配上|附上|放入|嵌入).{0,8}"
+        r"(?:图片|图像|插图|配图|封面图|示意图|图表|表格)"
+        r"|配(?:上)?\s*(?:\d+|[一二两三四五六七八九十]+)?\s*(?:张|幅|个)?\s*"
+        r"(?:图|图片|图像|插图|配图|封面图|示意图|图表)"
+        r"|(?:插入|添加|附上|嵌入|放入).{0,6}(?:\d+|[一二两三四五六七八九十]+)?\s*"
+        r"(?:张|幅|个)?\s*(?:图片|图像|插图|配图|封面图|示意图|图表)"
+        r"|生成\s*(?:\d+|[一二两三四五六七八九十]+)\s*(?:张|幅|个)\s*"
+        r"(?:图片|图像|插图|配图|封面图|示意图)"
+    ),
+    re.compile(
+        r"\b(?:must|require(?:s|d)?|please|need\s+to|want\s+to)\b.{0,20}"
+        r"\b(?:include|add|insert|generate|create|provide|use|show)\b.{0,20}"
+        r"\b(?:images?|pictures?|illustrations?|visuals?|charts?|diagrams?|tables?)\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def classify_document_structure(
+    user_input: str, *, default: str = "sectioned"
+) -> str:
+    """Select flat or sectioned presentation without Workflow-specific state."""
+    request = str(user_input or "").strip()
+    if not request:
+        return default
+    try:
+        raw = AutoModel(model="llm")(
+            f"{_STRUCTURE_CLASSIFIER_PROMPT}\nCurrent request:\n{request[:4000]}",
+            response_format={"type": "json_object"},
+            stream_output=False,
+        )
+        if isinstance(raw, dict):
+            payload = raw
+        else:
+            text = str(raw or "").strip()
+            fenced = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE)
+            if fenced:
+                text = fenced.group(1).strip()
+            decoder = json.JSONDecoder()
+            objects = []
+            for match in re.finditer(r"\{", text):
+                try:
+                    candidate, _ = decoder.raw_decode(text, match.start())
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(candidate, dict):
+                    objects.append(candidate)
+            if not objects:
+                raise ValueError("Writer structure classifier returned no JSON object.")
+            payload = objects[-1]
+        mode = str((payload or {}).get("structure_mode") or "").strip().lower()
+    except Exception as exc:
+        LOG.warning(
+            "[Writer] Structure classification failed; defaulting to %s: %s",
+            default,
+            exc,
+        )
+        return default
+    return mode if mode in {"flat", "sectioned"} else default
+
+
+def parse_writer_request_constraints(query: str) -> dict[str, Any]:
+    """Translate user language into shared Writer task constraints."""
+    constraints: dict[str, Any] = dict(_extract_length_constraints(query or ""))
+    no_visuals = any(pattern.search(query or "") for pattern in _MARKDOWN_NO_MEDIA_PATTERNS)
+    require_reuse = bool(_REQUIRE_INPUT_IMAGE_REUSE.search(query or ""))
+    forbid_generation = bool(_FORBID_IMAGE_GENERATION.search(query or ""))
+    require_visuals = not no_visuals and (
+        require_reuse or any(pattern.search(query or "") for pattern in _REQUIRE_VISUALS)
+    )
+    if no_visuals or require_visuals or require_reuse or forbid_generation:
+        constraints["visual_policy"] = {
+            "allow_visuals": not no_visuals,
+            "require_visuals": require_visuals,
+            "require_input_image_reuse": require_reuse,
+            "allow_image_generation": not (
+                no_visuals or require_reuse or forbid_generation
+            ),
+        }
+    return constraints
+
+
+def resolve_prepare_control(
+    user_input: str, suggested_operation: str, *, has_document_source: bool
+) -> tuple[str, str]:
+    """Resolve writing operation and target stage from authoritative request facts."""
+    if _EXPLICIT_PREPARE_ONLY.search(user_input):
+        return "prepare_only", "prepared"
+    operation = suggested_operation
+    if not has_document_source:
+        operation = "create"
+    elif _SUPPLIED_OUTLINE_REQUEST.search(user_input):
+        operation = "use_outline"
+    elif _EXPLICIT_REWRITE_REQUEST.search(user_input):
+        operation = "rewrite_document"
+    elif _EXPLICIT_NEW_DOCUMENT_REQUEST.search(user_input):
+        operation = "create"
+    elif operation in {"create", "prepare_only"}:
+        operation = "revise_document"
+    if operation in {"rewrite_document", "revise_document"}:
+        return operation, "document"
+    if _EXPLICIT_OUTLINE_TARGET.search(user_input):
+        return operation, "outline"
+    return operation, "document"
 
 
 _MARKDOWN_NO_MEDIA_PATTERNS = (
@@ -308,13 +488,46 @@ def generate_short_writing_plan(
     *,
     artifact_store: str,
 ) -> Any:
+    from lazyllm.tools.writer.data_models.planning import ShortWritingPlan
+
     result = WriterPlanningTools(
         llm=AutoModel(model="llm"), artifact_store=artifact_store
     ).generate_short_writing_plan(
         task=writing_task_path,
         context=writing_context_path,
     )
-    return _primary_data(result)
+    return ShortWritingPlan.model_validate(_primary_data(result)).model_dump(
+        exclude_defaults=True
+    )
+
+
+def generate_outline(
+    writing_task: dict[str, Any],
+    writing_context: dict[str, Any],
+    *,
+    on_delta: Callable[[str], None],
+    on_outline_generated: Callable[[], None] | None = None,
+    on_outline_prepared: Callable[[], None] | None = None,
+) -> Any:
+    """Generate, complete, and validate an editable outline."""
+    toolkit = WriterWritingCapabilities()
+    task_json = _json_dumps(writing_task)
+    context_json = _json_dumps(writing_context)
+    generated = toolkit.stream_outline(
+        writing_task_json=task_json,
+        writing_context_json=context_json,
+        on_delta=on_delta,
+    )
+    if on_outline_generated is not None:
+        on_outline_generated()
+    prepared = toolkit.prepare_outline(
+        source_document_json=generated,
+        writing_task_json=task_json,
+        writing_context_json=context_json,
+    )
+    if on_outline_prepared is not None:
+        on_outline_prepared()
+    return _document_value(prepared)
 
 
 def generate_short_visual_plan(
@@ -383,6 +596,69 @@ def stream_short_document(
                     )
         result = stream.result()
     return _primary_data(result)
+
+
+def finalize_short_document(document: Any, resolved_media_assets: Any = None) -> Any:
+    """Finalize a flat draft and reject unresolved visual placeholders."""
+    if resolved_media_assets is not None and isinstance(document, str):
+        document = fill_markdown_media_placeholders(document, resolved_media_assets)
+    if isinstance(document, str) and "media-placeholder://" in document:
+        raise ValueError("Short document contains unresolved media placeholders.")
+    return document
+
+
+def assemble_draft_document(
+    draft_blocks: list[Any],
+    writing_context: Any,
+    *,
+    outline: Any = "",
+    title: str = "",
+    assembler: Callable[..., str] | None = None,
+) -> Any:
+    """Assemble ordered IR blocks through the shared drafting capability."""
+    assemble = assembler or WriterWritingCapabilities().generate_draft_document
+    return _json_loads(
+        assemble(
+            draft_blocks_json=_json_dumps(draft_blocks),
+            writing_context_json=_json_dumps(writing_context),
+            outline_json=_json_dumps(outline) if outline else "",
+            title=title,
+        ),
+        {},
+    )
+
+
+def assemble_markdown_document(
+    sections: list[str],
+    writing_context: Any,
+    *,
+    outline: Any = "",
+    title: str = "",
+    resolved_media_assets: Any = None,
+    assembler: Callable[..., str] | None = None,
+) -> str:
+    """Assemble ordered Markdown sections and enforce final media integrity."""
+    assemble = assembler or WriterWritingCapabilities().generate_draft_document_markdown
+    payload = _json_loads(
+        assemble(
+            draft_sections_json=_json_dumps(sections),
+            writing_context_json=_json_dumps(writing_context),
+            outline_json=_json_dumps(outline) if outline else "",
+            title=title,
+        ),
+        {},
+    )
+    markdown = str(payload.get("draft_document") or "")
+    assets = resolved_media_assets or {}
+    if resolved_media_assets is not None:
+        markdown = fill_markdown_media_placeholders(markdown, assets)
+    markdown = drop_unregistered_markdown_images(markdown, assets)
+    if "media-placeholder://" in markdown:
+        raise ValueError(
+            "Markdown draft contains unresolved media placeholders; "
+            "resolve visual media before assembling the final document."
+        )
+    return markdown
 
 
 _IMAGE_URL_KEYS = (
@@ -545,6 +821,271 @@ def acquire_visual_media(
                 "acquisition_strategy": strategy,
             }
             yield resource
+
+
+def acquire_generated_image(
+    request: Mapping[str, Any],
+    *,
+    generator: Callable[..., dict] | None = None,
+) -> list[dict]:
+    """Generate one visual resource for a normalized acquisition request."""
+    if generator is None:
+        from lazymind.chat.engine.tools.multimodal import image_generator
+
+        generator = image_generator
+    prompt = _IMAGE_ACQUISITION_PROMPT.format(
+        visual_type=str(request.get("visual_type") or ""),
+        purpose=str(request.get("purpose") or ""),
+    ).strip()
+    result = generator(
+        prompt=prompt, image_size="1024x1024", batch_size=1
+    )
+    local_path = str((result or {}).get("local_path") or "").strip()
+    if not local_path:
+        images = (result or {}).get("images") or []
+        if images and isinstance(images[0], dict):
+            local_path = str(images[0].get("local_path") or "").strip()
+    if not local_path:
+        raise ValueError("image_generator returned no local image path")
+    return [
+        {
+            "resource_id": f"acquired-{request.get('instruction_id') or uuid.uuid4().hex}",
+            "resource_type": "image",
+            "uri": local_path,
+            "title": Path(local_path).name,
+            "summary": str(request.get("purpose") or ""),
+            "meta": {
+                "source_type": "image_generation",
+                "generation_prompt": prompt,
+                "summary_source": "generation_prompt",
+                "semantic_status": "unverified",
+            },
+        }
+    ]
+
+
+def resolve_visual_media(
+    visual_plan: Any,
+    media_assets: dict[str, Any],
+    *,
+    media_store: str,
+    strict_required: bool = False,
+    allowed_strategies: list[str] | None = None,
+) -> dict[str, Any]:
+    """Resolve and materialize visual requirements without Workflow state."""
+    from lazymind.model_config import is_model_role_available
+
+    visual_policy = (media_assets.get("meta") or {}).get("visual_policy") or {}
+    allow_generation = visual_policy.get("allow_image_generation") is not False
+    require_visuals = visual_policy.get("require_visuals") is True or visual_policy.get(
+        "require_input_image_reuse"
+    ) is True
+    acquirers: dict[str, Callable[[Mapping[str, Any]], list[dict]]] = {
+        "web_search": acquire_web_search_resources
+    }
+    if allow_generation and is_model_role_available("image_generator"):
+        acquirers["image_generation"] = acquire_generated_image
+    toolkit = WriterWritingCapabilities()
+    visual_plan_json = _json_dumps(visual_plan)
+    media_assets_json = _json_dumps(media_assets)
+    try:
+        matched = _json_loads(
+            toolkit.resolve_visual_needs(
+                visual_plan_json=visual_plan_json,
+                media_assets_json=media_assets_json,
+                allowed_strategies_json=(
+                    _json_dumps(allowed_strategies) if allowed_strategies else ""
+                ),
+            ),
+            {},
+        )
+    except Exception as exc:
+        if strict_required:
+            raise
+        matched = {
+            "media_assets": media_assets,
+            "acquisition_requests": [],
+            "warnings": [
+                f"Visual media resolution failed: {type(exc).__name__}: {exc}"
+            ],
+        }
+    warnings = list(matched.get("warnings") or [])
+    resolved_library = matched.get("media_assets") or {}
+    acquired_by_purpose: dict[tuple[str, str, tuple[str, ...]], dict] = {}
+    for request in matched.get("acquisition_requests") or []:
+        strategies = list(request.get("strategies") or [])
+        if (
+            allow_generation
+            and not any(strategy in acquirers for strategy in strategies)
+            and "image_generation" in acquirers
+        ):
+            request = {**request, "strategies": ["image_generation"]}
+        instruction_id = str(request["instruction_id"])
+        key = (
+            str(request.get("visual_type") or ""),
+            " ".join(str(request.get("purpose") or "").split()).casefold(),
+            tuple(request["strategies"]),
+        )
+        cached = acquired_by_purpose.get(key)
+        groups = []
+        if cached is not None:
+            groups.append((True, iter((cached,))))
+        groups.append((False, acquire_visual_media(request, acquirers)))
+        resolved = False
+        for from_cache, candidates in groups:
+            for resource in candidates:
+                try:
+                    outcome = _json_loads(
+                        toolkit.materialize_acquired_media(
+                            visual_plan_json=visual_plan_json,
+                            media_assets_json=_json_dumps(resolved_library),
+                            acquired_resources_json=_json_dumps(
+                                {instruction_id: resource}
+                            ),
+                            media_store=media_store,
+                        ),
+                        {},
+                    )
+                except Exception as exc:
+                    LOG.warning(
+                        "[Writer] Failed to materialize visual instruction %r: %s",
+                        instruction_id,
+                        type(exc).__name__,
+                    )
+                    continue
+                candidate_library = outcome.get("media_assets") or {}
+                assets = candidate_library.get("assets") or {}
+                bindings = candidate_library.get("visual_need_asset_ids") or {}
+                if not any(
+                    asset_id in assets
+                    and Path(str(assets[asset_id].get("local_path") or "")).is_file()
+                    for asset_id in bindings.get(instruction_id, [])
+                ):
+                    continue
+                resolved_library = candidate_library
+                acquired_by_purpose[key] = resource
+                resolved = True
+                break
+            if resolved:
+                break
+            if from_cache:
+                acquired_by_purpose.pop(key, None)
+        if not resolved:
+            message = (
+                f"Failed to acquire visual instruction {instruction_id!r}: "
+                "no candidate could be materialized"
+            )
+            if (strict_required or require_visuals) and request.get("required") is True:
+                raise RuntimeError(
+                    f"{message}: {request.get('purpose') or 'current visual requirement'}"
+                )
+            warnings.append(
+                f"{message} (required={request.get('required', False)})."
+            )
+    plan_data = visual_plan.get("data", visual_plan) if isinstance(visual_plan, dict) else visual_plan
+    assets = resolved_library.get("assets") or {}
+    bindings = resolved_library.get("visual_need_asset_ids") or {}
+    unresolved = [
+        str(instruction.get("need_id"))
+        for instruction in (plan_data.get("instructions") or [])
+        if (strict_required or require_visuals)
+        and instruction.get("required", False) is True
+        and not any(
+            asset_id in assets
+            and Path(str(assets[asset_id].get("local_path") or "")).is_file()
+            for asset_id in bindings.get(str(instruction.get("need_id")), [])
+        )
+    ]
+    if unresolved:
+        raise RuntimeError(
+            "Failed to resolve required visual media for: " + ", ".join(unresolved)
+        )
+    return {"media_assets": resolved_library, "warnings": warnings}
+
+
+def collect_document_media(
+    writing_task: dict[str, Any],
+    *,
+    file_paths: list[str],
+    input_resources: list[dict[str, Any]] | None = None,
+    source_document: Any = None,
+    media_store: str,
+) -> dict[str, Any]:
+    """Collect and profile available document images under shared visual policy."""
+    toolkit = WriterWritingCapabilities()
+    resources = _json_loads(
+        toolkit.build_resources(
+            file_paths_json=_json_dumps(file_paths),
+            input_resources_json=_json_dumps(input_resources or []),
+        ),
+        [],
+    )
+    visual_policy = (writing_task.get("constraints") or {}).get("visual_policy") or {}
+    if visual_policy.get("require_input_image_reuse"):
+        for resource in resources:
+            resource["meta"] = {
+                **(resource.get("meta") or {}),
+                "origin": "user_upload",
+            }
+    try:
+        from lazymind.model_config import is_model_role_available
+
+        return _json_loads(
+            toolkit.collect_available_media(
+                writing_task_json=_json_dumps(writing_task),
+                input_resources_json=_json_dumps(resources),
+                source_document_json=(
+                    _json_dumps(source_document) if source_document is not None else ""
+                ),
+                media_store=media_store,
+                use_vision_model=is_model_role_available("vlm"),
+            ),
+            {},
+        )
+    except Exception as exc:
+        task_id = str(writing_task.get("task_id") or uuid.uuid4().hex)
+        return {
+            "media_assets": {
+                "library_id": f"media-library-{task_id}",
+                "assets": {},
+            },
+            "profile_input_resources": resources,
+            "warnings": [f"Image collection failed: {type(exc).__name__}: {exc}"],
+        }
+
+
+def profile_document_resources(
+    writing_task: dict[str, Any],
+    user_input: str,
+    *,
+    file_paths: list[str] | None = None,
+    source_document: Any = None,
+    knowledge_text: str = "",
+    input_resources: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Build and profile all resources available to a writing request."""
+    toolkit = WriterWritingCapabilities()
+    resources = list(input_resources or [])
+    resources.extend(
+        _json_loads(
+            toolkit.build_resources(
+                file_paths_json=_json_dumps(file_paths or []),
+                source_document_json=(
+                    _json_dumps(source_document) if source_document is not None else ""
+                ),
+                knowledge_text=knowledge_text,
+            ),
+            [],
+        )
+    )
+    return _json_loads(
+        toolkit.profile_resources(
+            writing_task_json=_json_dumps(writing_task),
+            user_input=user_input,
+            resources_json=_json_dumps(resources),
+        ),
+        [],
+    )
 
 
 def fill_markdown_media_placeholders(markdown: str, resolved_media_assets: Any) -> str:
@@ -2211,4 +2752,19 @@ class WriterWritingCapabilities:
 __all__ = [
     "DraftMarkdownStreamEventEmitter",
     "WriterWritingCapabilities",
+    "acquire_generated_image",
+    "acquire_visual_media",
+    "assemble_draft_document",
+    "assemble_markdown_document",
+    "classify_document_structure",
+    "collect_document_media",
+    "finalize_short_document",
+    "generate_short_visual_plan",
+    "generate_short_writing_plan",
+    "generate_outline",
+    "parse_writer_request_constraints",
+    "profile_document_resources",
+    "resolve_prepare_control",
+    "resolve_visual_media",
+    "stream_short_document",
 ]

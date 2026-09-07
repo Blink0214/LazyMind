@@ -27,7 +27,11 @@ from pydantic import BaseModel, Field
 from lazymind.chat.engine.tool_auth import inject_tool_config
 from lazyllm.tools.writer.data_models import WriterDocument
 from lazyllm.tools.writer.utils import convert_writer_content
-from lazymind.document_tools import sync_writer_documents
+from lazymind.document_tools import (
+    DocumentActionError,
+    invoke_document_action,
+    sync_writer_documents,
+)
 from lazymind.config import config
 from lazymind.model_config import inject_model_config
 from lazymind.workflow_sdk import WorkflowClient
@@ -243,31 +247,61 @@ def invoke_workflow_action(request: WorkflowActionInvokeRequest) -> Dict[str, An
     if request.slot not in (definition.get('slots') or []):
         raise HTTPException(status_code=400, detail='action is not enabled for this slot')
     tool_name = str(definition.get(f'{request.phase}_tool') or '')
-    try:
-        tools = load_workflow_package_tools(
-            package, [tool_name], request.workflow_id, request.revision_id,
-        ) if tool_name else {}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail='artifact action tool is unavailable') from exc
-    tool = tools.get(tool_name)
-    if tool is None:
-        raise HTTPException(status_code=500, detail='artifact action tool is unavailable')
-
+    if not tool_name:
+        raise HTTPException(status_code=422, detail={
+            'code': 'DOCUMENT_ACTION_UNAVAILABLE',
+            'message': f'Action {request.action!r} does not support {request.phase!r}.',
+        })
     kwargs = dict(request.arguments)
-    reserved = {'artifact', 'artifact_store', 'slot'} & kwargs.keys()
+    reserved = {'artifact', 'artifact_store', 'slot', 'context'} & kwargs.keys()
     if reserved:
-        raise HTTPException(status_code=400, detail=f'reserved arguments: {sorted(reserved)}')
-    parameters = inspect.signature(tool).parameters
-    if 'artifact' in parameters:
-        kwargs['artifact'] = request.artifact
-    if 'artifact_store' in parameters:
-        kwargs['artifact_store'] = request.artifact_store
-    if 'slot' in parameters:
-        kwargs['slot'] = request.slot
+        raise HTTPException(status_code=422, detail={
+            'code': 'WORKFLOW_ACTION_INVALID',
+            'message': f'reserved arguments: {sorted(reserved)}',
+        })
     try:
         inject_model_config(request.llm_config or {})
         inject_tool_config(request.tool_config or {})
+        if tool_name.startswith('builtin:'):
+            result = invoke_document_action(
+                tool_name, request.phase, kwargs,
+                artifact=request.artifact,
+                artifact_store=request.artifact_store,
+                slot=request.slot,
+                action=request.action,
+            )
+            return {'result': result}
+        try:
+            tools = load_workflow_package_tools(
+                package, [tool_name], request.workflow_id, request.revision_id,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail='artifact action tool is unavailable'
+            ) from exc
+        tool = tools.get(tool_name)
+        if tool is None:
+            raise HTTPException(
+                status_code=500, detail='artifact action tool is unavailable'
+            )
+        parameters = inspect.signature(tool).parameters
+        if 'artifact' in parameters:
+            kwargs['artifact'] = request.artifact
+        if 'artifact_store' in parameters:
+            kwargs['artifact_store'] = request.artifact_store
+        if 'slot' in parameters:
+            kwargs['slot'] = request.slot
         return {'result': tool(**kwargs)}
+    except HTTPException:
+        raise
+    except DocumentActionError as exc:
+        detail: Dict[str, Any] = {
+            'code': exc.error_code,
+            'message': str(exc),
+            'retryable': exc.retryable,
+        }
+        detail.update(exc.details)
+        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
     except ValueError as exc:
         code = str(getattr(exc, 'error_code', 'WORKFLOW_ACTION_INVALID'))
         detail: Dict[str, Any] = {'code': code, 'message': str(exc)}

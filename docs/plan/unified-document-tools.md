@@ -177,12 +177,12 @@ operations, and the shared Action implementations.
 
 Writer-Workflow-specific state orchestration must not be moved into the shared
 document package. Checkpoints, fingerprints, idempotent recovery, step/slot
-state, and Workflow Runtime context handling live in a private module such as:
+state, and Workflow Runtime context handling remain private in the Workflow's
+single Python entry module:
 
 ```text
 workflows/writer-workflow/scripts/
-├── tools.py       # thin YAML-callable adapters
-└── runtime.py     # private Workflow state and recovery orchestration
+└── tools.py       # YAML adapters plus private state/recovery orchestration
 ```
 
 Other Workflows may reuse `document_tools` without inheriting the Writer
