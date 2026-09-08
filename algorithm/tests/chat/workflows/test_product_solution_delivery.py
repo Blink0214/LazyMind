@@ -38,6 +38,9 @@ def _load_writer_bridge():
         'lazymind.chat.engine.subagent.context': _stub_module(
             'lazymind.chat.engine.subagent.context', require_context=lambda: None,
         ),
+        'lazymind.chat.engine.subagent.tools': _stub_module(
+            'lazymind.chat.engine.subagent.tools', _save_artifact=lambda **_kwargs: {},
+        ),
         'lazymind.chat.engine.tools': _stub_module('lazymind.chat.engine.tools'),
         'lazymind.chat.engine.tools.writer': _stub_module(
             'lazymind.chat.engine.tools.writer',
@@ -489,9 +492,16 @@ def test_document_pipeline_uses_bound_inputs_without_agent_file_plumbing(monkeyp
     assert calls[0][1] == (str(task), str(outline), str(context_file))
     assert result == {
         'section_plan': '/out/plan.json',
-        'chapter_files': ['/out/chapters/one.md'],
         'document': '/out/document.md',
         'writing_context': '/out/context.json',
+        'chapter_count': 1,
+        'chapter_publish': {
+            'slot': 'direction_chapters',
+            'expected_count': 1,
+            'published_count': 1,
+            'complete': True,
+            'warnings': [],
+        },
         'warnings': [],
     }
 

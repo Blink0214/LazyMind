@@ -19,7 +19,6 @@ from typing import Any, Mapping
 from .artifacts import (
     WRITER_BLOCK_SCHEMA,
     WRITER_IR_SCHEMA,
-    WriterDocument,
     detach_provider_binding,
     markdown_filename,
     markdown_to_writer_document,
@@ -56,8 +55,8 @@ from .writing import (
 )
 
 
-_HOST: ContextVar[Mapping[str, Any]] = ContextVar("document_execution_host")
-_LOCAL_WRITER_DOCUMENT_SUFFIXES = {".md", ".markdown", ".txt", ".lmd"}
+_HOST: ContextVar[Mapping[str, Any]] = ContextVar('document_execution_host')
+_LOCAL_WRITER_DOCUMENT_SUFFIXES = {'.md', '.markdown', '.txt', '.lmd'}
 
 
 def _host_call(name: str, *args: Any, **kwargs: Any) -> Any:
@@ -75,45 +74,45 @@ def invoke(host: Mapping[str, Any], name: str, arguments: dict[str, Any]) -> Any
 
 def _execution_fingerprint(**values: Any) -> str:
     payload = json.dumps(values, ensure_ascii=False, sort_keys=True)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
 
 def require_context() -> Any:
-    return _host_call("require_context")
+    return _host_call('require_context')
 
 
 def WriterCreateToolkit() -> Any:
-    factory = _HOST.get().get("WriterCreateToolkit", _WriterCreateToolkit)
+    factory = _HOST.get().get('WriterCreateToolkit', _WriterCreateToolkit)
     return factory()
 
 
 def WriterResourceToolkit() -> Any:
-    factory = _HOST.get().get("WriterResourceToolkit", _WriterResourceToolkit)
+    factory = _HOST.get().get('WriterResourceToolkit', _WriterResourceToolkit)
     return factory()
 
 
 def WriterRevisionToolkit() -> Any:
-    factory = _HOST.get().get("WriterRevisionToolkit", _WriterRevisionToolkit)
+    factory = _HOST.get().get('WriterRevisionToolkit', _WriterRevisionToolkit)
     return factory()
 
 
 def DraftMarkdownStreamEventEmitter(*args: Any, **kwargs: Any) -> Any:
     factory = _HOST.get().get(
-        "DraftMarkdownStreamEventEmitter", _DraftMarkdownStreamEventEmitter
+        'DraftMarkdownStreamEventEmitter', _DraftMarkdownStreamEventEmitter
     )
     return factory(*args, **kwargs)
 
 
 def _emit_writer_progress(*args: Any, **kwargs: Any) -> Any:
-    return _host_call("_emit_writer_progress", *args, **kwargs)
+    return _host_call('_emit_writer_progress', *args, **kwargs)
 
 
 def _run_root(*args: Any, **kwargs: Any) -> Any:
-    return _host_call("_run_root", *args, **kwargs)
+    return _host_call('_run_root', *args, **kwargs)
 
 
 def _workspace_root(*args: Any, **kwargs: Any) -> Any:
-    return _host_call("_workspace_root", *args, **kwargs)
+    return _host_call('_workspace_root', *args, **kwargs)
 
 
 def _writer_build_writing_task(query: str, representation: str = 'markdown') -> str:
@@ -455,15 +454,15 @@ def _writer_generate_short_writing_plan(
         generate_short_writing_plan(
             writing_task_path,
             writing_context_path,
-            artifact_store=str(_run_root("short-writing-plan-source")),
+            artifact_store=str(_run_root('short-writing-plan-source')),
         ),
         ensure_ascii=False,
     )
     return _save_json_artifact(
-        "short_writing_plan",
+        'short_writing_plan',
         content,
-        writer_schema("planning.ShortWritingPlan"),
-        directory=_run_root("short-writing-plan"),
+        writer_schema('planning.ShortWritingPlan'),
+        directory=_run_root('short-writing-plan'),
     )
 
 
@@ -541,14 +540,14 @@ def _writer_resolve_visual_media(
     visual_plan_path: str,
     media_assets_path: str,
     strict_required: bool = False,
-    allowed_strategies_json: str = "",
+    allowed_strategies_json: str = '',
 ) -> dict:
     """Resolve visual needs and materialize missing media through registered acquirers.
 
     allowed_strategies_json: optional JSON list restricting acquisition strategies.
     """
-    root = _run_root("resolve-media")
-    media_root = root / "media"
+    root = _run_root('resolve-media')
+    media_root = root / 'media'
     media_root.mkdir(parents=True, exist_ok=True)
     result = resolve_visual_media(
         _read_json_file(visual_plan_path),
@@ -558,14 +557,14 @@ def _writer_resolve_visual_media(
         allowed_strategies=_json_loads(allowed_strategies_json, None),
     )
     resolved_path = persist_artifact_json(
-        result["media_assets"],
-        str(root / "resolved_media_assets.json"),
-        schema_name=writer_schema("multimodal.MediaAssetLibrary"),
-        created_by="writer-workflow-wrapper",
+        result['media_assets'],
+        str(root / 'resolved_media_assets.json'),
+        schema_name=writer_schema('multimodal.MediaAssetLibrary'),
+        created_by='writer-workflow-wrapper',
     )
     return {
-        "resolved_media_assets": resolved_path,
-        "warnings": result["warnings"],
+        'resolved_media_assets': resolved_path,
+        'warnings': result['warnings'],
     }
 
 
@@ -1122,19 +1121,19 @@ def _save_json_artifact(
     root = directory or _workspace_root()
     root.mkdir(parents=True, exist_ok=True)
     extension = (
-        ".lmd"
+        '.lmd'
         if schema_name
         in {
             WRITER_IR_SCHEMA,
             WRITER_BLOCK_SCHEMA,
         }
-        else ".json"
+        else '.json'
     )
     return persist_artifact_json(
         _json_loads(content_json, {}),
-        str(root / f"{name}{extension}"),
+        str(root / f'{name}{extension}'),
         schema_name=schema_name,
-        created_by="writer-workflow-wrapper",
+        created_by='writer-workflow-wrapper',
         extra_meta=extra_meta,
     )
 
@@ -1243,18 +1242,18 @@ def _save_publish_payload(payload: dict, root: Path) -> dict:
 def _assemble_draft_document_ir(
     draft_blocks_anchor_path: str,
     writing_context_path: str,
-    outline_path: str = "",
-    document_title: str = "",
+    outline_path: str = '',
+    document_title: str = '',
 ) -> str:
     """Combine draft WriterBlock artifacts into a draft WriterDocument."""
     anchor = (
         Path(draft_blocks_anchor_path)
         if draft_blocks_anchor_path
-        else _workspace_root() / "draft_blocks"
+        else _workspace_root() / 'draft_blocks'
     )
     if not anchor.exists():
         candidates = sorted(
-            (_workspace_root() / "writer-workflow").glob("draft-blocks-*"),
+            (_workspace_root() / 'writer-workflow').glob('draft-blocks-*'),
             key=lambda path: path.stat().st_mtime,
             reverse=True,
         )
@@ -1262,26 +1261,26 @@ def _assemble_draft_document_ir(
             anchor = candidates[0]
     draft_blocks_dir = anchor if anchor.is_dir() else anchor.parent
     draft_block_paths = sorted(
-        (str(path) for path in draft_blocks_dir.glob("draft_block_*.lmd")),
-        key=lambda path: int(re.match(r"draft_block_(\d+)", Path(path).stem).group(1)),
+        (str(path) for path in draft_blocks_dir.glob('draft_block_*.lmd')),
+        key=lambda path: int(re.match(r'draft_block_(\d+)', Path(path).stem).group(1)),
     )
     if not draft_block_paths:
         raise ValueError(
-            "draft_blocks_anchor_path must point to a generated draft block file or directory.",
+            'draft_blocks_anchor_path must point to a generated draft block file or directory.',
         )
 
     draft_blocks = [_read_json_file(path) for path in draft_block_paths]
     content = assemble_draft_document(
         draft_blocks,
         _read_json_file(writing_context_path),
-        outline=_read_json_file(outline_path) if outline_path else "",
+        outline=_read_json_file(outline_path) if outline_path else '',
         title=document_title,
         assembler=WriterCreateToolkit().generate_draft_document,
     )
     return _save_writer_document(
-        "draft_document",
+        'draft_document',
         content,
-        expected_stage="draft",
+        expected_stage='draft',
         editable=True,
     )
 
@@ -1289,19 +1288,19 @@ def _assemble_draft_document_ir(
 def _assemble_draft_document_markdown(
     draft_sections_anchor_path: str,
     writing_context_path: str,
-    outline_path: str = "",
-    document_title: str = "",
-    resolved_media_assets_path: str = "",
+    outline_path: str = '',
+    document_title: str = '',
+    resolved_media_assets_path: str = '',
 ) -> str:
     """Assemble Markdown sections and preserve the Markdown document."""
     anchor = (
         Path(draft_sections_anchor_path)
         if draft_sections_anchor_path
-        else _workspace_root() / "draft_sections"
+        else _workspace_root() / 'draft_sections'
     )
     if not anchor.exists():
         candidates = sorted(
-            (_workspace_root() / "writer-workflow").glob("draft-sections-*"),
+            (_workspace_root() / 'writer-workflow').glob('draft-sections-*'),
             key=lambda path: path.stat().st_mtime,
             reverse=True,
         )
@@ -1309,18 +1308,18 @@ def _assemble_draft_document_markdown(
             anchor = candidates[0]
     sections_dir = anchor if anchor.is_dir() else anchor.parent
     section_paths = sorted(
-        sections_dir.glob("draft_section_*.md"),
-        key=lambda path: int(re.match(r"draft_section_(\d+)", path.stem).group(1)),
+        sections_dir.glob('draft_section_*.md'),
+        key=lambda path: int(re.match(r'draft_section_(\d+)', path.stem).group(1)),
     )
     if not section_paths:
         raise ValueError(
-            "draft_sections_anchor_path must point to a generated Markdown section or directory.",
+            'draft_sections_anchor_path must point to a generated Markdown section or directory.',
         )
-    sections = [path.read_text(encoding="utf-8") for path in section_paths]
+    sections = [path.read_text(encoding='utf-8') for path in section_paths]
     markdown = assemble_markdown_document(
         sections,
         _read_json_file(writing_context_path),
-        outline=_read_json_file(outline_path) if outline_path else "",
+        outline=_read_json_file(outline_path) if outline_path else '',
         title=document_title,
         resolved_media_assets=(
             _read_json_file(resolved_media_assets_path)
@@ -1329,11 +1328,11 @@ def _assemble_draft_document_markdown(
         ),
         assembler=WriterCreateToolkit().generate_draft_document_markdown,
     )
-    root = _run_root("draft-document-markdown")
+    root = _run_root('draft-document-markdown')
     return _save_writer_document(
-        "draft_document",
+        'draft_document',
         markdown,
-        expected_stage="draft",
+        expected_stage='draft',
         editable=True,
         directory=root,
     )
@@ -1343,35 +1342,35 @@ def _writer_generate_draft_document(
     writing_task_path: str,
     section_instructions_path: str,
     writing_context_path: str,
-    outline_path: str = "",
-    visual_plan_path: str = "",
-    resolved_media_assets_path: str = "",
-    document_title: str = "",
+    outline_path: str = '',
+    visual_plan_path: str = '',
+    resolved_media_assets_path: str = '',
+    document_title: str = '',
 ) -> dict:
     """Generate sections concurrently, stream in outline order, and assemble the draft."""
     task = _read_json_file(writing_task_path)
     representation = str(
-        ((task.get("output") or {}).get("representation") or "")
+        ((task.get('output') or {}).get('representation') or '')
     ).strip()
     checkpoint_key = _execution_fingerprint(
         version=1,
         task=_read_json_string(writing_task_path),
         instructions=_read_json_string(section_instructions_path),
         context=_read_json_string(writing_context_path),
-        outline=_read_json_string(outline_path) if outline_path else "",
-        visual_plan=_read_json_string(visual_plan_path) if visual_plan_path else "",
+        outline=_read_json_string(outline_path) if outline_path else '',
+        visual_plan=_read_json_string(visual_plan_path) if visual_plan_path else '',
         media_assets=(
             _read_json_string(resolved_media_assets_path)
             if resolved_media_assets_path
-            else ""
+            else ''
         ),
         document_title=document_title,
         representation=representation,
     )
     checkpoint_dir = str(
-        _workspace_root() / "writer-workflow" / f"draft-sections-{checkpoint_key}"
+        _workspace_root() / 'writer-workflow' / f'draft-sections-{checkpoint_key}'
     )
-    if representation == "markdown":
+    if representation == 'markdown':
         draft_blocks = _writer_generate_draft_blocks_markdown(
             writing_task_path=writing_task_path,
             section_instructions_path=section_instructions_path,
@@ -1381,19 +1380,19 @@ def _writer_generate_draft_document(
         )
         require_context().emit(
             {
-                "type": "progress",
-                "progress": 5,
-                "current_phase": "章节已生成，正在组装文档并校验编号与引用",
+                'type': 'progress',
+                'progress': 5,
+                'current_phase': '章节已生成，正在组装文档并校验编号与引用',
             }
         )
         draft_document = _assemble_draft_document_markdown(
-            draft_sections_anchor_path=draft_blocks[0] if draft_blocks else "",
+            draft_sections_anchor_path=draft_blocks[0] if draft_blocks else '',
             writing_context_path=writing_context_path,
             outline_path=outline_path,
             document_title=document_title,
             resolved_media_assets_path=resolved_media_assets_path,
         )
-    elif representation == "ir":
+    elif representation == 'ir':
         draft_blocks = _writer_generate_draft_blocks(
             writing_task_path=writing_task_path,
             section_instructions_path=section_instructions_path,
@@ -1404,13 +1403,13 @@ def _writer_generate_draft_document(
         )
         require_context().emit(
             {
-                "type": "progress",
-                "progress": 5,
-                "current_phase": "章节已生成，正在组装文档并校验编号与引用",
+                'type': 'progress',
+                'progress': 5,
+                'current_phase': '章节已生成，正在组装文档并校验编号与引用',
             }
         )
         draft_document = _assemble_draft_document_ir(
-            draft_blocks_anchor_path=draft_blocks[0] if draft_blocks else "",
+            draft_blocks_anchor_path=draft_blocks[0] if draft_blocks else '',
             writing_context_path=writing_context_path,
             outline_path=outline_path,
             document_title=document_title,
@@ -1421,13 +1420,13 @@ def _writer_generate_draft_document(
         )
     require_context().emit(
         {
-            "type": "progress",
-            "progress": 5,
-            "current_phase": "文档组装完成，正在保存结果",
+            'type': 'progress',
+            'progress': 5,
+            'current_phase': '文档组装完成，正在保存结果',
         }
     )
     return {
-        "draft_blocks": draft_blocks,
-        "draft_document": draft_document,
-        "representation": representation,
+        'draft_blocks': draft_blocks,
+        'draft_document': draft_document,
+        'representation': representation,
     }

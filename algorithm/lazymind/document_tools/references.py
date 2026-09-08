@@ -11,10 +11,10 @@ def _bind_document_cross_reference_targets(instructions: list[Any]) -> None:
             for instruction in instructions
             if isinstance(instruction, dict)
             for target in [
-                (instruction.get("meta") or {}).get("outline_node_id"),
+                (instruction.get('meta') or {}).get('outline_node_id'),
                 *[
-                    item.get("target")
-                    for item in (instruction.get("meta") or {}).get("cross_references")
+                    item.get('target')
+                    for item in (instruction.get('meta') or {}).get('cross_references')
                     or []
                     if isinstance(item, dict)
                 ],
@@ -24,11 +24,11 @@ def _bind_document_cross_reference_targets(instructions: list[Any]) -> None:
     )
     for instruction in instructions:
         if isinstance(instruction, dict):
-            instruction.setdefault("meta", {})["cross_reference_targets"] = targets
+            instruction.setdefault('meta', {})['cross_reference_targets'] = targets
 
 
 def bind_cross_reference_targets(instructions: list[Any]) -> None:
     _bind_document_cross_reference_targets(instructions)
 
 
-__all__ = ["bind_cross_reference_targets"]
+__all__ = ['bind_cross_reference_targets']

@@ -1,8 +1,9 @@
 import json
+from pathlib import Path
 
 import pytest
 from lazyllm.tools.agent import ToolExecutionError
-from lazyllm.tools.writer.data_models import WriterBlock, WriterDocument
+from lazyllm.tools.writer.data_models import TargetDocument, WriterBlock, WriterDocument
 from lazyllm.tools.writer.provider import WriterProviderDocument
 
 from lazymind.chat.engine.tools.writer import (
@@ -239,7 +240,8 @@ def test_provider_locator_stops_at_ascii_whitespace(monkeypatch):
 
 
 def test_markdown_lmd_conversion_uses_existing_writer_rules():
-    markdown = "# 标题\n\n## 第一节\n\n正文。\n"
+    fixture_root = Path(__file__).parent / "fixtures" / "document_conversion"
+    markdown = (fixture_root / "basic.md").read_text(encoding="utf-8")
 
     document = markdown_to_writer_document(
         markdown,
@@ -256,39 +258,14 @@ def test_markdown_lmd_conversion_uses_existing_writer_rules():
     assert document.document_id == "document-1"
     assert document.stage == "draft"
     assert document.title == "标题"
-    assert {key: value for key, value in envelope.items() if key != "meta"} == {
-        "schema": "lazyllm.tools.writer.data_models.writer_ir.WriterDocument",
-        "schema_version": "0.1",
-        "data": {
-            "document_id": "document-1",
-            "title": "标题",
-            "blocks": [
-                {
-                    "node_id": "document-1-heading-1",
-                    "type": "heading",
-                    "numbering": {"level": 1},
-                    "content": "第一节",
-                    "children": [
-                        {
-                            "node_id": "document-1-paragraph-2",
-                            "type": "paragraph",
-                            "content": "正文。",
-                            "spans": [{"text": "正文。"}],
-                        }
-                    ],
-                }
-            ],
-            "metadata": {
-                "source": "parse_document_markdown",
-                "outline_id": None,
-            },
-        },
-    }
+    expected_lmd = json.loads(
+        (fixture_root / "basic.lmd.json").read_text(encoding="utf-8")
+    )
+    assert {key: value for key, value in envelope.items() if key != "meta"} == expected_lmd
     assert envelope["meta"]["created_by"] == "lazyllm-writer-conversion"
     assert lmd_to_markdown(lmd) == (
-        '# 标题\n\n<a id="block-document-1-heading-1"></a>\n'
-        "## 1\\. 第一节\n\n正文。\n"
-    )
+        fixture_root / "basic.roundtrip.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_cross_reference_binding_discovers_and_refreshes_all_targets():
@@ -406,3 +383,78 @@ def test_write_consumes_conversion_without_converting_again(monkeypatch):
         target_document_json=json.dumps({"adapter": "fake", "doc_id": "remote-1"}),
     ))
     assert serialized["publish_result"]["persisted_document"]["document_id"] == "local-1"
+
+
+@pytest.mark.parametrize("provider_name", ["feishu", "notion"])
+def test_first_publication_creates_target_and_returns_provider_binding(
+    monkeypatch, provider_name
+):
+    calls = []
+    source = WriterDocument(
+        document_id="local-1",
+        title="Draft",
+        stage="final",
+        blocks=[WriterBlock(node_id="body", type="paragraph", content="content")],
+    )
+    converted = WriterProviderDocument(
+        provider=provider_name,
+        format=f"{provider_name}_blocks",
+        content=[{"text": "content"}],
+        source_document=source,
+    )
+    target = TargetDocument(
+        adapter=provider_name,
+        doc_id="remote-1",
+        uri=f"https://example.test/{provider_name}/remote-1",
+        title="Draft",
+    )
+    persisted = source.model_copy(deep=True)
+    persisted.revision = "remote-revision-1"
+    persisted.provider_binding = {
+        "provider": provider_name,
+        "document_id": "remote-1",
+        "uri": target.uri,
+    }
+    persisted.blocks[0].provider_binding = {
+        "provider": provider_name,
+        "block_id": "remote-block-1",
+    }
+
+    class FakeProvider:
+        def require_capability(self, capability):
+            calls.append(("require", capability))
+
+        def create_document(self, title, parent_uri=""):
+            calls.append(("create", title, parent_uri))
+            return target
+
+        def write_document(self, document, write_target, **kwargs):
+            calls.append(("write", document, write_target, kwargs))
+            return {
+                "doc_id": target.doc_id,
+                "adapter": provider_name,
+                "locator": target.uri,
+            }
+
+        def load_document(self, load_target):
+            calls.append(("load", load_target))
+            return {
+                "source_document": persisted,
+                "target_document": target,
+                "representation": "ir",
+            }
+
+    monkeypatch.setattr(
+        document_resources, "get_writer_provider", lambda _provider: FakeProvider()
+    )
+
+    result = document_resources.write_document(converted.model_dump())
+
+    assert [call[0] for call in calls] == ["require", "create", "require", "write", "load"]
+    assert result["provider"] == provider_name
+    assert result["target_document"]["adapter"] == provider_name
+    assert result["target_document"]["doc_id"] == "remote-1"
+    assert result["persisted_document"]["provider_binding"] == persisted.provider_binding
+    assert result["persisted_document"]["blocks"][0]["provider_binding"] == (
+        persisted.blocks[0].provider_binding
+    )

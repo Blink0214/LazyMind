@@ -194,29 +194,30 @@ handoff.
 | T2  | Snapshot all 45 Capability APIs and their owners.                          | DONE |
 | T3  | Snapshot the unchanged 36 Chat Agent tools.                                | DONE |
 | T4  | Verify class names and registered tool names.                              | DONE |
-| T5  | Add pre-refactoring MD/LMD golden fixtures.                                | PARTIAL |
-| T6  | Test flat Markdown zero-to-one writing.                                    | TODO    |
-| T7  | Test sectioned Markdown zero-to-one writing.                               | TODO    |
-| T8  | Test outlining and subproblem execution.                                   | TODO    |
-| T9  | Regress Markdown and IR draft streaming.                                   | PARTIAL |
-| T10 | Regress checkpointing and failure recovery.                                | PARTIAL |
+| T5  | Add pre-refactoring MD/LMD golden fixtures.                                | DONE    |
+| T6  | Test flat Markdown zero-to-one writing.                                    | DONE    |
+| T7  | Test sectioned Markdown zero-to-one writing.                               | DONE    |
+| T8  | Test outlining and subproblem execution.                                   | DONE    |
+| T9  | Regress Markdown and IR draft streaming.                                   | DONE    |
+| T10 | Regress checkpointing and failure recovery.                                | DONE    |
 | T11 | Test all Action argument and result contracts.                             | DONE    |
 | T12 | Test built-in resolution and publication validation.                       | DONE    |
 | T13 | Verify rewrite preview/execute content identity.                           | DONE    |
 | T14 | Verify preview handlers have no external side effects.                     | DONE    |
-| T15 | Test Feishu fake-provider first publication and binding.                   | TODO    |
-| T16 | Test Notion fake-provider first publication and binding.                   | TODO    |
-| T17 | Test bound write-back and revision conflicts for both providers.           | TODO    |
-| T18 | Test missing authorization, denied permission, and unsupported capability. | TODO    |
-| T19 | Regress academic, bid, and product Writer bridges.                         | PARTIAL |
+| T15 | Test Feishu fake-provider first publication and binding.                   | DONE    |
+| T16 | Test Notion fake-provider first publication and binding.                   | DONE    |
+| T17 | Test bound write-back and revision conflicts for both providers.           | DONE    |
+| T18 | Test missing authorization, denied permission, and unsupported capability. | DONE    |
+| T19 | Regress academic, bid, and product Writer bridges.                         | DONE    |
 | T20 | Run existing backend Writer and Artifact Action Go tests.                  | DONE    |
-| T21 | Run final Python compilation, formatting, and `git diff --check`.          | TODO    |
-| T22 | Complete and record a real Feishu smoke test.                              | TODO    |
-| T23 | Complete and record a real Notion smoke test.                              | TODO    |
+| T21 | Run final Python compilation, formatting, and `git diff --check`.          | DONE    |
+| T22 | Complete and record a real Feishu smoke test.                              | EXTERNAL |
+| T23 | Complete and record a real Notion smoke test.                              | EXTERNAL |
 
 
-Previously executed narrow compatibility checks do not satisfy this final test
-gate. No final handoff test suite has run yet.
+The complete local acceptance gate has run. The two real-account smoke tests
+remain external because this checkout has no Feishu or Notion credentials and
+no authorized target documents; no external document is created implicitly.
 
 ## H. Backend handoff package
 
@@ -252,7 +253,7 @@ algorithm-local paths or provider-specific writing branches.
 | I4  | Update the LazyLLM submodule SHA after provider PRs stabilize.                        | DONE     |
 | I5  | Merge the latest `dev-plugin` provider integrations into the refactoring.             | DONE     |
 | I6  | Adapt merged provider integrations to `document_tools`.                              | DONE     |
-| I7  | Run final Feishu/Notion/GitHub/WeChat joint regression.                               | TODO     |
+| I7  | Run final Feishu/Notion/GitHub/WeChat joint regression.                               | DONE     |
 | I8  | Integrate Obsidian through the shared interface when its work is available.           | EXTERNAL |
 
 
@@ -267,11 +268,11 @@ algorithm-local paths or provider-specific writing branches.
 | Physical capability split          | 15/15 items done                                      | Complete      |
 | Writer Workflow thinning           | 9/9 items done                                        | Complete      |
 | Shared Artifact Actions            | 16/16 Action implementation items done                | Complete      |
-| Provider-neutral behavior          | 9 done, 1 partial, 3 not started                       | In progress   |
+| Provider-neutral behavior          | 13/13 items done                                       | Complete      |
 | LazyLLM provider contract          | 10/10 items done                                       | Complete      |
-| Compatibility and acceptance tests | 9 done, 4 partial, 10 not started                     | In progress   |
+| Compatibility and acceptance tests | 21 local items done, 2 real-account items external    | Local complete |
 | Backend handoff                    | 1 done, 2 partial, 7 not started                      | Early stage   |
-| Parallel knowledge-source work     | 6 integration items done, 1 final test, 1 external   | Parallel      |
+| Parallel knowledge-source work     | 7 integration items done, 1 external                  | Local complete |
 
 
 ## Current implementation boundary
@@ -306,12 +307,9 @@ Completed in the working tree:
 
 Not yet complete:
 
-- Final provider conflict and real-account smoke tests remain in the acceptance
-  stage.
-- The LazyLLM provider-capability base commit exists in the standalone checkout;
-  the E-stage contract extensions and LazyMind submodule pin remain to be
-  committed together later.
-- The backend handoff package and final acceptance suite are incomplete.
+- Real-account Feishu and Notion smoke tests require authorized accounts and
+  explicit target documents.
+- The backend handoff package remains incomplete.
 
 
 
@@ -327,9 +325,14 @@ Not yet complete:
   write responses, and provider 5xx failures produce the non-retryable
   `PROVIDER_WRITE_OUTCOME_AMBIGUOUS` contract; deterministic validation failures
   pass through unchanged.
-- 289 focused LazyLLM Writer provider/tool tests (plus 12 subtests), 68 focused
-  LazyMind Action, document, provider, Workflow, and stream tests, and the
-  targeted Backend Core Writer, Action-diagnostic, and error-catalog tests pass.
+- 362 focused LazyLLM Writer/provider tests plus 12 subtests pass, covering all
+  four providers, conversion/write separation, bound revision behavior,
+  Markdown/LMD, streaming, revision, media, and short/sectioned writing.
+- 160 focused LazyMind Action, document, Workflow, recovery, and academic, bid,
+  and product bridge tests pass. Feishu and Notion fake-provider first
+  publication now explicitly verifies create, single converted write, read-back,
+  and returned document/block bindings.
+- Backend Core `algo`, `chat`, and `workflow` package tests pass.
 - LazyLLM providers now expose an immutable, explicit capability matrix.
   Feishu, Notion, GitHub, and WeChat declare only their implemented operations;
   unsupported operations fail before provider authorization or IO begins.
@@ -344,15 +347,9 @@ Not yet complete:
   save, and sync. Backend Core publish diagnostics reject unknown versions,
   mismatched Action names, and unsupported phases while leaving ordinary pinned
   package-tool names unchanged.
-- 53 focused Python Action, document-tools, Workflow-adapter, and Writer stream
-  tests pass. Existing Backend Core Writer and Artifact Action tests pass across
-  the root, `algo`, `chat`, and `workflow` packages, including the new
-  publication-diagnostic cases.
-- An additional full Backend Core Workflow package run compiled and began
-  testing but could not complete in the restricted sandbox because an unrelated
-  `httptest` case cannot bind a local listener. The relevant Writer and Artifact
-  Action cases were rerun directly (with local-listener permission where needed)
-  and pass.
+- Pre-refactoring Markdown input, normalized LMD envelope, and rendered Markdown
+  are stored as golden fixtures and compared exactly after normalizing only the
+  generated envelope metadata.
 - The 45-method Capability API snapshot, with the resource publication pair
   changed from replace/append to convert/write, and unchanged 36-tool Toolkit exposure,
   legacy imports, conversions, provider synchronization, and Action registry
@@ -360,7 +357,10 @@ Not yet complete:
 - 27 focused `document_tools` and WeChat/GitHub integration tests pass.
 - 42 focused document-tools, Workflow smoke, and Writer Workflow tests pass without a dependency
   shim, including the new adapter-boundary test.
-- `git diff --check` and focused Python compilation pass.
+- `make lint-python`, Go formatting, Workflow-scoped flake8, focused Python
+  compilation, and `git diff --check` for both repositories pass. The migrated
+  `document_tools` package and Workflow adapter use the repository's required
+  single-quote style without a lint exception.
 - Shared MD/LMD conversion, short-document planning/streaming, media search and
   filtering, cross-reference target binding, provider locator resolution,
   and provider-neutral synchronization now live under `document_tools`.
@@ -375,17 +375,17 @@ Not yet complete:
   and `writer_write_document`; the old coupled replace/append adapters are gone.
 - The focused MD/LMD test now asserts the exact established envelope data and
   rendered Markdown instead of checking only for substrings.
-- The broader local suite remains unavailable until the real optional Runtime/RAG
-  dependencies such as `rapidfuzz` and the LazyLLM RAG dependency group are
-  installed. Product bridge tests also require their hermetic subagent-tool
-  stub to be restored independently of this refactoring.
+- Product bridge tests use a hermetic subagent-tool stub and validate the current
+  chapter publication result without importing unrelated runtime dependencies.
 
 ## Recommended execution order
 
-1. Commit and pin the completed LazyLLM provider contract, then complete T5-T23
-   and prepare H2-H10 for backend handoff.
-2. Merge whichever provider integrations pass their own acceptance gates, adapt
-   the later side to the shared interface, and run the final joint regression.
+1. Prepare H2-H8 and H10 for backend handoff from the completed local acceptance
+   evidence.
+2. Run and record T22/T23 and H9 when explicit Feishu and Notion test accounts
+   and targets are available.
+3. Integrate Obsidian through the shared provider interface when its work is
+   available.
 
-The E-stage two-stage Action integration is complete; the next work is the final
-acceptance and handoff gate.
+The E-stage integration and local T-stage acceptance gate are complete; the next
+local work is the backend handoff package.

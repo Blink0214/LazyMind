@@ -8,8 +8,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import re
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Literal, Mapping
@@ -35,30 +33,30 @@ from lazymind.document_tools.writing import (
 class WriterCommand(BaseModel):
     """Workflow-private control decision for one user writing request."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra='forbid')
 
-    action: Literal["create", "use_outline", "rewrite", "revise", "read"]
-    source_role: Literal["none", "outline", "document"]
-    target_stage: Literal["prepared", "outline", "document"]
-    next_step: Literal["outline", "write_flat_document", "write_document", "__end__"]
-    structure_mode: Literal["flat", "sectioned"] = "sectioned"
+    action: Literal['create', 'use_outline', 'rewrite', 'revise', 'read']
+    source_role: Literal['none', 'outline', 'document']
+    target_stage: Literal['prepared', 'outline', 'document']
+    next_step: Literal['outline', 'write_flat_document', 'write_document', '__end__']
+    structure_mode: Literal['flat', 'sectioned'] = 'sectioned'
     user_instruction: str
     source_ref: str | None = None
     target_ref: str | None = None
     request_fingerprint: str
 
 
-WriterCommand.model_rebuild(_types_namespace={"Literal": Literal})
+WriterCommand.model_rebuild(_types_namespace={'Literal': Literal})
 
 
 def _state_request_fingerprint(user_input: str) -> str:
-    normalized = " ".join(str(user_input or "").split())
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    normalized = ' '.join(str(user_input or '').split())
+    return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
 
 
-def _state_authoritative_user_input(context: Any, supplied: str = "") -> str:
-    authoritative = str((context.params or {}).get("user_input") or "").strip()
-    return authoritative or str(supplied or "").strip()
+def _state_authoritative_user_input(context: Any, supplied: str = '') -> str:
+    authoritative = str((context.params or {}).get('user_input') or '').strip()
+    return authoritative or str(supplied or '').strip()
 
 
 def _state_has_verified_kb_evidence(
@@ -68,23 +66,23 @@ def _state_has_verified_kb_evidence(
     try:
         steps = context.db.load_steps(context.task_id)
     except Exception as exc:  # noqa: BLE001 - missing provenance must fail closed.
-        log.warning("[Writer] Cannot verify knowledge_text provenance: %s", exc)
+        log.warning('[Writer] Cannot verify knowledge_text provenance: %s', exc)
         return False
     for step in steps:
-        if step.get("role") != "tool":
+        if step.get('role') != 'tool':
             continue
-        for result in (step.get("content") or {}).get("tool_results") or []:
-            if result.get("name") not in evidence_tool_names:
+        for result in (step.get('content') or {}).get('tool_results') or []:
+            if result.get('name') not in evidence_tool_names:
                 continue
-            raw = result.get("result")
+            raw = result.get('result')
             try:
                 payload = json.loads(raw) if isinstance(raw, str) else raw
             except (TypeError, ValueError):
                 payload = None
-            if isinstance(payload, dict) and payload.get("success") is True:
+            if isinstance(payload, dict) and payload.get('success') is True:
                 return True
             if isinstance(raw, str) and raw.startswith(
-                "[Large result offloaded to file"
+                '[Large result offloaded to file'
             ):
                 return True
     return False
@@ -93,60 +91,60 @@ def _state_has_verified_kb_evidence(
 def _state_verified_knowledge_text(
     context: Any, knowledge_text: str, evidence_tool_names: set[str], log: Any
 ) -> str:
-    normalized = str(knowledge_text or "").strip()
+    normalized = str(knowledge_text or '').strip()
     if not normalized:
-        return ""
+        return ''
     if _state_has_verified_kb_evidence(context, evidence_tool_names, log):
         return normalized
     log.warning(
-        "[Writer] Ignoring knowledge_text without a preceding successful KB retrieval."
+        '[Writer] Ignoring knowledge_text without a preceding successful KB retrieval.'
     )
-    return ""
+    return ''
 
 
 def _state_authoritative_input_path(
     context: Any,
     key: str | tuple[str, ...],
-    supplied_path: str = "",
+    supplied_path: str = '',
     *,
     require_workflow_binding: bool = False,
 ) -> str:
     """Resolve a path from immutable Workflow bindings, never an agent guess."""
-    remote_inputs = (context.params or {}).get("remote_inputs") or {}
+    remote_inputs = (context.params or {}).get('remote_inputs') or {}
     keys = (key,) if isinstance(key, str) else key
     authoritative = next(
         (
-            str(remote_inputs.get(candidate) or "").strip()
+            str(remote_inputs.get(candidate) or '').strip()
             for candidate in keys
-            if str(remote_inputs.get(candidate) or "").strip()
+            if str(remote_inputs.get(candidate) or '').strip()
         ),
-        "",
+        '',
     )
-    step_id = str((context.params or {}).get("step_id") or "").strip()
-    if step_id in {"outline", "write_flat_document", "write_document"}:
+    step_id = str((context.params or {}).get('step_id') or '').strip()
+    if step_id in {'outline', 'write_flat_document', 'write_document'}:
         if require_workflow_binding and not authoritative:
             raise ValueError(
-                f"{keys[0]} is missing from authoritative workflow inputs."
+                f'{keys[0]} is missing from authoritative workflow inputs.'
             )
         return authoritative
-    return authoritative or str(supplied_path or "").strip()
+    return authoritative or str(supplied_path or '').strip()
 
 
 def _state_workspace_root(context: Any) -> Path:
-    root = Path(context.workspace_path) if context.workspace_path else Path("/tmp")
+    root = Path(context.workspace_path) if context.workspace_path else Path('/tmp')
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
 def _state_run_root(context: Any, name: str) -> Path:
-    root = _state_workspace_root(context) / "writer-workflow" / f"{name}-{uuid.uuid4().hex}"
+    root = _state_workspace_root(context) / 'writer-workflow' / f'{name}-{uuid.uuid4().hex}'
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
 def _state_workspace_fingerprint(**values: str) -> str:
     payload = json.dumps(values, ensure_ascii=False, sort_keys=True)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
 
 def _state_load_workspace_state(
@@ -160,23 +158,23 @@ def _state_load_workspace_state(
     if context is not None:
         path = (
             _state_workspace_root(context)
-            / "writer-workflow"
-            / f"{kind}-workspace-{fingerprint}.json"
+            / 'writer-workflow'
+            / f'{kind}-workspace-{fingerprint}.json'
         )
     elif not allow_without_context:
-        raise RuntimeError("Writer Workflow context is required for checkpointing.")
+        raise RuntimeError('Writer Workflow context is required for checkpointing.')
     if path and path.exists():
         try:
-            state = json.loads(path.read_text(encoding="utf-8"))
+            state = json.loads(path.read_text(encoding='utf-8'))
         except (OSError, json.JSONDecodeError):
             state = {}
-        if state.get("fingerprint") == fingerprint:
+        if state.get('fingerprint') == fingerprint:
             return state, path
     return {
-        "schema_version": 1,
-        "fingerprint": fingerprint,
-        "result": {},
-        "completed": False,
+        'schema_version': 1,
+        'fingerprint': fingerprint,
+        'result': {},
+        'completed': False,
     }, path
 
 
@@ -186,14 +184,14 @@ def _state_persist_workspace_state(
     *,
     completed: bool = False,
 ) -> None:
-    state["completed"] = completed
+    state['completed'] = completed
     if path is None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temporary = path.with_name(f'.{path.name}.{uuid.uuid4().hex}.tmp')
     temporary.write_text(
         json.dumps(state, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+        encoding='utf-8',
     )
     temporary.replace(path)
 
@@ -207,20 +205,20 @@ def _state_save_workspace_artifacts(context: Any, result: Mapping[str, Any]) -> 
     for key, value in dict(result).items():
         if allowed and key not in allowed:
             continue
-        if key == "draft_blocks" and isinstance(value, list):
+        if key == 'draft_blocks' and isinstance(value, list):
             for path in value:
                 if isinstance(path, str) and Path(path).is_file():
-                    entries.append({"key": key, "value": path, "content_type": "file"})
+                    entries.append({'key': key, 'value': path, 'content_type': 'file'})
                     saved_keys.append(key)
             continue
         if isinstance(value, str) and Path(value).is_file():
-            entries.append({"key": key, "value": value, "content_type": "file"})
+            entries.append({'key': key, 'value': value, 'content_type': 'file'})
             saved_keys.append(key)
     if not entries:
-        raise RuntimeError("Draft workspace produced no saveable artifacts.")
+        raise RuntimeError('Draft workspace produced no saveable artifacts.')
     saved = save_artifacts(entries)
-    if saved.get("status") != "ok":
-        raise RuntimeError(f"Failed to save draft workspace artifacts: {saved!r}")
+    if saved.get('status') != 'ok':
+        raise RuntimeError(f'Failed to save draft workspace artifacts: {saved!r}')
     return list(dict.fromkeys(saved_keys))
 
 
@@ -228,30 +226,22 @@ def _state_workspace_completion(
     result: Mapping[str, Any],
     saved_keys: list[str],
 ) -> dict[str, Any]:
-    draft_blocks = result.get("draft_blocks")
+    draft_blocks = result.get('draft_blocks')
     return {
-        "status": "completed",
-        "operation": result.get("operation"),
-        "representation": result.get("representation"),
-        "draft_section_count": (
+        'status': 'completed',
+        'operation': result.get('operation'),
+        'representation': result.get('representation'),
+        'draft_section_count': (
             len(draft_blocks) if isinstance(draft_blocks, list) else None
         ),
-        "saved_artifact_keys": saved_keys,
-        "warnings": list(result.get("warnings") or []),
-        "artifacts_saved": True,
-        "control": {"next_step": "__end__"},
+        'saved_artifact_keys': saved_keys,
+        'warnings': list(result.get('warnings') or []),
+        'artifacts_saved': True,
+        'control': {'next_step': '__end__'},
     }
 
 
 LOG = logging.getLogger(__name__)
-
-
-
-
-
-
-
-
 
 WRITER_DEFAULT_STRUCTURE_MODE: Literal['flat', 'sectioned'] = 'sectioned'
 
@@ -302,7 +292,7 @@ def _verified_knowledge_text(knowledge_text: str) -> str:
 
 def _authoritative_writer_input_path(
     key: str | tuple[str, ...],
-    supplied_path: str = "",
+    supplied_path: str = '',
     *,
     require_workflow_binding: bool = False,
 ) -> str:
@@ -330,21 +320,21 @@ def writer_classify_structure(user_input: str) -> Literal['flat', 'sectioned']:
 
 def writer_resolve_command(
     user_input: str,
-    action: Literal["create", "use_outline", "rewrite", "revise", "read"],
-    source_role: Literal["none", "outline", "document"],
-    target_stage: Literal["prepared", "outline", "document"] = "document",
-    source_ref: str = "",
-    target_ref: str = "",
-    existing_writer_command_path: str = "",
+    action: Literal['create', 'use_outline', 'rewrite', 'revise', 'read'],
+    source_role: Literal['none', 'outline', 'document'],
+    target_stage: Literal['prepared', 'outline', 'document'] = 'document',
+    source_ref: str = '',
+    target_ref: str = '',
+    existing_writer_command_path: str = '',
 ) -> str:
     """Create or reuse the sole Writer control decision for the current request."""
     ctx = require_context()
-    step_id = str((ctx.params or {}).get("step_id") or "").strip()
-    if step_id and step_id != "prepare":
-        raise ValueError("WriterCommand can only be created during the prepare step.")
+    step_id = str((ctx.params or {}).get('step_id') or '').strip()
+    if step_id and step_id != 'prepare':
+        raise ValueError('WriterCommand can only be created during the prepare step.')
     user_input = _authoritative_writer_user_input(user_input)
     existing_writer_command_path = _authoritative_writer_input_path(
-        "writer_command",
+        'writer_command',
         existing_writer_command_path,
     )
     fingerprint = _writer_request_fingerprint(user_input)
@@ -353,32 +343,32 @@ def writer_resolve_command(
         if existing.request_fingerprint == fingerprint:
             return existing_writer_command_path
 
-    if action == "create" and source_role != "none":
+    if action == 'create' and source_role != 'none':
         raise ValueError('create requires source_role="none".')
-    if action == "use_outline" and source_role != "outline":
+    if action == 'use_outline' and source_role != 'outline':
         raise ValueError('use_outline requires source_role="outline".')
-    if action == "rewrite" and source_role != "document":
+    if action == 'rewrite' and source_role != 'document':
         raise ValueError('rewrite requires source_role="document".')
-    if action == "revise" and source_role not in {"outline", "document"}:
+    if action == 'revise' and source_role not in {'outline', 'document'}:
         raise ValueError('revise requires source_role="outline" or "document".')
-    if action == "read" and target_stage != "prepared":
+    if action == 'read' and target_stage != 'prepared':
         raise ValueError('read requires target_stage="prepared".')
-    if target_stage == "prepared" and action != "read":
+    if target_stage == 'prepared' and action != 'read':
         raise ValueError('target_stage="prepared" requires action="read".')
 
     structure_mode = (
         writer_classify_structure(user_input)
-        if action == "create" and target_stage == "document"
+        if action == 'create' and target_stage == 'document'
         else WRITER_DEFAULT_STRUCTURE_MODE
     )
-    if action == "read":
-        next_step = "__end__"
-    elif action == "create" and target_stage == "document" and structure_mode == "flat":
-        next_step = "write_flat_document"
-    elif action == "rewrite" or (action == "revise" and source_role == "document"):
-        next_step = "write_document"
+    if action == 'read':
+        next_step = '__end__'
+    elif action == 'create' and target_stage == 'document' and structure_mode == 'flat':
+        next_step = 'write_flat_document'
+    elif action == 'rewrite' or (action == 'revise' and source_role == 'document'):
+        next_step = 'write_document'
     else:
-        next_step = "outline"
+        next_step = 'outline'
 
     command = WriterCommand(
         action=action,
@@ -391,12 +381,12 @@ def writer_resolve_command(
         target_ref=target_ref or None,
         request_fingerprint=fingerprint,
     )
-    root = _run_root("command")
+    root = _run_root('command')
     return persist_artifact_json(
         command,
-        str(root / "writer_command.json"),
-        schema_name="writer-workflow.WriterCommand",
-        created_by="writer-workflow-wrapper",
+        str(root / 'writer_command.json'),
+        schema_name='writer-workflow.WriterCommand',
+        created_by='writer-workflow-wrapper',
     )
 
 
@@ -801,7 +791,7 @@ def _outline_workspace_checkpoint_path(fingerprint: str) -> Path | None:
         return None
     return _state_load_workspace_state(
         context,
-        "outline",
+        'outline',
         fingerprint,
         allow_without_context=True,
     )[1]
@@ -809,7 +799,7 @@ def _outline_workspace_checkpoint_path(fingerprint: str) -> Path | None:
 
 def _write_outline_workspace_checkpoint(path: Path, state: Mapping[str, Any]) -> None:
     _state_persist_workspace_state(
-        dict(state), path, completed=bool(state.get("completed"))
+        dict(state), path, completed=bool(state.get('completed'))
     )
 
 
@@ -820,7 +810,7 @@ def _outline_workspace_state(fingerprint: str) -> tuple[dict[str, Any], Path | N
         context = None
     return _state_load_workspace_state(
         context,
-        "outline",
+        'outline',
         fingerprint,
         allow_without_context=True,
     )
@@ -1045,6 +1035,7 @@ def writer_generate_short_writing_plan(
         globals(), '_writer_generate_short_writing_plan', locals(),
     )
 
+
 def writer_generate_short_visual_plan(
     writing_task_path: str,
     short_writing_plan_path: str,
@@ -1053,6 +1044,7 @@ def writer_generate_short_visual_plan(
     return _DOCUMENT_EXECUTION.invoke(
         globals(), '_writer_generate_short_visual_plan', locals(),
     )
+
 
 def writer_generate_short_document(
     writing_task_path: str,
@@ -1065,11 +1057,12 @@ def writer_generate_short_document(
         globals(), '_writer_generate_short_document', locals(),
     )
 
+
 def writer_resolve_visual_media(
     visual_plan_path: str,
     media_assets_path: str,
     strict_required: bool = False,
-    allowed_strategies_json: str = "",
+    allowed_strategies_json: str = '',
 ) -> dict:
     return _DOCUMENT_EXECUTION.invoke(
         globals(), '_writer_resolve_visual_media', locals(),
@@ -1113,8 +1106,8 @@ def writer_generate_draft_blocks_markdown(
 def _assemble_draft_document_ir(
     draft_blocks_anchor_path: str,
     writing_context_path: str,
-    outline_path: str = "",
-    document_title: str = "",
+    outline_path: str = '',
+    document_title: str = '',
 ) -> str:
     return _DOCUMENT_EXECUTION.invoke(
         globals(), '_assemble_draft_document_ir', locals(),
@@ -1124,9 +1117,9 @@ def _assemble_draft_document_ir(
 def _assemble_draft_document_markdown(
     draft_sections_anchor_path: str,
     writing_context_path: str,
-    outline_path: str = "",
-    document_title: str = "",
-    resolved_media_assets_path: str = "",
+    outline_path: str = '',
+    document_title: str = '',
+    resolved_media_assets_path: str = '',
 ) -> str:
     return _DOCUMENT_EXECUTION.invoke(
         globals(), '_assemble_draft_document_markdown', locals(),
@@ -1137,10 +1130,10 @@ def writer_generate_draft_document(
     writing_task_path: str,
     section_instructions_path: str,
     writing_context_path: str,
-    outline_path: str = "",
-    visual_plan_path: str = "",
-    resolved_media_assets_path: str = "",
-    document_title: str = "",
+    outline_path: str = '',
+    visual_plan_path: str = '',
+    resolved_media_assets_path: str = '',
+    document_title: str = '',
 ) -> dict:
     return _DOCUMENT_EXECUTION.invoke(
         globals(), '_writer_generate_draft_document', locals(),
@@ -1327,7 +1320,7 @@ def _draft_workspace_fingerprint(
 def _draft_workspace_state(fingerprint: str) -> tuple[dict[str, Any], Path]:
     state, path = _state_load_workspace_state(
         require_context(),
-        "draft",
+        'draft',
         fingerprint,
     )
     assert path is not None
