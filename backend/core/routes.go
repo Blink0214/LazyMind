@@ -32,6 +32,7 @@ import (
 	"lazymind/core/subagent"
 	"lazymind/core/systemdeps"
 	"lazymind/core/taskcenter"
+	"lazymind/core/translation"
 	"lazymind/core/userprefs"
 	"lazymind/core/wordgroup"
 	"lazymind/core/workflow"
@@ -288,6 +289,8 @@ func registerAllRoutes(r *mux.Router) {
 	handleAPI(r, "GET", "/conversations/{conversation_id}:status", []string{"qa.read"}, chat.GetChatStatus)
 	handleAPI(r, "GET", "/chat/models", []string{"qa.read"}, chat.ListChatModels)
 	handleAPI(r, "PATCH", "/conversations/{conversation_id}/model", []string{"qa.write"}, chat.PatchConversationModel)
+	handleAPI(r, "POST", "/conversations/{conversation_id}/fork-preview", []string{"qa.read"}, chat.PreviewConversationFork)
+	handleAPI(r, "POST", "/conversations/{conversation_id}/forks", []string{"qa.write"}, chat.CreateConversationFork)
 	handleAPI(r, "POST", "/conversations/{parent_id}/sidechat", []string{"qa.write"}, chat.CreateSidechat)
 	handleAPI(r, "POST", "/conversations/{child_id}/retain", []string{"qa.write"}, chat.RetainSidechat)
 	handleAPI(r, "DELETE", "/conversations/{child_id}/sidechat", []string{"qa.write"}, chat.DiscardSidechat)
@@ -670,6 +673,8 @@ func registerAllRoutes(r *mux.Router) {
 	handleAPI(r, "DELETE", "/model_providers/{model_provider_id}/groups/{group_id}/models/{model_id}", []string{"model.write"}, modelprovider.DeleteGroupModel)
 	handleAPI(r, "POST", "/model_providers/{model_provider_id}/groups/{group_id}/keys", []string{"model.write"}, modelprovider.AddKey)
 	handleAPI(r, "DELETE", "/model_providers/{model_provider_id}/groups/{group_id}/keys", []string{"model.write"}, modelprovider.RemoveKey)
+	handleAPI(r, "GET", "/translation/status", []string{"document.read"}, translation.Status)
+	handleAPI(r, "POST", "/translation:translate", []string{"document.read"}, translation.Translate)
 
 	// ----- Prompttext -----
 	handleAPI(r, "POST", "/prompts", []string{"document.write"}, chat.CreatePrompt)
