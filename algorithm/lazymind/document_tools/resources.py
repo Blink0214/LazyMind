@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 import json
-import logging
 import re
 import uuid
 from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from lazyllm.tools.agent import ToolExecutionError
 from lazyllm.tools.writer.data_models import (
     MediaAssetLibrary,
@@ -28,7 +27,6 @@ from lazyllm.tools.writer.utils import parse_document_markdown
 from .artifacts import (
     WRITER_BLOCK_SCHEMA,
     WRITER_IR_SCHEMA,
-    _document_text,
     _document_value,
     _json_dumps,
     _json_loads,
@@ -43,8 +41,10 @@ _PROVIDER_LOCATOR_RE = re.compile(
     r"(?:https?://|[a-z][a-z0-9_+.-]*:(?://)?)[^\s<>\"'，。；！？、（）【】《》「」『』]+",
     re.IGNORECASE,
 )
-_WECHAT_COVER_SIZE = (900, 383)
-LOG = logging.getLogger(__name__)
+
+
+def _provider_name_from_document(document: WriterDocument) -> str:
+    return str(document.provider_binding.get("provider") or "").strip().lower()
 
 
 def _merge_provider_state(
@@ -80,6 +80,12 @@ def sync_writer_documents(
     """Persist one WriterDocument delta and bind its semantic IR to the provider."""
     source = WriterDocument.model_validate(source_value)
     revised = WriterDocument.model_validate(revised_value)
+    provider_name = _provider_name_from_document(source)
+    target = _target_from_document(source)
+    if not provider_name or target is None:
+        raise ToolExecutionError(
+            "Bound write-back requires a source provider binding and target identity."
+        )
     if source.document_id != revised.document_id:
         raise ToolExecutionError("WriterDocument document_id values must match.")
     for field in ("stage", "revision", "provider_binding"):
@@ -113,7 +119,7 @@ def sync_writer_documents(
         output = WriterResourceTools(
             llm=None,
             artifact_store=str(root),
-        ).apply_patch_to_document(patch, source, media_assets=library)
+        ).apply_patch_to_document(patch, source, target, media_assets=library)
         persisted = WriterDocument.model_validate(
             _result_data(output, "persisted_document")
         )
@@ -174,6 +180,21 @@ def sync_document(
             artifact_store,
         )
     document = WriterDocument.model_validate(revised_document)
+    bound_provider = _provider_name_from_document(document)
+    requested_provider = str(adapter or "").strip().lower()
+    if target_document:
+        requested_provider = str(
+            TargetDocument.model_validate(target_document).adapter
+            or requested_provider
+        ).strip().lower()
+    if bound_provider:
+        if not requested_provider or requested_provider == bound_provider:
+            raise ToolExecutionError(
+                "Bound WriterDocument publication requires its synchronized source baseline."
+            )
+        from .artifacts import detach_provider_binding
+
+        document = WriterDocument.model_validate(detach_provider_binding(document))
     return _replace_document_and_read_back(
         document,
         title=document.title,
@@ -424,67 +445,6 @@ def _resolve_target(
     return target
 
 
-def _prepare_wechat_cover(
-    target: TargetDocument,
-    document: WriterDocument | str,
-    root: Path,
-    *,
-    model_available: Callable[[str], bool] | None = None,
-    generator: Callable[..., dict[str, Any]] | None = None,
-) -> TargetDocument:
-    if target.adapter != "wechat" or target.doc_id or target.meta.get("thumb_media_id"):
-        return target
-    if isinstance(document, WriterDocument):
-        binding = document.provider_binding
-        if binding.get("provider") == "wechat" and binding.get("document_id"):
-            return target
-        title = document.title or target.title or "未命名文档"
-        body = _document_text(document)
-    else:
-        title = target.title or "未命名文档"
-        body = str(document)
-
-    from PIL import Image, ImageOps
-
-    cover_path = root / "wechat-cover.png"
-    try:
-        if model_available is None:
-            from lazymind.model_config import is_model_role_available
-
-            model_available = is_model_role_available
-        if not model_available("image_generator"):
-            raise RuntimeError("image_generator is not configured")
-        if generator is None:
-            from lazymind.chat.engine.tools.multimodal import image_generator
-
-            generator = image_generator
-        result = generator(
-            "为微信公众号文章生成一张专业、简洁、无文字、无水印的横版封面图。\n"
-            f"文章标题：{title}\n文章内容摘要：{body[:1000]}",
-            image_size="1024x1024",
-            batch_size=1,
-        )
-        generated_path = Path(str(result.get("local_path") or ""))
-        if not generated_path.is_file():
-            raise ValueError("image_generator returned no usable local image")
-        with Image.open(generated_path) as source:
-            cover = ImageOps.fit(
-                source.convert("RGB"),
-                _WECHAT_COVER_SIZE,
-                method=Image.Resampling.LANCZOS,
-            )
-            cover.save(cover_path, format="PNG")
-    except Exception as exc:
-        LOG.warning(
-            "[Writer] WeChat cover generation failed; using white cover: %s", exc
-        )
-        Image.new("RGB", _WECHAT_COVER_SIZE, "white").save(cover_path, format="PNG")
-
-    prepared = target.model_copy(deep=True)
-    prepared.meta["cover_path"] = str(cover_path)
-    return prepared
-
-
 class WriterResourceCapabilities:
     WRITER_IR_SCHEMA = WRITER_IR_SCHEMA
     WRITER_BLOCK_SCHEMA = WRITER_BLOCK_SCHEMA
@@ -711,37 +671,11 @@ class WriterResourceCapabilities:
         media_assets = (
             _json_loads(media_assets_json, {}) if media_assets_json.strip() else None
         )
-        if mode == "replace":
-            target = _prepare_wechat_cover(target, publish_document, root)
         write_result = (
             resource.replace_document(publish_document, target, media_assets)
             if mode == "replace"
             else resource.append_to_document(publish_document, target, media_assets)
         )
-        if str(target.adapter or "").strip().lower() == "github":
-            published_result = _primary_data(write_result)
-            if published_result.get("success") is not True:
-                raise ToolExecutionError(
-                    "GitHub did not confirm that the document was written."
-                )
-            return _json_dumps(
-                {
-                    "publish_result": published_result,
-                    "draft_document": (
-                        publish_document.model_dump(exclude_defaults=True)
-                        if isinstance(publish_document, WriterDocument)
-                        else publish_document
-                    ),
-                    "representation": (
-                        "ir"
-                        if isinstance(publish_document, WriterDocument)
-                        else "markdown"
-                    ),
-                    "provider": "github",
-                    "published_link": _published_link(target),
-                    "target_document": target.model_dump(exclude_defaults=True),
-                }
-            )
         refreshed_target = target.model_dump(exclude_defaults=True)
         artifact_paths = (write_result.get("metadata") or {}).get(
             "artifact_paths"

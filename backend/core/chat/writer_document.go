@@ -98,7 +98,7 @@ func writerDocumentProvider(values ...json.RawMessage) string {
 			return provider
 		}
 	}
-	return "feishu"
+	return ""
 }
 
 func writerProviderToolConfig(toolConfig map[string]any, provider string) (map[string]any, bool) {
@@ -198,12 +198,18 @@ func SyncWriterDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	provider := writerDocumentProvider(body.SourceDocument, body.RevisedDocument)
+	if provider == "" {
+		common.ReplyErrWithData(w, "bound provider required", map[string]any{
+			"code": "PROVIDER_BINDING_REQUIRED", "retryable": false,
+		}, http.StatusConflict)
+		return
+	}
 	toolConfig, err := loadChatToolConfig(ctx, db, userID)
 	if err != nil {
 		common.ReplyErr(w, "load cloud document authorization failed", http.StatusBadGateway)
 		return
 	}
-	provider := writerDocumentProvider(body.SourceDocument, body.RevisedDocument)
 	providerConfig, ok := writerProviderToolConfig(toolConfig, provider)
 	if !ok {
 		common.ReplyErrWithData(w, "cloud document authorization required", map[string]any{
@@ -218,10 +224,9 @@ func SyncWriterDocument(w http.ResponseWriter, r *http.Request) {
 		ToolConfig: providerConfig,
 	})
 	if err != nil {
-		common.ReplyErrWithData(w, "writer document sync failed", map[string]any{
+		common.ReplyErrWithData(w, "writer document sync failed", writerActionErrorData(err, map[string]any{
 			"status": "sync_failed", "provider_synced": false, "artifact_saved": false,
-			"detail": err.Error(),
-		}, writerSyncStatus(status))
+		}), writerSyncStatus(status))
 		return
 	}
 	if !result.Success || !result.ProviderSynced || len(result.PersistedDocument) == 0 {
@@ -717,11 +722,6 @@ func WriteBackWriterDocument(w http.ResponseWriter, r *http.Request) {
 			syncRequest.RevisedDocument = revisedDocument
 		}
 	}
-	toolConfig, err := loadChatToolConfig(ctx, db, userID)
-	if err != nil {
-		common.ReplyErr(w, "load cloud document authorization failed", http.StatusBadGateway)
-		return
-	}
 	boundProvider := writerDocumentProvider(
 		syncRequest.SourceDocument,
 		syncRequest.RevisedDocument,
@@ -729,6 +729,14 @@ func WriteBackWriterDocument(w http.ResponseWriter, r *http.Request) {
 	)
 	if provider == "" {
 		provider = boundProvider
+	}
+	if provider == "" {
+		common.ReplyErrWithData(w, "writer document provider selection required", map[string]any{
+			"status":    "provider_selection_required",
+			"code":      "PROVIDER_SELECTION_REQUIRED",
+			"retryable": false,
+		}, http.StatusBadRequest)
+		return
 	}
 	if !writerDocumentProviderSupported(provider) {
 		common.ReplyErr(w, "unsupported writer document provider", http.StatusBadRequest)
@@ -747,6 +755,11 @@ func WriteBackWriterDocument(w http.ResponseWriter, r *http.Request) {
 		syncRequest.TargetDocument = nil
 	}
 	syncRequest.Adapter = provider
+	toolConfig, err := loadChatToolConfig(ctx, db, userID)
+	if err != nil {
+		common.ReplyErr(w, "load cloud document authorization failed", http.StatusBadGateway)
+		return
+	}
 	providerConfig, ok := writerProviderToolConfig(toolConfig, provider)
 	if !ok {
 		common.ReplyErrWithData(w, "cloud document authorization required", map[string]any{
@@ -757,10 +770,9 @@ func WriteBackWriterDocument(w http.ResponseWriter, r *http.Request) {
 	syncRequest.ToolConfig = providerConfig
 	result, status, err := algo.SyncWriterDocument(ctx, syncRequest)
 	if err != nil {
-		common.ReplyErrWithData(w, "writer document write-back failed", map[string]any{
+		common.ReplyErrWithData(w, "writer document write-back failed", writerActionErrorData(err, map[string]any{
 			"status": "write_back_failed", "provider_synced": false,
-			"detail": err.Error(),
-		}, writerSyncStatus(status))
+		}), writerSyncStatus(status))
 		return
 	}
 	if !result.Success || !result.ProviderSynced || len(result.PersistedDocument) == 0 {
@@ -784,7 +796,7 @@ func WriteBackWriterDocument(w http.ResponseWriter, r *http.Request) {
 	if representation == "markdown" {
 		schema = "text/markdown"
 	}
-	if representation == "markdown" && targetArtifact != nil && len(result.TargetDocument) > 0 {
+	if representation == "markdown" && len(result.TargetDocument) > 0 {
 		targetValue, marshalErr := json.Marshal(map[string]any{
 			"schema":         "lazyllm.tools.writer.data_models.task.TargetDocument",
 			"schema_version": "0.1",
@@ -798,9 +810,17 @@ func WriteBackWriterDocument(w http.ResponseWriter, r *http.Request) {
 			common.ReplyErr(w, "marshal target_document artifact failed", http.StatusInternalServerError)
 			return
 		}
+		targetSlotID, targetSlot, targetStepID, targetAttempt :=
+			"target_document", "target_document", draft.Revision.StepID, draft.Revision.Attempt
+		if targetArtifact != nil {
+			targetSlotID = targetArtifact.Revision.SlotID
+			targetSlot = targetArtifact.Revision.Slot
+			targetStepID = targetArtifact.Revision.StepID
+			targetAttempt = targetArtifact.Revision.Attempt
+		}
 		targetRevision, saveErr := workflow.WriteSlotRevisionWithHumanArtifact(
-			ctx, db, sessionID, targetArtifact.Revision.SlotID, targetArtifact.Revision.Slot,
-			targetArtifact.Revision.StepID, targetArtifact.Revision.Attempt, "single", nil,
+			ctx, db, sessionID, targetSlotID, targetSlot,
+			targetStepID, targetAttempt, "single", nil,
 			"json", targetValue, nil,
 		)
 		if saveErr != nil {
@@ -872,11 +892,12 @@ func WriteBackWriterDocument(w http.ResponseWriter, r *http.Request) {
 	common.ReplyOK(w, map[string]any{
 		"status": "synced", "revision": revision.Revision,
 		"provider_synced": true, "artifact_saved": true,
-		"patch_result":   result.PatchResult,
-		"document":       result.PersistedDocument,
-		"provider":       confirmedProvider,
-		"representation": representation,
-		"write_result":   result.WriteResult,
+		"patch_result":    result.PatchResult,
+		"document":        result.PersistedDocument,
+		"provider":        confirmedProvider,
+		"representation":  representation,
+		"write_result":    result.WriteResult,
+		"target_document": result.TargetDocument,
 	})
 }
 
@@ -1525,11 +1546,36 @@ func writerSyncReply(
 
 func writerSyncStatus(status int) int {
 	switch status {
-	case http.StatusBadRequest, http.StatusUnprocessableEntity:
-		return http.StatusBadRequest
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict:
+	case http.StatusBadRequest, http.StatusUnprocessableEntity,
+		http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict:
 		return status
 	default:
 		return http.StatusBadGateway
 	}
+}
+
+func writerActionErrorData(err error, defaults map[string]any) map[string]any {
+	data := make(map[string]any, len(defaults)+4)
+	for key, value := range defaults {
+		data[key] = value
+	}
+	data["detail"] = err.Error()
+	var httpErr *common.HTTPError
+	if !errors.As(err, &httpErr) || len(httpErr.Body) == 0 {
+		return data
+	}
+	var envelope struct {
+		Detail json.RawMessage `json:"detail"`
+	}
+	if json.Unmarshal(httpErr.Body, &envelope) != nil || len(envelope.Detail) == 0 {
+		return data
+	}
+	var detail map[string]any
+	if json.Unmarshal(envelope.Detail, &detail) != nil {
+		return data
+	}
+	for key, value := range detail {
+		data[key] = value
+	}
+	return data
 }

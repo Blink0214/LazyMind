@@ -10,7 +10,6 @@ from typing import Any, Mapping
 from lazyllm.tools.agent import ToolExecutionError
 from lazyllm.tools.writer.data_models import (
     SectionInstruction,
-    WriterBlock,
     WriterDocument,
 )
 from lazyllm.tools.writer.numbering import (
@@ -28,6 +27,7 @@ from lazyllm.tools.writer.numbering import (
 from lazyllm.tools.writer.utils import (
     parse_document_markdown,
     save_artifact_json,
+    set_document_editable,
     writer_document_from_lmd,
     writer_document_to_lmd,
     writer_document_to_markdown,
@@ -103,10 +103,12 @@ def normalize_writer_document(
 def detach_provider_binding(value: Any) -> dict[str, Any]:
     """Turn imported Writer IR into an independent local document."""
     document = WriterDocument.model_validate(value)
+    document.revision = None
     document.provider_binding.clear()
     document.metadata.pop("source", None)
     for block in document.iter_blocks():
         block.provider_binding.clear()
+        block.provider_payload.clear()
     return document.model_dump(exclude_defaults=True)
 
 
@@ -281,27 +283,7 @@ def _result_data(result: dict, key: str) -> Any:
 
 
 def _set_document_editable(value: Any, *, stage: str | None = None) -> WriterDocument:
-    document = WriterDocument.model_validate(value)
-    if stage is not None:
-        document.stage = stage
-    document.ui_editable = True
-
-    def update_blocks(blocks: list[WriterBlock], level: int = 1) -> None:
-        for block in blocks:
-            block.editable = block.type != "wechat_opaque"
-            if stage is not None:
-                block.stage = stage
-            heading_level = block.numbering.get("level")
-            if block.type == "heading" and (
-                not isinstance(heading_level, int)
-                or isinstance(heading_level, bool)
-                or not 1 <= heading_level <= 9
-            ):
-                block.numbering["level"] = min(level, 9)
-            update_blocks(block.children, level + 1)
-
-    update_blocks(document.blocks)
-    return document
+    return set_document_editable(value, stage=stage)
 
 
 def _document_text(document: WriterDocument) -> str:

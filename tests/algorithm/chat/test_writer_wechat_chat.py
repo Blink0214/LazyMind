@@ -167,7 +167,7 @@ def test_new_wechat_draft_generates_normalized_cover(tmp_path: Path):
         assert cover.format == 'PNG'
 
 
-def test_new_wechat_draft_falls_back_to_white_cover(tmp_path: Path):
+def test_new_wechat_draft_falls_back_to_provider_placeholder(tmp_path: Path):
     target = _prepare_wechat_cover(
         TargetDocument(adapter='wechat'),
         _document(),
@@ -177,7 +177,7 @@ def test_new_wechat_draft_falls_back_to_white_cover(tmp_path: Path):
 
     with Image.open(target.meta['cover_path']) as cover:
         assert cover.size == (900, 383)
-        assert cover.convert('RGB').getextrema() == ((255, 255),) * 3
+        assert cover.format == 'PNG'
 
 
 def test_new_wechat_draft_falls_back_when_generation_fails(tmp_path: Path):
@@ -194,7 +194,7 @@ def test_new_wechat_draft_falls_back_when_generation_fails(tmp_path: Path):
 
     with Image.open(target.meta['cover_path']) as cover:
         assert cover.size == (900, 383)
-        assert cover.convert('RGB').getextrema() == ((255, 255),) * 3
+        assert cover.format == 'PNG'
 
 
 def test_wechat_cover_generation_does_not_run_for_existing_or_other_targets(
@@ -214,8 +214,8 @@ def test_wechat_cover_generation_does_not_run_for_existing_or_other_targets(
     ) is notion
 
 
-@pytest.mark.parametrize('provider', ['github', 'wechat', 'feishu'])
-def test_replace_preserves_provider_specific_results(monkeypatch, tmp_path, provider):
+@pytest.mark.parametrize('provider', ['wechat', 'feishu'])
+def test_replace_preserves_provider_confirmed_ir(monkeypatch, tmp_path, provider):
     from lazymind.chat.engine.tools.writer import WriterResourceTools
 
     document = _document()
@@ -239,7 +239,7 @@ def test_replace_preserves_provider_specific_results(monkeypatch, tmp_path, prov
         adapter=provider, doc_id='existing-doc',
         meta={'browser_url': 'https://example.test/existing-doc'},
     )
-    content = '# GitHub draft' if provider == 'github' else document.model_dump()
+    content = document.model_dump()
     result = json.loads(WriterResourceToolkit().replace_document(
         content_json=json.dumps(content),
         source_document_json='',
@@ -249,16 +249,53 @@ def test_replace_preserves_provider_specific_results(monkeypatch, tmp_path, prov
     assert result['provider'] == provider
     assert result['target_document']['adapter'] == provider
     assert result['target_document']['doc_id'] == 'existing-doc'
-    assert result['representation'] == ('markdown' if provider == 'github' else 'ir')
-    if provider == 'github':
-        assert result['draft_document'] == content
-    else:
-        published = WriterDocument.model_validate(result['draft_document'])
-        assert published.document_id == document.document_id
-        assert published.title == document.title
-        assert [(b.type, b.content) for b in published.blocks] == [
-            (b.type, b.content) for b in document.blocks
-        ]
+    assert result['representation'] == 'ir'
+    published = WriterDocument.model_validate(result['draft_document'])
+    assert published.document_id == document.document_id
+    assert published.title == document.title
+    assert [(b.type, b.content) for b in published.blocks] == [
+        (b.type, b.content) for b in document.blocks
+    ]
+
+
+def test_replace_uses_generic_provider_readback_for_markdown(monkeypatch, tmp_path):
+    from lazymind.chat.engine.tools.writer import WriterResourceTools
+
+    markdown = '# GitHub draft\n\nBody'
+    written = tmp_path / 'write-result.json'
+    written.write_text(json.dumps({'success': True}))
+    refreshed = tmp_path / 'source.md'
+    refreshed.write_text(markdown)
+    target = TargetDocument(
+        adapter='github',
+        doc_id='existing-doc',
+        uri='githubrepo:/acme/docs/README.md?ref=main',
+        meta={'browser_url': 'https://example.test/existing-doc'},
+    )
+    refreshed_target = tmp_path / 'target.json'
+    refreshed_target.write_text(target.model_dump_json())
+    monkeypatch.setattr(WriterResourceTools, 'replace_document', lambda *args: {
+        'artifact_path': str(written),
+        'metadata': {'artifact_paths': {}, 'representation': 'markdown'},
+    })
+    monkeypatch.setattr(WriterResourceTools, 'load_document', lambda *args: {
+        'artifact_path': str(refreshed),
+        'representation': 'markdown',
+        'metadata': {
+            'artifact_paths': {'target_document': str(refreshed_target)},
+        },
+    })
+
+    result = json.loads(WriterResourceToolkit().replace_document(
+        content_json=json.dumps(markdown),
+        source_document_json='',
+        target_document_json=target.model_dump_json(),
+    ))
+
+    assert result['provider'] == 'github'
+    assert result['representation'] == 'markdown'
+    assert result['draft_document'] == markdown
+    assert result['target_document']['doc_id'] == 'existing-doc'
 
 
 def test_missing_provider_url_reports_writeback_error():

@@ -131,16 +131,28 @@ and returns that exact candidate without another model call.
 
 | ID  | Task                                                                           | Status  |
 | --- | ------------------------------------------------------------------------------ | ------- |
-| E1  | Finalize bound-source write-back mode.                                         | PARTIAL |
-| E2  | Finalize unbound local-document publication mode.                              | PARTIAL |
-| E3  | Return and persist provider bindings after first publication.                  | PARTIAL |
-| E4  | Treat explicit cross-provider publication as unbind-and-copy.                  | PARTIAL |
+| E1  | Finalize bound-source write-back mode.                                         | DONE    |
+| E2  | Finalize unbound local-document publication mode.                              | DONE    |
+| E3  | Return and persist provider bindings after first publication.                  | DONE    |
+| E4  | Treat explicit cross-provider publication as unbind-and-copy.                  | DONE    |
 | E5  | Remove the three default-Feishu arguments from Writer Workflow functions.      | DONE    |
-| E6  | Generalize or clearly deprecate `/api/writer/documents:sync`.                  | PARTIAL |
+| E6  | Generalize or clearly deprecate `/api/writer/documents:sync`.                  | DONE    |
 | E7  | Audit and remove provider-specific branches from `document_tools`.             | PARTIAL |
 | E8  | Add the structured `PROVIDER_CAPABILITY_UNSUPPORTED` error.                    | TODO    |
-| E9  | Prevent provider switching or document creation after failed bound write-back. | TODO    |
+| E9  | Prevent provider switching or document creation after failed bound write-back. | DONE    |
 | E10 | Prevent automatic retry after ambiguous external write outcomes.               | TODO    |
+
+Bound Writer IR now requires its synchronized source baseline and exact target
+binding. Unbound publication requires an explicit adapter or target, while an
+explicit different provider detaches document/block identities, provider
+payloads, and remote revision state before copying. First publication returns
+both the provider-confirmed document and normalized target; Backend Core stores
+the target for Markdown even when no earlier target revision exists. Markdown
+publication retains its established IR conversion and media-reference behavior.
+The legacy sync route is explicitly deprecated and remains a thin compatibility
+adapter. Provider capability and ambiguous-write contracts stay pending until
+the corresponding LazyLLM provider contract exists; LazyMind does not implement
+a temporary reflection-based substitute.
 
 
 

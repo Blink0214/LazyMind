@@ -187,7 +187,11 @@ class WorkflowActionInvokeRequest(BaseModel):
     tool_config: Optional[Dict[str, Any]] = None
 
 
-@router.post('/api/writer/documents:sync', summary='Persist an edited WriterDocument to its provider')
+@router.post(
+    '/api/writer/documents:sync',
+    summary='Deprecated: persist an edited bound WriterDocument',
+    deprecated=True,
+)
 def sync_writer_document(request: WriterDocumentSyncRequest) -> dict:
     if not request.tool_config:
         raise HTTPException(status_code=400, detail='A provider credential is required.')

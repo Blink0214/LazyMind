@@ -308,16 +308,13 @@ both create and return a `TargetDocument`, write Markdown or Writer IR through
 that target, read back the confirmed representation, and attach provider binding
 state to the persisted document.
 
-The refactoring must remove remaining Feishu defaults from the algorithm and
-Workflow layers, including the defaults in the Writer Workflow forwarding
-functions and LazyLLM `WriterResourceTools.create_document`. The legacy
-`/api/writer/documents:sync` algorithm endpoint also has a Feishu-only tool-config
-check and must either become provider-neutral or remain only as a clearly
-deprecated compatibility route. The current backend defaults an unbound document
-to Feishu; that is a product-layer choice and must be changed by the backend
-handoff if implicit Feishu selection is no longer desired. Until that backend
-change lands, it may preserve current behavior only by explicitly sending
-`adapter="feishu"`; the algorithm itself has no Feishu default.
+The algorithm, Workflow, and backend write-back path no longer default an
+unbound document to Feishu. Unbound publication requires an explicit provider;
+bound publication derives the provider only from the authoritative binding.
+The legacy `/api/writer/documents:sync` route is marked deprecated and accepts
+only a bound source plus credentials for that exact provider. LazyLLM's older
+`WriterResourceTools.create_document` default remains isolated to the L5
+provider-contract follow-up and is never relied on by LazyMind callers.
 
 ### Confirmed provider capability contract
 

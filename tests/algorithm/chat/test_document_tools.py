@@ -2,6 +2,7 @@ import json
 
 import pytest
 from lazyllm.tools.agent import ToolExecutionError
+from lazyllm.tools.writer.data_models import TargetDocument, WriterBlock, WriterDocument
 
 from lazymind.chat.engine.tools.writer import (
     WriterCreateToolkit as LegacyWriterCreateToolkit,
@@ -319,3 +320,101 @@ def test_unbound_sync_requires_explicit_provider_adapter():
         match="adapter is required when parent_uri cannot identify a provider",
     ):
         document_resources.sync_document(markdown_content="# New document")
+
+
+def _bound_document(provider="fake"):
+    return WriterDocument(
+        document_id="local-1",
+        title="Draft",
+        stage="final",
+        revision="remote-1",
+        provider_binding={
+            "provider": provider,
+            "document_id": "remote-1",
+            "uri": f"{provider}:/remote-1",
+        },
+        blocks=[WriterBlock(
+            node_id="body",
+            type="paragraph",
+            content="before",
+            provider_binding={"provider": provider, "block_id": "block-1"},
+            provider_payload={"remote": True},
+        )],
+    )
+
+
+def test_first_publication_returns_confirmed_document_and_target_binding(monkeypatch):
+    calls = []
+    persisted = _bound_document()
+    target = TargetDocument(
+        adapter="fake",
+        doc_id="remote-1",
+        uri="fake:/remote-1",
+        meta={"browser_url": "https://example.test/remote-1"},
+    )
+    def fake_create(self, title, parent_uri="", adapter=""):
+        calls.append(("create", adapter, title))
+        return target.model_dump_json()
+
+    def fake_replace(self, **kwargs):
+        calls.append(("replace", kwargs["target_document_json"]))
+        return json.dumps({
+            "publish_result": {"success": True},
+            "draft_document": persisted.model_dump(),
+            "representation": "ir",
+            "provider": "fake",
+            "target_document": target.model_dump(),
+        })
+
+    monkeypatch.setattr(
+        document_resources.WriterResourceCapabilities,
+        "create_document",
+        fake_create,
+    )
+    monkeypatch.setattr(
+        document_resources.WriterResourceCapabilities,
+        "replace_document",
+        fake_replace,
+    )
+
+    result = document_resources.sync_document(
+        markdown_content="# Draft\n\nBody", adapter="fake"
+    )
+
+    assert [call[0] for call in calls] == ["create", "replace"]
+    assert result["provider"] == "fake"
+    assert result["target_document"]["doc_id"] == "remote-1"
+    assert result["persisted_document"]["provider_binding"]["provider"] == "fake"
+
+
+def test_explicit_cross_provider_publish_detaches_remote_identity(monkeypatch):
+    captured = {}
+
+    def fake_publish(content, **kwargs):
+        captured["document"] = content
+        captured.update(kwargs)
+        return {"success": True}
+
+    monkeypatch.setattr(
+        document_resources, "_replace_document_and_read_back", fake_publish
+    )
+
+    document_resources.sync_document(
+        revised_document=_bound_document("source").model_dump(),
+        target_document={"adapter": "destination", "doc_id": "new-remote"},
+    )
+
+    detached = captured["document"]
+    assert detached.revision is None
+    assert detached.provider_binding == {}
+    assert detached.metadata.get("source") is None
+    assert detached.blocks[0].provider_binding == {}
+    assert detached.blocks[0].provider_payload == {}
+
+
+def test_bound_document_cannot_fall_back_to_creation_after_writeback_failure():
+    with pytest.raises(ToolExecutionError, match="synchronized source baseline"):
+        document_resources.sync_document(
+            revised_document=_bound_document().model_dump(),
+            adapter="fake",
+        )

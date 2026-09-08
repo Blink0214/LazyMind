@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"lazymind/core/algo"
+	"lazymind/core/common"
 	"lazymind/core/common/orm"
 	"lazymind/core/store"
 )
@@ -41,7 +42,7 @@ func TestWriterSyncReplyUsesProviderSynced(t *testing.T) {
 func TestWriterSyncStatus(t *testing.T) {
 	for input, want := range map[int]int{
 		http.StatusBadRequest:          http.StatusBadRequest,
-		http.StatusUnprocessableEntity: http.StatusBadRequest,
+		http.StatusUnprocessableEntity: http.StatusUnprocessableEntity,
 		http.StatusUnauthorized:        http.StatusUnauthorized,
 		http.StatusForbidden:           http.StatusForbidden,
 		http.StatusConflict:            http.StatusConflict,
@@ -53,15 +54,33 @@ func TestWriterSyncStatus(t *testing.T) {
 	}
 }
 
+func TestWriterActionErrorDataPreservesStructuredProviderFailure(t *testing.T) {
+	err := &common.HTTPError{
+		StatusCode: http.StatusBadGateway,
+		Message:    "provider response was lost",
+		Body: json.RawMessage(`{"detail":{
+			"code":"PROVIDER_WRITE_OUTCOME_AMBIGUOUS",
+			"message":"provider response was lost",
+			"retryable":false,
+			"provider":"notion"
+		}}`),
+	}
+	data := writerActionErrorData(err, map[string]any{"status": "write_back_failed"})
+	if data["code"] != "PROVIDER_WRITE_OUTCOME_AMBIGUOUS" || data["retryable"] != false ||
+		data["provider"] != "notion" {
+		t.Fatalf("unexpected structured provider error: %#v", data)
+	}
+}
+
 func TestWriterProviderSelection(t *testing.T) {
 	for name, test := range map[string]struct {
 		value json.RawMessage
 		want  string
 	}{
-		"bound provider":  {json.RawMessage(`{"provider_binding":{"provider":"notion","document_id":"page-1"}}`), "notion"},
-		"WeChat provider": {json.RawMessage(`{"provider_binding":{"provider":"wechat","document_id":"draft-1"}}`), "wechat"},
-		"target adapter":  {json.RawMessage(`{"adapter":"notion","uri":"https://notion.so/page"}`), "notion"},
-		"unbound default": {json.RawMessage(`{"document_id":"local"}`), "feishu"},
+		"bound provider":   {json.RawMessage(`{"provider_binding":{"provider":"notion","document_id":"page-1"}}`), "notion"},
+		"WeChat provider":  {json.RawMessage(`{"provider_binding":{"provider":"wechat","document_id":"draft-1"}}`), "wechat"},
+		"target adapter":   {json.RawMessage(`{"adapter":"notion","uri":"https://notion.so/page"}`), "notion"},
+		"unbound document": {json.RawMessage(`{"document_id":"local"}`), ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := writerDocumentProvider(test.value); got != test.want {
@@ -141,14 +160,7 @@ func TestAttachWriterMediaURLs(t *testing.T) {
 	}
 }
 
-func TestWriteBackWriterDocumentRequiresFeishuConfiguration(t *testing.T) {
-	authService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":{"items":[]}}`))
-	}))
-	t.Cleanup(authService.Close)
-	t.Setenv("LAZYMIND_AUTH_SERVICE_URL", authService.URL)
-
+func TestWriteBackWriterDocumentRequiresExplicitProvider(t *testing.T) {
 	db := orm.MigrateTestDB(t,
 		&orm.WorkflowSession{},
 		&orm.WorkflowSlotRevision{},
@@ -194,7 +206,7 @@ func TestWriteBackWriterDocumentRequiresFeishuConfiguration(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if response.Data.Status != "feishu_configuration_required" || response.Data.Provider != "feishu" {
+	if response.Data.Status != "provider_selection_required" || response.Data.Provider != "" {
 		t.Fatalf("unexpected response data: %+v", response.Data)
 	}
 	var revisionCount int64
@@ -245,6 +257,82 @@ func TestWriteBackWriterDocumentUsesBoundGitHubProvider(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest ||
 		!strings.Contains(recorder.Body.String(), "github_configuration_required") {
 		t.Fatalf("unexpected GitHub credential response: %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestWriteBackWriterDocumentPersistsFirstMarkdownTarget(t *testing.T) {
+	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/v1/cloud/connections/internal/chat-enabled") &&
+			r.URL.Query().Get("provider") == "notion":
+			_, _ = w.Write([]byte(`{"data":{"items":[{"connection_id":"notion-1"}]}}`))
+		case strings.HasSuffix(r.URL.Path, "/v1/cloud/connections/notion-1/token"):
+			_, _ = w.Write([]byte(`{"data":{"access_token":"notion-token"}}`))
+		case r.URL.Path == "/api/workflow/actions:invoke":
+			_, _ = w.Write([]byte(`{"result":{
+				"success":true,
+				"changed":true,
+				"provider_synced":true,
+				"patch_result":{"success":true},
+				"persisted_document":"# Draft\n\nBody",
+				"representation":"markdown",
+				"provider":"notion",
+				"write_result":{"doc_id":"page-1"},
+				"target_document":{"adapter":"notion","doc_id":"page-1","uri":"notion:/~page/page-1"}
+			}}`))
+		default:
+			_, _ = w.Write([]byte(`{"data":{"items":[]}}`))
+		}
+	}))
+	t.Cleanup(service.Close)
+	t.Setenv("LAZYMIND_AUTH_SERVICE_URL", service.URL)
+	t.Setenv("LAZYMIND_CHAT_SERVICE_URL", service.URL)
+
+	db := orm.MigrateTestDB(t,
+		&orm.WorkflowSession{}, &orm.WorkflowSlotRevision{}, &orm.WorkflowHumanArtifact{},
+		&orm.UserModelProvider{}, &orm.UserModelProviderGroup{}, &orm.UserSelectedProvider{},
+	)
+	store.Init(db.DB, db.DB, nil)
+	t.Cleanup(func() { store.Init(nil, nil, nil) })
+	now := time.Now().UTC()
+	if err := db.Create(&orm.WorkflowSession{
+		ID: "session", ConversationID: "conversation", WorkflowID: "writer-workflow",
+		Status: "completed", CreateUserID: "user-1", CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed writer session: %v", err)
+	}
+	seedWriterRevision(t, db, "draft-1", "draft_document", 1, true, "ai",
+		json.RawMessage(`{"schema":"text/markdown","data":"# Draft\n\nBody"}`))
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/core/workflow-sessions/session/writer-document:write-back",
+		strings.NewReader(`{"base_revision":1,"provider":"notion"}`))
+	req.Header.Set("X-User-Id", "user-1")
+	req = mux.SetURLVars(req, map[string]string{"session_id": "session"})
+	recorder := httptest.NewRecorder()
+	WriteBackWriterDocument(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	targetArtifact, err := loadSelectedWriterArtifact(
+		context.Background(), db.DB, "session", "target_document",
+	)
+	if err != nil {
+		t.Fatalf("load first target_document revision: %v", err)
+	}
+	targetValue, err := writerArtifactData(targetArtifact.Value, false)
+	if err != nil {
+		t.Fatalf("decode target_document artifact: %v", err)
+	}
+	var target map[string]any
+	if err := json.Unmarshal(targetValue, &target); err != nil {
+		t.Fatalf("unmarshal target_document: %v", err)
+	}
+	if target["adapter"] != "notion" || target["doc_id"] != "page-1" ||
+		targetArtifact.Revision.ChangeSource != "provider_sync" {
+		t.Fatalf("unexpected first target binding: %#v, revision=%+v", target, targetArtifact.Revision)
 	}
 }
 
