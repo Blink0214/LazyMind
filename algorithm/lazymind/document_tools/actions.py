@@ -60,13 +60,24 @@ class SaveDocumentArguments(_StrictModel):
 
 
 class SyncDocumentArguments(_StrictModel):
-    source_document: dict[str, Any] | None = None
-    revised_document: dict[str, Any] | None = None
+    source_document: dict[str, Any]
+    revised_document: dict[str, Any]
     media_assets: dict[str, Any] | None = None
-    markdown_content: str = ""
+
+
+class ConvertDocumentArguments(_StrictModel):
+    provider: str = Field(min_length=1)
     target_document: dict[str, Any] | None = None
+    media_assets: dict[str, Any] | None = None
+
+
+class WriteDocumentArguments(_StrictModel):
+    converted_document: dict[str, Any]
+    target_document: dict[str, Any] | None = None
+    media_assets: dict[str, Any] | None = None
     title: str = ""
-    adapter: str = ""
+    parent_uri: str = ""
+    mode: Literal["replace", "append"] = "replace"
 
 
 class ActionArtifact(_StrictModel):
@@ -132,6 +143,14 @@ class SyncDocumentResult(_StrictModel):
     provider: str | None = None
     write_result: dict[str, Any] | None = None
     target_document: dict[str, Any] | None = None
+
+
+class ConvertDocumentResult(_StrictModel):
+    provider: str
+    format: str
+    content: Any
+    source_document: dict[str, Any]
+    media_references: dict[str, str]
 
 
 class DocumentActionContext(_StrictModel):
@@ -474,6 +493,17 @@ def _sync(*, context: DocumentActionContext, **arguments: Any) -> dict[str, Any]
     return sync_document(artifact_store=context.artifact_store, **arguments)
 
 
+def _convert(*, context: DocumentActionContext, **arguments: Any) -> dict[str, Any]:
+    from .resources import convert_document
+    return convert_document(_artifact_data(context.artifact), **arguments)
+
+
+def _write(*, context: DocumentActionContext, **arguments: Any) -> dict[str, Any]:
+    del context
+    from .resources import write_document
+    return write_document(**arguments)
+
+
 def _install_builtins() -> None:
     definitions = (
         DocumentActionSpec("builtin:document.rewrite_selection.v1", "rewrite_selection", 1, "preview", RewriteSelectionPreviewArguments, RewriteSelectionPreviewResult, _rewrite_preview),
@@ -482,6 +512,9 @@ def _install_builtins() -> None:
         DocumentActionSpec("builtin:document.render_document.v1", "render_document", 1, "execute", RenderDocumentArguments, RenderDocumentResult, _render),
         DocumentActionSpec("builtin:document.save_document.v1", "save_document", 1, "execute", SaveDocumentArguments, SaveDocumentResult, _save, durable_side_effects=True),
         DocumentActionSpec("builtin:document.sync_document.v1", "sync_document", 1, "execute", SyncDocumentArguments, SyncDocumentResult, _sync, durable_side_effects=True, external_side_effects=True),
+        DocumentActionSpec("builtin:document.convert_document.v1", "convert_document", 1, "preview", ConvertDocumentArguments, ConvertDocumentResult, _convert),
+        DocumentActionSpec("builtin:document.convert_document.v1", "convert_document", 1, "execute", ConvertDocumentArguments, ConvertDocumentResult, _convert),
+        DocumentActionSpec("builtin:document.write_document.v1", "write_document", 1, "execute", WriteDocumentArguments, SyncDocumentResult, _write, durable_side_effects=True, external_side_effects=True),
     )
     for definition in definitions:
         _register_builtin(definition)
@@ -493,11 +526,12 @@ _install_builtins()
 __all__ = [
     "ActionArtifact", "DocumentAction", "DocumentActionContext",
     "DocumentActionError", "DocumentActionPhase", "DocumentActionSpec",
+    "ConvertDocumentArguments", "ConvertDocumentResult",
     "RenderDocumentArguments", "RenderDocumentResult",
     "RewriteSelectionExecuteArguments", "RewriteSelectionExecuteResult",
     "RewriteSelectionPreviewArguments", "RewriteSelectionPreviewResult",
     "SaveDocumentArguments", "SaveDocumentResult", "SyncDocumentArguments",
-    "SyncDocumentResult", "document_action_names", "document_action_specs",
+    "SyncDocumentResult", "WriteDocumentArguments", "document_action_names", "document_action_specs",
     "get_document_action", "invoke_document_action", "register_document_action",
     "resolve_document_action",
 ]

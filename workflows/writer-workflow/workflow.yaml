@@ -67,15 +67,16 @@ tool_scripts:
       - writer_convert_markdown_to_ir
       - writer_create_document
       - writer_publish_revision
-      - writer_replace_document
-      - writer_append_document
+      - writer_convert_document
+      - writer_write_document
       - writer_build_revision_task
       - writer_locate_revision_target
       - writer_generate_modify_plan
       - writer_generate_revision_set
       - writer_apply_revision
       - writer_publish_revision
-      - writer_replace_document
+      - writer_convert_document
+      - writer_write_document
 
 artifact_actions:
   rewrite_selection:
@@ -85,6 +86,13 @@ artifact_actions:
   sync_document:
     slots: [draft_document]
     execute_tool: builtin:document.sync_document.v1
+  convert_document:
+    slots: [flat_draft_document, draft_document]
+    preview_tool: builtin:document.convert_document.v1
+    execute_tool: builtin:document.convert_document.v1
+  write_document:
+    slots: [flat_draft_document, draft_document]
+    execute_tool: builtin:document.write_document.v1
   render_document:
     slots: [source_document, outline_document, flat_draft_document, draft_document]
     preview_tool: builtin:document.render_document.v1

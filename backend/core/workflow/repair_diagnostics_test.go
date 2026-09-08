@@ -50,6 +50,11 @@ artifact_actions:
     execute_tool: builtin:document.rewrite_selection.v1
   save_document:
     execute_tool: builtin:document.save_document.v1
+  convert_document:
+    preview_tool: builtin:document.convert_document.v1
+    execute_tool: builtin:document.convert_document.v1
+  write_document:
+    execute_tool: builtin:document.write_document.v1
 `
 	if diagnostics := builtinArtifactActionDiagnostics(valid); len(diagnostics) != 0 {
 		t.Fatalf("valid built-ins rejected: %#v", diagnostics)

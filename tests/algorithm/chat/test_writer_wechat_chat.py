@@ -96,7 +96,8 @@ def test_wechat_prompt_title_load_patch_and_write_back(monkeypatch):
 
     assert calls[0] == ('list', 0, 20, True)
     assert calls[1] == ('get', 'first')
-    update = calls[2]
+    assert calls[2] == ('get', 'first')
+    update = calls[3]
     assert update[0:3] == ('update', 'first', 1)
     assert '<p>已经修改</p>' in update[3]['content']
     assert '<section data-card="keep"><custom-card /></section>' in update[3]['content']
@@ -212,90 +213,6 @@ def test_wechat_cover_generation_does_not_run_for_existing_or_other_targets(
     assert _prepare_wechat_cover(
         notion, _document(), tmp_path, generator=generator,
     ) is notion
-
-
-@pytest.mark.parametrize('provider', ['wechat', 'feishu'])
-def test_replace_preserves_provider_confirmed_ir(monkeypatch, tmp_path, provider):
-    from lazymind.chat.engine.tools.writer import WriterResourceTools
-
-    document = _document()
-    persisted = tmp_path / 'persisted.json'
-    persisted.write_text(document.model_dump_json())
-    write_result = tmp_path / 'write_result.json'
-    write_result.write_text(json.dumps({'success': True}))
-    monkeypatch.setattr(WriterResourceTools, 'replace_document', lambda *args: {
-        'artifact_path': str(write_result),
-        'metadata': {
-            'artifact_paths': {'persisted_document': str(persisted)},
-            'representation': 'ir',
-        },
-    })
-
-    def unexpected_reload(*args, **kwargs):
-        pytest.fail('Confirmed writes must not reload the provider document')
-
-    monkeypatch.setattr(WriterResourceTools, 'load_document', unexpected_reload)
-    target = TargetDocument(
-        adapter=provider, doc_id='existing-doc',
-        meta={'browser_url': 'https://example.test/existing-doc'},
-    )
-    content = document.model_dump()
-    result = json.loads(WriterResourceToolkit().replace_document(
-        content_json=json.dumps(content),
-        source_document_json='',
-        target_document_json=target.model_dump_json(),
-    ))
-
-    assert result['provider'] == provider
-    assert result['target_document']['adapter'] == provider
-    assert result['target_document']['doc_id'] == 'existing-doc'
-    assert result['representation'] == 'ir'
-    published = WriterDocument.model_validate(result['draft_document'])
-    assert published.document_id == document.document_id
-    assert published.title == document.title
-    assert [(b.type, b.content) for b in published.blocks] == [
-        (b.type, b.content) for b in document.blocks
-    ]
-
-
-def test_replace_uses_generic_provider_readback_for_markdown(monkeypatch, tmp_path):
-    from lazymind.chat.engine.tools.writer import WriterResourceTools
-
-    markdown = '# GitHub draft\n\nBody'
-    written = tmp_path / 'write-result.json'
-    written.write_text(json.dumps({'success': True}))
-    refreshed = tmp_path / 'source.md'
-    refreshed.write_text(markdown)
-    target = TargetDocument(
-        adapter='github',
-        doc_id='existing-doc',
-        uri='githubrepo:/acme/docs/README.md?ref=main',
-        meta={'browser_url': 'https://example.test/existing-doc'},
-    )
-    refreshed_target = tmp_path / 'target.json'
-    refreshed_target.write_text(target.model_dump_json())
-    monkeypatch.setattr(WriterResourceTools, 'replace_document', lambda *args: {
-        'artifact_path': str(written),
-        'metadata': {'artifact_paths': {}, 'representation': 'markdown'},
-    })
-    monkeypatch.setattr(WriterResourceTools, 'load_document', lambda *args: {
-        'artifact_path': str(refreshed),
-        'representation': 'markdown',
-        'metadata': {
-            'artifact_paths': {'target_document': str(refreshed_target)},
-        },
-    })
-
-    result = json.loads(WriterResourceToolkit().replace_document(
-        content_json=json.dumps(markdown),
-        source_document_json='',
-        target_document_json=target.model_dump_json(),
-    ))
-
-    assert result['provider'] == 'github'
-    assert result['representation'] == 'markdown'
-    assert result['draft_document'] == markdown
-    assert result['target_document']['doc_id'] == 'existing-doc'
 
 
 def test_missing_provider_url_reports_writeback_error():

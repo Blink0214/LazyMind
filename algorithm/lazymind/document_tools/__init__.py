@@ -28,12 +28,14 @@ from .artifacts import (
 )
 from .references import bind_cross_reference_targets
 from .resources import (
+    convert_document,
     extract_provider_resources,
     provider_reference,
     resolve_provider_target,
     resolve_provider_targets,
     sync_document,
     sync_writer_documents,
+    write_document,
 )
 from .revision import (
     apply_document_revision,
@@ -111,4 +113,6 @@ __all__ = [
     "writer_schema",
     "classify_document_structure",
     "collect_document_media",
+    "convert_document",
+    "write_document",
 ]

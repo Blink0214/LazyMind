@@ -2,7 +2,8 @@ import json
 
 import pytest
 from lazyllm.tools.agent import ToolExecutionError
-from lazyllm.tools.writer.data_models import TargetDocument, WriterBlock, WriterDocument
+from lazyllm.tools.writer.data_models import WriterBlock, WriterDocument
+from lazyllm.tools.writer.provider import WriterProviderDocument
 
 from lazymind.chat.engine.tools.writer import (
     WriterCreateToolkit as LegacyWriterCreateToolkit,
@@ -75,8 +76,8 @@ RESOURCE_CHAT_APIS = {
     "load_document",
     "create_document",
     "publish_revision",
-    "replace_document",
-    "append_document",
+    "convert_document",
+    "write_document",
 }
 WORKFLOW_ONLY_APIS = {
     "collect_available_media",
@@ -314,14 +315,6 @@ def test_cross_reference_binding_discovers_and_refreshes_all_targets():
     ]
 
 
-def test_unbound_sync_requires_explicit_provider_adapter():
-    with pytest.raises(
-        ToolExecutionError,
-        match="adapter is required when parent_uri cannot identify a provider",
-    ):
-        document_resources.sync_document(markdown_content="# New document")
-
-
 def _bound_document(provider="fake"):
     return WriterDocument(
         document_id="local-1",
@@ -343,78 +336,73 @@ def _bound_document(provider="fake"):
     )
 
 
-def test_first_publication_returns_confirmed_document_and_target_binding(monkeypatch):
+def test_conversion_is_pure_and_cross_provider_content_is_detached(monkeypatch):
     calls = []
-    persisted = _bound_document()
-    target = TargetDocument(
-        adapter="fake",
-        doc_id="remote-1",
-        uri="fake:/remote-1",
-        meta={"browser_url": "https://example.test/remote-1"},
-    )
-    def fake_create(self, title, parent_uri="", adapter=""):
-        calls.append(("create", adapter, title))
-        return target.model_dump_json()
-
-    def fake_replace(self, **kwargs):
-        calls.append(("replace", kwargs["target_document_json"]))
-        return json.dumps({
-            "publish_result": {"success": True},
-            "draft_document": persisted.model_dump(),
-            "representation": "ir",
-            "provider": "fake",
-            "target_document": target.model_dump(),
-        })
+    class FakeProvider:
+        def convert_document(self, content, *, target=None, media_assets=None):
+            calls.append((content, target, media_assets))
+            return WriterProviderDocument(
+                provider="destination",
+                format="fake_blocks",
+                content=[{"text": content.blocks[0].content}],
+                source_document=content,
+            )
 
     monkeypatch.setattr(
-        document_resources.WriterResourceCapabilities,
-        "create_document",
-        fake_create,
+        document_resources, "get_writer_provider", lambda _provider: FakeProvider()
     )
-    monkeypatch.setattr(
-        document_resources.WriterResourceCapabilities,
-        "replace_document",
-        fake_replace,
+    result = document_resources.convert_document(
+        _bound_document("source").model_dump(), "destination"
     )
 
-    result = document_resources.sync_document(
-        markdown_content="# Draft\n\nBody", adapter="fake"
-    )
-
-    assert [call[0] for call in calls] == ["create", "replace"]
-    assert result["provider"] == "fake"
-    assert result["target_document"]["doc_id"] == "remote-1"
-    assert result["persisted_document"]["provider_binding"]["provider"] == "fake"
-
-
-def test_explicit_cross_provider_publish_detaches_remote_identity(monkeypatch):
-    captured = {}
-
-    def fake_publish(content, **kwargs):
-        captured["document"] = content
-        captured.update(kwargs)
-        return {"success": True}
-
-    monkeypatch.setattr(
-        document_resources, "_replace_document_and_read_back", fake_publish
-    )
-
-    document_resources.sync_document(
-        revised_document=_bound_document("source").model_dump(),
-        target_document={"adapter": "destination", "doc_id": "new-remote"},
-    )
-
-    detached = captured["document"]
+    detached = calls[0][0]
     assert detached.revision is None
     assert detached.provider_binding == {}
     assert detached.metadata.get("source") is None
     assert detached.blocks[0].provider_binding == {}
     assert detached.blocks[0].provider_payload == {}
+    assert result["content"] == [{"text": "before"}]
 
 
-def test_bound_document_cannot_fall_back_to_creation_after_writeback_failure():
-    with pytest.raises(ToolExecutionError, match="synchronized source baseline"):
-        document_resources.sync_document(
-            revised_document=_bound_document().model_dump(),
-            adapter="fake",
-        )
+def test_write_consumes_conversion_without_converting_again(monkeypatch):
+    calls = []
+    persisted = _bound_document("fake")
+    converted = WriterProviderDocument(
+        provider="fake",
+        format="fake_blocks",
+        content=[{"text": "before"}],
+        source_document=persisted,
+    )
+
+    class FakeProvider:
+        def require_capability(self, capability):
+            calls.append(("require", capability))
+
+        def write_document(self, document, target, *, media_assets=None, mode="replace"):
+            calls.append(("write", document, target, media_assets, mode))
+            return {
+                "doc_id": "remote-1",
+                "adapter": "fake",
+                "locator": "https://example.test/remote-1",
+                "persisted_document": persisted,
+                "representation": "ir",
+            }
+
+    monkeypatch.setattr(
+        document_resources, "get_writer_provider", lambda _provider: FakeProvider()
+    )
+    result = document_resources.write_document(
+        converted.model_dump(),
+        target_document={"adapter": "fake", "doc_id": "remote-1"},
+    )
+
+    assert [call[0] for call in calls] == ["require", "write"]
+    assert calls[1][1].content == [{"text": "before"}]
+    assert result["provider"] == "fake"
+    assert result["persisted_document"]["provider_binding"]["provider"] == "fake"
+
+    serialized = json.loads(WriterResourceCapabilities().write_document(
+        converted_document_json=converted.model_dump_json(),
+        target_document_json=json.dumps({"adapter": "fake", "doc_id": "remote-1"}),
+    ))
+    assert serialized["publish_result"]["persisted_document"]["document_id"] == "local-1"

@@ -72,8 +72,8 @@ class WriterResourceToolkit(WriterResourceCapabilities):
         "load_document",
         "create_document",
         "publish_revision",
-        "replace_document",
-        "append_document",
+        "convert_document",
+        "write_document",
     ]
 
 

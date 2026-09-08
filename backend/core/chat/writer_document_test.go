@@ -261,6 +261,7 @@ func TestWriteBackWriterDocumentUsesBoundGitHubProvider(t *testing.T) {
 }
 
 func TestWriteBackWriterDocumentPersistsFirstMarkdownTarget(t *testing.T) {
+	actions := []string{}
 	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -270,6 +271,23 @@ func TestWriteBackWriterDocumentPersistsFirstMarkdownTarget(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/v1/cloud/connections/notion-1/token"):
 			_, _ = w.Write([]byte(`{"data":{"access_token":"notion-token"}}`))
 		case r.URL.Path == "/api/workflow/actions:invoke":
+			var request struct {
+				Action string `json:"action"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatalf("decode action request: %v", err)
+			}
+			actions = append(actions, request.Action)
+			if request.Action == "convert_document" {
+				_, _ = w.Write([]byte(`{"result":{
+					"provider":"notion",
+					"format":"notion_blocks",
+					"content":[],
+					"source_document":{"document_id":"local-1"},
+					"media_references":{}
+				}}`))
+				break
+			}
 			_, _ = w.Write([]byte(`{"result":{
 				"success":true,
 				"changed":true,
@@ -315,6 +333,9 @@ func TestWriteBackWriterDocumentPersistsFirstMarkdownTarget(t *testing.T) {
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if strings.Join(actions, ",") != "convert_document,write_document" {
+		t.Fatalf("publication actions = %v, want convert then write", actions)
 	}
 	targetArtifact, err := loadSelectedWriterArtifact(
 		context.Background(), db.DB, "session", "target_document",

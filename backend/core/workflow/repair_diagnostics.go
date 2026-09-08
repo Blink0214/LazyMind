@@ -67,6 +67,8 @@ var builtinArtifactActionContracts = map[string]builtinArtifactActionContract{
 	"builtin:document.render_document.v1":   {Action: "render_document", Phases: map[string]bool{"preview": true, "execute": true}},
 	"builtin:document.save_document.v1":     {Action: "save_document", Phases: map[string]bool{"execute": true}},
 	"builtin:document.sync_document.v1":     {Action: "sync_document", Phases: map[string]bool{"execute": true}},
+	"builtin:document.convert_document.v1":  {Action: "convert_document", Phases: map[string]bool{"preview": true, "execute": true}},
+	"builtin:document.write_document.v1":    {Action: "write_document", Phases: map[string]bool{"execute": true}},
 }
 
 // builtinArtifactActionDiagnostics mirrors the immutable Runtime registry at

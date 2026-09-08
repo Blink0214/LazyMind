@@ -1197,14 +1197,10 @@ def writer_preview_selection_rewrite(
 
 
 def writer_sync_document(
-    source_document: Mapping[str, Any] | None = None,
-    revised_document: Mapping[str, Any] | None = None,
+    source_document: Mapping[str, Any],
+    revised_document: Mapping[str, Any],
     media_assets: Mapping[str, Any] | None = None,
-    markdown_content: str = '',
-    target_document: Mapping[str, Any] | None = None,
-    title: str = '',
     artifact_store: str = '',
-    adapter: str = '',
 ) -> dict:
     return _DOCUMENT_EXECUTION.invoke(
         globals(), '_writer_sync_document', locals(),
@@ -1270,27 +1266,27 @@ def writer_publish_revision(
     )
 
 
-def writer_replace_document(
+def writer_convert_document(
     content_path: str,
-    source_document_path: str,
+    provider: str = '',
     target_document_path: str = '',
-    target_uri: str = '',
     media_assets_path: str = '',
-) -> dict:
+) -> str:
     return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_writer_replace_document', locals(),
+        globals(), '_writer_convert_document', locals(),
     )
 
 
-def writer_append_document(
-    content_path: str,
+def writer_write_document(
+    converted_document_path: str,
     target_document_path: str = '',
-    target_uri: str = '',
-    publish_outline: bool = False,
     media_assets_path: str = '',
+    title: str = '',
+    parent_uri: str = '',
+    mode: str = 'replace',
 ) -> dict:
     return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_writer_append_document', locals(),
+        globals(), '_writer_write_document', locals(),
     )
 
 
@@ -1584,9 +1580,13 @@ def writer_draft_workspace() -> dict:
         )
         if should_write_back and not result.get('document_write_result'):
             _emit_writer_progress('成稿已组装，正在写回目标文档')
-            published = writer_replace_document(
+            converted_document = writer_convert_document(
                 content_path=result['draft_document'],
-                source_document_path=source_document_path,
+                target_document_path=target_document_path,
+                media_assets_path=resolved_media or media_assets_path,
+            )
+            published = writer_write_document(
+                converted_document_path=converted_document,
                 target_document_path=target_document_path,
                 media_assets_path=resolved_media or media_assets_path,
             )

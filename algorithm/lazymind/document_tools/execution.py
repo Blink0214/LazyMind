@@ -787,25 +787,17 @@ def _writer_preview_selection_rewrite(
 
 
 def _writer_sync_document(
-    source_document: Mapping[str, Any] | None = None,
-    revised_document: Mapping[str, Any] | None = None,
+    source_document: Mapping[str, Any],
+    revised_document: Mapping[str, Any],
     media_assets: Mapping[str, Any] | None = None,
-    markdown_content: str = '',
-    target_document: Mapping[str, Any] | None = None,
-    title: str = '',
     artifact_store: str = '',
-    adapter: str = '',
 ) -> dict:
-    """Forward provider-neutral document synchronization to the shared Runtime."""
+    """Forward bound document patch synchronization to the shared Runtime."""
     return sync_document(
         source_document=source_document,
         revised_document=revised_document,
         media_assets=media_assets,
-        markdown_content=markdown_content,
-        target_document=target_document,
-        title=title,
         artifact_store=str(_action_root(artifact_store, 'sync-document')),
-        adapter=adapter,
     )
 
 
@@ -956,48 +948,55 @@ def _writer_publish_revision(
     return _save_publish_payload(payload, root)
 
 
-def _writer_replace_document(
+def _writer_convert_document(
     content_path: str,
-    source_document_path: str,
+    provider: str = '',
     target_document_path: str = '',
-    target_uri: str = '',
     media_assets_path: str = '',
-) -> dict:
-    """Replace a bound cloud source with the selected final WriterDocument."""
-    root = _run_root('replace-document')
-    payload = _json_loads(WriterResourceToolkit().replace_document(
+) -> str:
+    """Convert canonical Writer content to a copyable provider artifact."""
+    if not provider and target_document_path:
+        provider = str(
+            _read_json_file(target_document_path).get('adapter') or ''
+        ).strip()
+    content = WriterResourceToolkit().convert_document(
         content_json=_read_json_string(content_path),
-        source_document_json=_read_json_string(source_document_path),
+        provider=provider,
         target_document_json=(
             _read_json_string(target_document_path) if target_document_path else ''
         ),
-        target_uri=target_uri,
         media_assets_json=(
             _read_json_string(media_assets_path) if media_assets_path else ''
         ),
-    ), {})
-    return _save_publish_payload(payload, root)
+    )
+    return _save_json_artifact(
+        'converted_document', content,
+        'lazyllm.tools.writer.provider.base.WriterProviderDocument',
+        directory=_run_root('convert-document'),
+    )
 
 
-def _writer_append_document(
-    content_path: str,
+def _writer_write_document(
+    converted_document_path: str,
     target_document_path: str = '',
-    target_uri: str = '',
-    publish_outline: bool = False,
     media_assets_path: str = '',
+    title: str = '',
+    parent_uri: str = '',
+    mode: str = 'replace',
 ) -> dict:
-    """Append local Writer content to a provider target and return confirmed content."""
-    root = _run_root('append-document')
-    payload = _json_loads(WriterResourceToolkit().append_document(
-        content_json=_read_json_string(content_path),
+    """Write one converted provider artifact and return confirmed content."""
+    root = _run_root('write-document')
+    payload = _json_loads(WriterResourceToolkit().write_document(
+        converted_document_json=_read_json_string(converted_document_path),
         target_document_json=(
             _read_json_string(target_document_path) if target_document_path else ''
         ),
-        target_uri=target_uri,
-        publish_outline=publish_outline,
         media_assets_json=(
             _read_json_string(media_assets_path) if media_assets_path else ''
         ),
+        title=title,
+        parent_uri=parent_uri,
+        mode=mode,
     ), {})
     return _save_publish_payload(payload, root)
 

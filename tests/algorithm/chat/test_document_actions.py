@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 
 import pytest
+from lazyllm.tools.writer.provider import (
+    WriterProviderCapabilityError,
+    WriterProviderWriteOutcomeError,
+)
 
 from lazymind.document_tools import (
     DocumentActionError,
@@ -25,6 +29,8 @@ def test_v1_registry_has_exact_actions_phases_and_immutable_specs():
         "builtin:document.render_document.v1": {"preview", "execute"},
         "builtin:document.save_document.v1": {"execute"},
         "builtin:document.sync_document.v1": {"execute"},
+        "builtin:document.convert_document.v1": {"preview", "execute"},
+        "builtin:document.write_document.v1": {"execute"},
     }
     assert specs["builtin:document.sync_document.v1"]["execute"].external_side_effects
     assert all(
@@ -224,24 +230,72 @@ def test_sync_action_forwards_provider_neutral_arguments(monkeypatch, tmp_path):
         "builtin:document.sync_document.v1",
         "execute",
         {
+            "source_document": {"document_id": "document-1"},
             "revised_document": {"document_id": "document-1"},
-            "target_document": {"doc_id": "document-1", "adapter": "notion"},
         },
         artifact_store=str(tmp_path),
         slot="draft_document",
     )
 
     assert captured == {
-        "source_document": None,
+        "source_document": {"document_id": "document-1"},
         "revised_document": {"document_id": "document-1"},
         "media_assets": None,
-        "markdown_content": "",
-        "target_document": {"doc_id": "document-1", "adapter": "notion"},
-        "title": "",
-        "adapter": "",
         "artifact_store": str(tmp_path),
     }
     assert result["provider"] == "notion"
+
+
+def test_conversion_and_write_actions_are_explicitly_composable(monkeypatch):
+    calls = []
+    converted = {
+        "provider": "notion",
+        "format": "notion_blocks",
+        "content": [{"type": "paragraph"}],
+        "source_document": {"document_id": "local-1"},
+        "media_references": {},
+    }
+
+    def fake_convert(content, **arguments):
+        calls.append(("convert", content, arguments))
+        return converted
+
+    def fake_write(**arguments):
+        calls.append(("write", arguments))
+        return {
+            "success": True,
+            "changed": True,
+            "provider_synced": True,
+            "patch_result": {"success": True},
+            "persisted_document": {"document_id": "remote-1"},
+            "representation": "ir",
+            "provider": "notion",
+            "write_result": {"doc_id": "remote-1"},
+            "target_document": {"adapter": "notion", "doc_id": "remote-1"},
+        }
+
+    monkeypatch.setattr("lazymind.document_tools.resources.convert_document", fake_convert)
+    monkeypatch.setattr("lazymind.document_tools.resources.write_document", fake_write)
+    conversion = invoke_document_action(
+        "builtin:document.convert_document.v1",
+        "preview",
+        {"provider": "notion"},
+        artifact={"data": "# Draft"},
+    )
+    result = invoke_document_action(
+        "builtin:document.write_document.v1",
+        "execute",
+        {"converted_document": conversion},
+    )
+
+    assert calls[0] == (
+        "convert",
+        "# Draft",
+        {"provider": "notion", "target_document": None, "media_assets": None},
+    )
+    assert calls[1][0] == "write"
+    assert calls[1][1]["converted_document"] == converted
+    assert result["target_document"]["doc_id"] == "remote-1"
 
 
 @pytest.mark.parametrize(
@@ -307,5 +361,50 @@ def test_provider_error_fields_are_preserved_as_structured_action_error():
         assert raised.value.error_code == "GITHUB_PERMISSION_DENIED"
         assert raised.value.status_code == 403
         assert raised.value.retryable is False
+    finally:
+        document_actions._BUILTIN_ACTIONS[spec.reference]["preview"] = original
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "expected_code", "expected_status", "expected_details"),
+    [
+        (
+            WriterProviderCapabilityError("wechat", "append"),
+            "PROVIDER_CAPABILITY_UNSUPPORTED",
+            422,
+            {"provider": "wechat", "capability": "append"},
+        ),
+        (
+            WriterProviderWriteOutcomeError("notion", "replace"),
+            "PROVIDER_WRITE_OUTCOME_AMBIGUOUS",
+            502,
+            {"provider": "notion", "operation": "replace"},
+        ),
+    ],
+)
+def test_official_provider_errors_preserve_non_retryable_action_contract(
+    provider_error, expected_code, expected_status, expected_details
+):
+    spec = resolve_document_action(
+        "builtin:document.render_document.v1", "preview"
+    )
+    original = document_actions._BUILTIN_ACTIONS[spec.reference]["preview"]
+    failing = type(spec)(
+        reference=spec.reference,
+        action=spec.action,
+        version=spec.version,
+        phase=spec.phase,
+        arguments_model=spec.arguments_model,
+        result_model=spec.result_model,
+        handler=lambda **_kwargs: (_ for _ in ()).throw(provider_error),
+    )
+    document_actions._BUILTIN_ACTIONS[spec.reference]["preview"] = failing
+    try:
+        with pytest.raises(DocumentActionError) as raised:
+            invoke_document_action(spec.reference, "preview", {}, artifact="# Title")
+        assert raised.value.error_code == expected_code
+        assert raised.value.status_code == expected_status
+        assert raised.value.retryable is False
+        assert raised.value.details == expected_details
     finally:
         document_actions._BUILTIN_ACTIONS[spec.reference]["preview"] = original

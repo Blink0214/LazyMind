@@ -24,80 +24,6 @@ def _load_tools_module() -> ModuleType:
     return module
 
 
-def test_markdown_writeback_preserves_multiple_generated_image_references(monkeypatch):
-    from lazymind.document_tools import resources as document_resources
-
-    captured = {}
-
-    class FakeWriterResourceCapabilities:
-        def replace_document(self, **kwargs):
-            captured.update(kwargs)
-            document = json.loads(kwargs['content_json'])
-            return json.dumps({
-                'publish_result': {'success': True},
-                'draft_document': document,
-                'representation': 'ir',
-                'provider': 'feishu',
-            })
-
-    monkeypatch.setattr(
-        document_resources,
-        'WriterResourceCapabilities',
-        FakeWriterResourceCapabilities,
-    )
-    media_assets = {
-        'library_id': 'library-1',
-        'assets': {
-            'asset-1': {
-                'media_asset_id': 'asset-1',
-                'asset_type': 'generated_image',
-                'source_type': 'image_generation',
-                'uri': '/var/lib/lazymind/uploads/ai_generated/one.jpg',
-                'local_path': '/data/subagent/task/media/assets/one.jpg',
-            },
-            'asset-2': {
-                'media_asset_id': 'asset-2',
-                'asset_type': 'generated_image',
-                'source_type': 'image_generation',
-                'uri': '/var/lib/lazymind/uploads/ai_generated/two.jpg',
-                'local_path': '/data/subagent/task/media/assets/two.jpg',
-            },
-        },
-    }
-
-    result = document_resources._replace_document_and_read_back(
-        '# Story\n\n![One](/data/subagent/task/media/assets/one.jpg)\n\n'
-        '![Two](/data/subagent/task/media/assets/two.jpg)',
-        title='Story',
-        source_format='markdown',
-        target_document={
-            'doc_id': 'document-1',
-            'uri': 'https://example.feishu.cn/docx/document-1',
-            'adapter': 'feishu',
-        },
-        media_assets=media_assets,
-    )
-
-    published = json.loads(captured['content_json'])
-    published_document = document_resources.WriterDocument.model_validate(published)
-    image_blocks = [
-        block for block in published_document.iter_blocks() if block.type == 'image'
-    ]
-    assert [block.references for block in image_blocks] == [
-        [{
-            'type': 'media_asset',
-            'id': 'asset-1',
-            'path': '/var/lib/lazymind/uploads/ai_generated/one.jpg',
-        }],
-        [{
-            'type': 'media_asset',
-            'id': 'asset-2',
-            'path': '/var/lib/lazymind/uploads/ai_generated/two.jpg',
-        }],
-    ]
-    assert result['persisted_document']['blocks'] == published['blocks']
-
-
 @pytest.mark.parametrize(
     ('query', 'expected'),
     [
@@ -822,10 +748,6 @@ def test_draft_workspace_revise_uses_writing_task_representation(
         calls.append('publish_revision')
         return {'publish_result': {'success': True}, 'draft_document': draft_document}
 
-    def replace_document(**_kwargs):
-        calls.append('replace_document')
-        return {'publish_result': {'success': True}, 'draft_document': draft_document}
-
     monkeypatch.setattr(runtime, 'require_context', lambda: context)
     monkeypatch.setattr(
         runtime,
@@ -840,7 +762,6 @@ def test_draft_workspace_revise_uses_writing_task_representation(
         lambda **_kwargs: context_after_draft,
     )
     monkeypatch.setattr(runtime, 'writer_publish_revision', publish_revision)
-    monkeypatch.setattr(runtime, 'writer_replace_document', replace_document)
 
     result = tools.writer_draft_workspace()
 

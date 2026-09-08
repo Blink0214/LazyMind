@@ -1,9 +1,7 @@
 """Provider-neutral document loading, creation, and write-back."""
 
 from __future__ import annotations
-import json
 import re
-import uuid
 from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
@@ -17,13 +15,15 @@ from lazyllm.tools.writer.data_models import (
     WriterDocument,
 )
 from lazyllm.tools.writer.provider import (
+    WriterProviderDocument,
+    WriterProviderWriteOutcomeError,
     get_writer_provider,
+    is_ambiguous_write_error,
     match_writer_provider,
     resolve_writer_create_target,
 )
 from lazyllm.tools.writer.tools import WriterResourceTools, WriterRevisionTools
 from lazyllm.tools.writer.tools.revision_tools import apply_patch_to_ir
-from lazyllm.tools.writer.utils import parse_document_markdown
 from .artifacts import (
     WRITER_BLOCK_SCHEMA,
     WRITER_IR_SCHEMA,
@@ -31,7 +31,6 @@ from .artifacts import (
     _json_dumps,
     _json_loads,
     _primary_data,
-    _read_artifact_data,
     _result_data,
     _set_document_editable,
     _temp_root,
@@ -144,158 +143,136 @@ def sync_writer_documents(
 
 
 def sync_document(
-    source_document: Mapping[str, Any] | None = None,
-    revised_document: Mapping[str, Any] | None = None,
+    source_document: Mapping[str, Any],
+    revised_document: Mapping[str, Any],
     media_assets: Mapping[str, Any] | None = None,
-    markdown_content: str = "",
-    target_document: Mapping[str, Any] | None = None,
-    title: str = "",
     artifact_store: str = "",
-    adapter: str = "",
 ) -> dict[str, Any]:
-    """Synchronize a bound revision or explicitly publish an unbound document."""
-    if markdown_content:
-        markdown = markdown_content.strip()
-        if not markdown:
-            raise ValueError("Markdown draft is empty.")
-        heading = re.search(r"^#\s+(.+?)\s*$", markdown, flags=re.MULTILINE)
-        document_title = (
-            heading.group(1).strip() if heading else title.strip()
-        ) or "未命名文档"
-        return _replace_document_and_read_back(
-            markdown_content,
-            title=document_title,
-            target_document=target_document,
-            media_assets=media_assets,
-            source_format="markdown",
-            adapter=adapter,
-        )
-    if revised_document is None:
-        raise ValueError("revised_document is required for IR sync.")
-    if source_document is not None:
-        return sync_writer_documents(
-            source_document,
-            revised_document,
-            media_assets,
-            artifact_store,
-        )
-    document = WriterDocument.model_validate(revised_document)
-    bound_provider = _provider_name_from_document(document)
-    requested_provider = str(adapter or "").strip().lower()
-    if target_document:
-        requested_provider = str(
-            TargetDocument.model_validate(target_document).adapter
-            or requested_provider
-        ).strip().lower()
-    if bound_provider:
-        if not requested_provider or requested_provider == bound_provider:
-            raise ToolExecutionError(
-                "Bound WriterDocument publication requires its synchronized source baseline."
-            )
-        from .artifacts import detach_provider_binding
-
-        document = WriterDocument.model_validate(detach_provider_binding(document))
-    return _replace_document_and_read_back(
-        document,
-        title=document.title,
-        target_document=target_document,
-        media_assets=media_assets,
-        source_format="lmd",
-        adapter=adapter,
+    """Synchronize one edited, provider-bound WriterDocument through a PatchSet."""
+    return sync_writer_documents(
+        source_document,
+        revised_document,
+        media_assets,
+        artifact_store,
     )
 
 
-def _replace_document_and_read_back(
-    content: str | WriterDocument,
-    *,
-    title: str,
-    source_format: str,
+def convert_document(
+    content: str | Mapping[str, Any] | WriterDocument,
+    provider: str,
+    media_assets: Mapping[str, Any] | None = None,
+    target_document: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Purely convert canonical Writer content to one provider's copyable format."""
+    provider_name = provider.strip().lower()
+    if not provider_name:
+        raise ToolExecutionError("provider is required for document conversion.")
+    if isinstance(content, Mapping):
+        document = WriterDocument.model_validate(content)
+        if _provider_name_from_document(document) not in {"", provider_name}:
+            from .artifacts import detach_provider_binding
+
+            document = WriterDocument.model_validate(detach_provider_binding(document))
+        content = document
+    target = (
+        TargetDocument.model_validate(target_document) if target_document else None
+    )
+    if target is not None and target.adapter and target.adapter != provider_name:
+        raise ToolExecutionError("target_document provider does not match provider.")
+    media_library = MediaAssetLibrary.model_validate(media_assets) if media_assets else None
+    converted = get_writer_provider(provider_name).convert_document(
+        content,
+        target=target,
+        media_assets=media_library,
+    )
+    return converted.model_dump()
+
+
+def write_document(
+    converted_document: Mapping[str, Any] | WriterProviderDocument,
     target_document: Mapping[str, Any] | None = None,
     media_assets: Mapping[str, Any] | None = None,
-    adapter: str = "",
+    title: str = "",
+    parent_uri: str = "",
+    mode: str = "replace",
 ) -> dict[str, Any]:
-    if target_document:
-        target = TargetDocument.model_validate(target_document)
-    else:
-        created = _json_loads(
-            WriterResourceCapabilities().create_document(
-                title=title.strip() or "未命名文档",
-                adapter=adapter,
-            ),
-            {},
+    """Write an already converted provider document, then read back confirmation."""
+    if mode not in {"replace", "append"}:
+        raise ToolExecutionError("mode must be replace or append.")
+    converted = WriterProviderDocument.model_validate(converted_document)
+    provider = get_writer_provider(converted.provider)
+    target = TargetDocument.model_validate(target_document) if target_document else None
+    if target is None:
+        provider.require_capability("create")
+        target = provider.create_document(
+            title.strip() or converted.source_document.title or "未命名文档",
+            parent_uri.strip(),
         )
-        target = TargetDocument.model_validate(created)
-
-    media_library = (
-        MediaAssetLibrary.model_validate(media_assets) if media_assets else None
-    )
-    if isinstance(content, WriterDocument):
-        publish_content = content.model_copy(deep=True)
-    elif str(target.adapter or "").strip().lower() == "github":
-        publish_content = content
-    else:
-        publish_content = parse_document_markdown(
-            content,
-            document_id=f"writer-document-{uuid.uuid4()}",
-            stage="final",
+    if target.adapter and target.adapter != converted.provider:
+        raise ToolExecutionError(
+            "target_document provider does not match converted_document provider."
+        )
+    target.adapter = converted.provider
+    media_library = MediaAssetLibrary.model_validate(media_assets) if media_assets else None
+    provider.require_capability(mode)
+    try:
+        write_result = provider.write_document(
+            converted,
+            target,
             media_assets=media_library,
+            mode=mode,
         )
-        if media_library is not None:
-            for block in publish_content.iter_blocks():
-                if block.type != "image":
-                    continue
-                for reference in block.references:
-                    asset = media_library.assets.get(reference.get("id"))
-                    if asset is not None and asset.uri:
-                        reference.setdefault("path", asset.uri)
-    serialized_content = (
-        json.dumps(publish_content.model_dump(), ensure_ascii=False)
-        if isinstance(publish_content, WriterDocument)
-        else publish_content
+    except WriterProviderWriteOutcomeError:
+        raise
+    except Exception as exc:
+        if is_ambiguous_write_error(exc):
+            raise WriterProviderWriteOutcomeError(converted.provider, mode) from exc
+        raise
+
+    refreshed_target = TargetDocument(
+        doc_id=str(write_result.get("doc_id") or target.doc_id or "") or None,
+        uri=str(write_result.get("locator") or target.uri or "") or None,
+        adapter=str(write_result.get("adapter") or converted.provider),
+        title=target.title or converted.source_document.title or None,
+        meta=deepcopy(target.meta),
     )
-    payload = _json_loads(
-        WriterResourceCapabilities().replace_document(
-            content_json=serialized_content,
-            source_document_json=serialized_content,
-            target_document_json=json.dumps(target.model_dump(), ensure_ascii=False),
-            target_title=title,
-            media_assets_json=(
-                json.dumps(media_library.model_dump(), ensure_ascii=False)
-                if media_library is not None
-                else ""
-            ),
-        ),
-        {},
-    )
-    write_result = payload.get("publish_result") or {}
-    persisted = payload.get("draft_document")
-    if isinstance(persisted, dict):
-        persisted_document = WriterDocument.model_validate(persisted)
-        persisted_document.ui_editable = True
-        persisted = persisted_document.model_dump()
-    result = PatchResult(
+    persisted_value = write_result.get("persisted_document")
+    representation = str(write_result.get("representation") or "")
+    if persisted_value is None:
+        loaded = provider.load_document(refreshed_target)
+        persisted_value = loaded.get("source_document")
+        representation = str(loaded.get("representation") or representation)
+        loaded_target = loaded.get("target_document")
+        if loaded_target:
+            refreshed_target = TargetDocument.model_validate(loaded_target)
+    if isinstance(persisted_value, WriterDocument):
+        persisted = persisted_value
+    elif representation == "ir" or isinstance(persisted_value, Mapping):
+        persisted = WriterDocument.model_validate(persisted_value)
+    else:
+        persisted = persisted_value
+    if isinstance(persisted, WriterDocument):
+        persisted = _set_document_editable(persisted, stage="final").model_dump()
+    normalized_write_result = deepcopy(write_result)
+    if isinstance(normalized_write_result.get("persisted_document"), WriterDocument):
+        normalized_write_result["persisted_document"] = normalized_write_result[
+            "persisted_document"
+        ].model_dump()
+    patch_result = PatchResult(
         success=True,
-        message=(
-            "Document written to GitHub successfully."
-            if payload.get("provider") == "github"
-            else "Document written to provider and read back successfully."
-        ),
-        meta={
-            "mode": "replace",
-            "source_format": source_format,
-            "write_result": write_result,
-        },
+        message="Document written to provider and read back successfully.",
+        meta={"mode": mode, "write_result": normalized_write_result},
     )
     return {
         "success": True,
         "changed": True,
         "provider_synced": True,
-        "patch_result": result.model_dump(),
+        "patch_result": patch_result.model_dump(),
         "persisted_document": persisted,
-        "representation": payload.get("representation"),
-        "provider": payload.get("provider"),
-        "write_result": write_result,
-        "target_document": payload.get("target_document"),
+        "representation": representation,
+        "provider": converted.provider,
+        "write_result": normalized_write_result,
+        "target_document": refreshed_target.model_dump(exclude_defaults=True),
     }
 
 
@@ -494,14 +471,15 @@ class WriterResourceCapabilities:
         """Prepare Markdown through an optional provider capability."""
         target = TargetDocument.model_validate(_json_loads(target_document_json, {}))
         provider_name = str(target.adapter or "").strip()
-        if not provider_name:
+        if not provider_name and not str(target.uri or "").strip():
             return _json_dumps({"markdown": markdown, "target_document": None})
-        provider = get_writer_provider(provider_name)
-        prepare = getattr(provider, "normalize_code_fences_for_writer", None)
-        if not callable(prepare):
-            return _json_dumps({"markdown": markdown, "target_document": None})
+        provider = (
+            get_writer_provider(provider_name)
+            if provider_name
+            else match_writer_provider(str(target.uri or ""))
+        )
         original_target = target.model_dump()
-        prepared = prepare(markdown, target)
+        prepared = provider.prepare_markdown_for_editor(markdown, target)
         changed = prepared != markdown or target.model_dump() != original_target
         return _json_dumps(
             {
@@ -582,144 +560,60 @@ class WriterResourceCapabilities:
             }
         )
 
-    def replace_document(
+    def convert_document(
         self,
         content_json: str,
-        source_document_json: str,
+        provider: str,
         target_document_json: str = "",
-        target_uri: str = "",
-        target_title: str = "",
         media_assets_json: str = "",
     ) -> str:
-        """Replace a provider document with the selected Writer IR or Markdown."""
-        return self._write_document(
-            mode="replace",
-            content_json=content_json,
-            source_document_json=source_document_json,
-            target_document_json=target_document_json,
-            target_uri=target_uri,
-            target_title=target_title,
-            media_assets_json=media_assets_json,
-        )
+        """Convert Writer content without provider IO."""
+        return _json_dumps(convert_document(
+            _document_value(content_json),
+            provider,
+            media_assets=(
+                _json_loads(media_assets_json, {}) if media_assets_json.strip() else None
+            ),
+            target_document=(
+                _json_loads(target_document_json, {})
+                if target_document_json.strip()
+                else None
+            ),
+        ))
 
-    def append_document(
+    def write_document(
         self,
-        content_json: str,
+        converted_document_json: str,
         target_document_json: str = "",
-        target_uri: str = "",
-        publish_outline: bool = False,
         media_assets_json: str = "",
+        title: str = "",
+        parent_uri: str = "",
+        mode: str = "replace",
     ) -> str:
-        """Append Writer IR or Markdown to a provider target."""
-        document = _document_value(content_json)
-        if (
-            isinstance(document, dict)
-            and WriterDocument.model_validate(document).stage == "outline"
-            and not publish_outline
-        ):
-            raise ToolExecutionError(
-                "Refusing to publish outline IR as the final document. "
-                "Set publish_outline=true only for an explicit outline publish.",
-            )
-        return self._write_document(
-            mode="append",
-            content_json=content_json,
-            source_document_json=content_json,
-            target_document_json=target_document_json,
-            target_uri=target_uri,
-            media_assets_json=media_assets_json,
+        """Persist an explicit provider conversion artifact."""
+        payload = write_document(
+            _json_loads(converted_document_json, {}),
+            target_document=(
+                _json_loads(target_document_json, {})
+                if target_document_json.strip()
+                else None
+            ),
+            media_assets=(
+                _json_loads(media_assets_json, {}) if media_assets_json.strip() else None
+            ),
+            title=title,
+            parent_uri=parent_uri,
+            mode=mode,
         )
-
-    def _write_document(
-        self,
-        *,
-        mode: str,
-        content_json: str,
-        source_document_json: str = "",
-        target_document_json: str = "",
-        target_uri: str = "",
-        target_title: str = "",
-        media_assets_json: str = "",
-    ) -> str:
-        root = _temp_root()
-        document = _document_value(content_json)
-        source_value = (
-            _document_value(source_document_json) if source_document_json else None
-        )
-        source = (
-            WriterDocument.model_validate(source_value)
-            if isinstance(source_value, dict)
-            else None
-        )
-        target = _resolve_target(source, target_document_json, target_uri)
-        if target is None:
-            raise ToolExecutionError("A target provider document is required.")
-        if (
-            target.meta.get("create_pending")
-            and not target.title
-            and target_title.strip()
-        ):
-            target.title = target_title.strip()
-        publish_document = (
-            _set_document_editable(document, stage="final")
-            if isinstance(document, dict)
-            else document
-        )
-        if not isinstance(publish_document, (WriterDocument, str)):
-            raise ToolExecutionError("content_json must contain Writer IR or Markdown.")
-        resource = WriterResourceTools(llm=None, artifact_store=str(root))
-        media_assets = (
-            _json_loads(media_assets_json, {}) if media_assets_json.strip() else None
-        )
-        write_result = (
-            resource.replace_document(publish_document, target, media_assets)
-            if mode == "replace"
-            else resource.append_to_document(publish_document, target, media_assets)
-        )
-        refreshed_target = target.model_dump(exclude_defaults=True)
-        artifact_paths = (write_result.get("metadata") or {}).get(
-            "artifact_paths"
-        ) or {}
-        persisted_path = artifact_paths.get("persisted_document")
-        if persisted_path:
-            published_value = _read_artifact_data(persisted_path)
-            representation = str(
-                (write_result.get("metadata") or {}).get("representation") or "ir"
-            )
-        else:
-            refreshed = resource.load_document(
-                TargetDocument(
-                    **target.model_dump(exclude={"meta"}),
-                    meta={**target.meta, "stage": "final"},
-                )
-            )
-            published_value = _primary_data(refreshed)
-            refreshed_target = _result_data(refreshed, "target_document")
-            representation = str(refreshed.get("representation") or "")
-        if representation == "ir":
-            persisted = WriterDocument.model_validate(published_value)
-            published = (
-                _merge_provider_state(publish_document, persisted)
-                if mode == "replace" and isinstance(publish_document, WriterDocument)
-                else persisted
-            )
-            published = _set_document_editable(published, stage="final")
-        else:
-            published = published_value
-        return _json_dumps(
-            {
-                "publish_result": _primary_data(write_result),
-                "draft_document": (
-                    published.model_dump(exclude_defaults=True)
-                    if isinstance(published, WriterDocument)
-                    else published
-                ),
-                "representation": representation,
-                "provider": str(target.adapter or ""),
-                "published_link": _published_link(target),
-                "target_document": refreshed_target,
-            }
-        )
+        target = TargetDocument.model_validate(payload["target_document"])
+        return _json_dumps({
+            "publish_result": payload["write_result"],
+            "draft_document": payload["persisted_document"],
+            "representation": payload["representation"],
+            "provider": payload["provider"],
+            "published_link": _published_link(target),
+            "target_document": payload["target_document"],
+        })
 
 
 def resolve_provider_targets(
@@ -759,10 +653,12 @@ def resolve_document_target(
 
 __all__ = [
     "WriterResourceCapabilities",
+    "convert_document",
     "extract_provider_resources",
     "provider_reference",
     "resolve_provider_target",
     "resolve_provider_targets",
     "sync_document",
     "sync_writer_documents",
+    "write_document",
 ]

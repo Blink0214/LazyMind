@@ -1,6 +1,6 @@
 # Unified Document Tools Task Tracker
 
-Last updated: 2026-09-07
+Last updated: 2026-09-08
 
 Branch: `dev-plugin`
 
@@ -29,7 +29,7 @@ criteria are not complete.
 | A2  | Fix the public scope at 45 Capability APIs and 36 Chat Agent tools. | DONE   |
 | A3  | Preserve the pre-refactoring MD/LMD conversion behavior.            | DONE   |
 | A4  | Define legacy `writer.py` import compatibility.                     | DONE   |
-| A5  | Define the scope of the four v1 backend-facing Actions.             | DONE   |
+| A5  | Define the scope of the v1 backend-facing Actions.                  | DONE   |
 | A6  | Define two-mode provider synchronization.                           | DONE   |
 | A7  | Define the provider capability contract.                            | DONE   |
 | A8  | Define test and backend-handoff acceptance criteria.                | DONE   |
@@ -105,8 +105,8 @@ workflows/writer-workflow/scripts/
 | ID  | Task                                                                        | Status  |
 | --- | --------------------------------------------------------------------------- | ------- |
 | D1  | Define `DocumentActionSpec`.                                                | DONE    |
-| D2  | Define strict argument models for the four v1 Actions.                      | DONE    |
-| D3  | Define strict result models for the four v1 Actions.                        | DONE    |
+| D2  | Define strict argument models for the v1 Actions.                           | DONE    |
+| D3  | Define strict result models for the v1 Actions.                             | DONE    |
 | D4  | Implement `rewrite_selection.preview.v1`.                                   | DONE    |
 | D5  | Implement deterministic `rewrite_selection.execute.v1`.                     | DONE    |
 | D6  | Implement `render_document.v1`.                                             | DONE    |
@@ -137,10 +137,13 @@ and returns that exact candidate without another model call.
 | E4  | Treat explicit cross-provider publication as unbind-and-copy.                  | DONE    |
 | E5  | Remove the three default-Feishu arguments from Writer Workflow functions.      | DONE    |
 | E6  | Generalize or clearly deprecate `/api/writer/documents:sync`.                  | DONE    |
-| E7  | Audit and remove provider-specific branches from `document_tools`.             | PARTIAL |
-| E8  | Add the structured `PROVIDER_CAPABILITY_UNSUPPORTED` error.                    | TODO    |
+| E7  | Audit and remove provider-specific branches from `document_tools`.             | DONE    |
+| E8  | Add the structured `PROVIDER_CAPABILITY_UNSUPPORTED` error.                    | DONE    |
 | E9  | Prevent provider switching or document creation after failed bound write-back. | DONE    |
-| E10 | Prevent automatic retry after ambiguous external write outcomes.               | TODO    |
+| E10 | Prevent automatic retry after ambiguous external write outcomes.               | DONE    |
+| E11 | Expose provider-format conversion as a standalone Capability and Action.        | DONE    |
+| E12 | Make write-back explicitly consume the converted provider artifact once.       | DONE    |
+| E13 | Support late-bound repeated provider export, copy, and write-back choices.      | DONE    |
 
 Bound Writer IR now requires its synchronized source baseline and exact target
 binding. Unbound publication requires an explicit adapter or target, while an
@@ -149,10 +152,12 @@ payloads, and remote revision state before copying. First publication returns
 both the provider-confirmed document and normalized target; Backend Core stores
 the target for Markdown even when no earlier target revision exists. Markdown
 publication retains its established IR conversion and media-reference behavior.
-The legacy sync route is explicitly deprecated and remains a thin compatibility
-adapter. Provider capability and ambiguous-write contracts stay pending until
-the corresponding LazyLLM provider contract exists; LazyMind does not implement
-a temporary reflection-based substitute.
+Provider conversion, write-back, editor adaptation, capability checks, revision
+conflicts, and ambiguous-write classification live in the LazyLLM provider
+contract. LazyMind exposes pure conversion and external write-back as separate
+Capabilities and Actions. Backend publication invokes them in order, while
+bound incremental editing keeps the distinct Patch synchronization path. The
+old coupled replace/append Capability and Workflow adapters were removed.
 
 
 
@@ -166,12 +171,16 @@ handoff.
 
 | ID  | Task                                                                          | Status   |
 | --- | ----------------------------------------------------------------------------- | -------- |
-| L1  | Add the `WriterProviderCapabilities` data model.                              | TODO     |
-| L2  | Make optional provider capabilities unsupported by default.                   | TODO     |
-| L3  | Declare the tested Feishu and Notion capabilities.                            | TODO     |
-| L4  | Declare GitHub and WeChat capabilities after their provider PRs stabilize.    | TODO     |
-| L5  | Remove the default Feishu adapter from `WriterResourceTools.create_document`. | TODO     |
-| L6  | Require revision checks for safe Patch-by-replace implementations.            | TODO     |
+| L1  | Add the `WriterProviderCapabilities` data model.                              | DONE     |
+| L2  | Make optional provider capabilities unsupported by default.                   | DONE     |
+| L3  | Declare the tested Feishu and Notion capabilities.                            | DONE     |
+| L4  | Declare GitHub and WeChat capabilities after their provider PRs stabilize.    | DONE     |
+| L5  | Remove the default Feishu adapter from `WriterResourceTools.create_document`. | DONE     |
+| L6  | Require revision checks for safe Patch-by-replace implementations.            | DONE     |
+| L7  | Define the shared `WriterProviderDocument` conversion result.                  | DONE     |
+| L8  | Add mandatory `convert_document` and `write_document` provider interfaces.     | DONE     |
+| L9  | Implement pure conversion and media materialization for all four providers.    | DONE     |
+| L10 | Keep replace and append as compatibility compositions over the two stages.     | DONE     |
 
 
 
@@ -258,8 +267,8 @@ algorithm-local paths or provider-specific writing branches.
 | Physical capability split          | 15/15 items done                                      | Complete      |
 | Writer Workflow thinning           | 9/9 items done                                        | Complete      |
 | Shared Artifact Actions            | 16/16 Action implementation items done                | Complete      |
-| Provider-neutral behavior          | 1 done, 6 partial, 3 not started                      | In progress   |
-| LazyLLM provider contract          | 6 not started                                         | Not started   |
+| Provider-neutral behavior          | 9 done, 1 partial, 3 not started                       | In progress   |
+| LazyLLM provider contract          | 10/10 items done                                       | Complete      |
 | Compatibility and acceptance tests | 9 done, 4 partial, 10 not started                     | In progress   |
 | Backend handoff                    | 1 done, 2 partial, 7 not started                      | Early stage   |
 | Parallel knowledge-source work     | 6 integration items done, 1 final test, 1 external   | Parallel      |
@@ -297,12 +306,11 @@ Completed in the working tree:
 
 Not yet complete:
 
-- Provider binding lifecycle, cross-provider copy semantics, structured
-  capability errors, ambiguous-write handling, and conflict tests are not done.
-- GitHub Markdown handling and WeChat cover preparation still appear as
-  provider-specific branches in `document_tools`; E7 remains partial until
-  these differences move behind the LazyLLM provider capability contract.
-- The LazyLLM provider-capability contract has not started.
+- Final provider conflict and real-account smoke tests remain in the acceptance
+  stage.
+- The LazyLLM provider-capability base commit exists in the standalone checkout;
+  the E-stage contract extensions and LazyMind submodule pin remain to be
+  committed together later.
 - The backend handoff package and final acceptance suite are incomplete.
 
 
@@ -310,7 +318,25 @@ Not yet complete:
 
 ## Latest verification
 
-- All four v1 Actions now have immutable versioned specs, strict phase-specific
+- LazyLLM providers directly implement the same `convert_document` and
+  `write_document` methods. Conversion produces Feishu/Notion block JSON,
+  WeChat HTML, or GitHub Markdown without external IO; write-back consumes the
+  converted result and materializes provider media.
+- Unsupported operations produce structured
+  `PROVIDER_CAPABILITY_UNSUPPORTED` errors. Timeouts, connection loss, malformed
+  write responses, and provider 5xx failures produce the non-retryable
+  `PROVIDER_WRITE_OUTCOME_AMBIGUOUS` contract; deterministic validation failures
+  pass through unchanged.
+- 289 focused LazyLLM Writer provider/tool tests (plus 12 subtests), 68 focused
+  LazyMind Action, document, provider, Workflow, and stream tests, and the
+  targeted Backend Core Writer, Action-diagnostic, and error-catalog tests pass.
+- LazyLLM providers now expose an immutable, explicit capability matrix.
+  Feishu, Notion, GitHub, and WeChat declare only their implemented operations;
+  unsupported operations fail before provider authorization or IO begins.
+- `WriterResourceTools.create_document` requires an explicit adapter, and the
+  WeChat Patch-by-replace path revalidates the remote draft revision before
+  writing.
+- All six v1 Actions now have immutable versioned specs, strict phase-specific
   argument/result contracts, built-in resolution, and validated invocation.
 - Writer `rewrite_selection.execute.v1` reads the exact staged preview candidate,
   verifies both source and candidate hashes, and performs no second model call.
@@ -327,7 +353,8 @@ Not yet complete:
   `httptest` case cannot bind a local listener. The relevant Writer and Artifact
   Action cases were rerun directly (with local-listener permission where needed)
   and pass.
-- The 45-method Capability API snapshot, unchanged 36-tool Toolkit exposure,
+- The 45-method Capability API snapshot, with the resource publication pair
+  changed from replace/append to convert/write, and unchanged 36-tool Toolkit exposure,
   legacy imports, conversions, provider synchronization, and Action registry
   tests pass.
 - 27 focused `document_tools` and WeChat/GitHub integration tests pass.
@@ -344,8 +371,8 @@ Not yet complete:
   no LazyLLM Writer implementation modules. Dedicated state tests cover
   authoritative bindings, checkpoint round trips, stale fingerprints, corrupt
   state, and atomic temporary-file cleanup.
-- All 43 existing `writer_*` Python entry-point names and signatures are
-  unchanged relative to the C-stage base checkpoint.
+- The Workflow publication entry points now expose `writer_convert_document`
+  and `writer_write_document`; the old coupled replace/append adapters are gone.
 - The focused MD/LMD test now asserts the exact established envelope data and
   rendered Markdown instead of checking only for substrings.
 - The broader local suite remains unavailable until the real optional Runtime/RAG
@@ -355,11 +382,10 @@ Not yet complete:
 
 ## Recommended execution order
 
-1. Complete E1-E10 and L1-L6: provider binding lifecycle, provider capabilities,
-   structured errors, conflict rules, and ambiguous-write behavior.
-2. Complete T5-T23, then prepare H2-H10 for backend handoff.
-3. Merge whichever provider integrations pass their own acceptance gates, adapt
+1. Commit and pin the completed LazyLLM provider contract, then complete T5-T23
+   and prepare H2-H10 for backend handoff.
+2. Merge whichever provider integrations pass their own acceptance gates, adapt
    the later side to the shared interface, and run the final joint regression.
 
-The immediate next task is the provider-neutral behavior and LazyLLM provider
-contract work in stages E and L, not further Writer Workflow migration.
+The E-stage two-stage Action integration is complete; the next work is the final
+acceptance and handoff gate.

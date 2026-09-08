@@ -68,8 +68,8 @@ removed nor expanded in this version.
 ### Compatibility policy
 
 - Existing imports from `lazymind.chat.engine.tools.writer` remain supported.
-- Existing class names, tool names, method parameters, and return values remain
-  compatible in this version.
+- Provider publication callers use the new two-stage contract directly; the old
+  coupled replace/append entry points are intentionally not retained.
 - New code imports shared capabilities from `lazymind.document_tools`.
 - Workflow internals may continue passing local Artifact paths.
 - Action API requests and responses must never require the backend to understand
@@ -84,11 +84,13 @@ The backend-facing Action API v1 contains only these operations:
 | `rewrite_selection` | `preview` | Generate a selected-text rewrite preview. |
 | `render_document` | `preview`, `execute` | Produce displayable document content. |
 | `save_document` | `execute` | Save or download the selected Artifact. |
-| `sync_document` | `execute` | Write back to a bound source or create the selected provider target. |
+| `sync_document` | `execute` | Apply a PatchSet-compatible edit to an already bound source. |
+| `convert_document` | `preview`, `execute` | Purely convert canonical content to one provider format for copy or later write-back. |
+| `write_document` | `execute` | Consume one converted artifact and perform the external write exactly once. |
 
-The lower-level resource operations `load_document`, `create_document`,
-`replace_document`, `append_document`, and `publish_revision` remain Capability
-APIs and are not exposed directly to the backend in v1.
+The lower-level resource operations `load_document`, `create_document`, and
+`publish_revision` remain Capability APIs. Provider publication is exposed only
+through `convert_document` followed by `write_document`.
 
 Each Workflow explicitly declares whether an action is enabled and which slots
 it may access. A Workflow may reference either its own package tool or an
@@ -233,7 +235,7 @@ core semantics require a new handler contract version such as `v2`.
 
 ### Confirmed typed contracts
 
-Each of the four v1 Actions has its own strict arguments model and result model.
+Each v1 Action has its own strict arguments model and result model.
 The registry associates those models with the handler and validates both sides
 of execution. Unknown Action arguments are rejected.
 
@@ -255,8 +257,9 @@ that violates its registered contract is an algorithm/upstream failure.
 - `render_document` is a pure representation/rendering operation.
 - `save_document` normalizes and returns an Artifact; the backend owns Artifact
   revision persistence.
-- `sync_document` is the only v1 shared Action allowed to mutate an external
-  provider document.
+- `sync_document` mutates an existing bound document through Patch operations;
+  `write_document` is the only full-publication Action allowed to mutate an
+  external provider document. `convert_document` never performs external IO.
 - Ambiguous external write outcomes are not retried automatically, preventing
   duplicate document creation or duplicate append operations.
 - The backend retains ownership of authorization, optimistic concurrency,
@@ -312,9 +315,9 @@ The algorithm, Workflow, and backend write-back path no longer default an
 unbound document to Feishu. Unbound publication requires an explicit provider;
 bound publication derives the provider only from the authoritative binding.
 The legacy `/api/writer/documents:sync` route is marked deprecated and accepts
-only a bound source plus credentials for that exact provider. LazyLLM's older
-`WriterResourceTools.create_document` default remains isolated to the L5
-provider-contract follow-up and is never relied on by LazyMind callers.
+only a bound source plus credentials for that exact provider. LazyLLM's
+`WriterResourceTools.create_document` also requires an explicit adapter; no
+Writer publication layer retains a default provider.
 
 ### Confirmed provider capability contract
 
@@ -334,9 +337,28 @@ equivalent, the operation returns a structured
 `PROVIDER_CAPABILITY_UNSUPPORTED` error. It never switches provider, silently
 overwrites concurrent edits, or drops provider-specific unknown blocks.
 
-Provider differences remain inside LazyLLM adapters. Shared LazyMind document
-capabilities and Actions contain no Feishu-, Notion-, or future-provider
-branches.
+Provider differences remain inside LazyLLM providers and adapters. The provider
+contract owns two mandatory, ordered interfaces:
+
+1. `convert_document` converts canonical Writer content into the provider's
+   copyable format without authorization, network requests, media upload, or
+   remote state changes.
+2. `write_document` consumes that converted result, materializes provider media,
+   performs revision-safe remote IO, and returns the confirmed write result.
+
+Feishu and Notion conversion returns native block JSON, WeChat conversion returns
+HTML, and GitHub conversion returns Markdown. Copy/export ends after conversion;
+write-back invokes both stages in order. Existing replace and append entry points
+remain compatibility compositions over the two interfaces. Editor preparation,
+structured capability and revision failures, and ambiguous-write classification
+remain separate provider-contract concerns. Ambiguous external outcomes are
+explicitly non-retryable so callers inspect the remote document before issuing
+another write.
+
+Shared LazyMind document capabilities and Actions must not branch on Feishu,
+Notion, GitHub, WeChat, or future provider names. They still need a standalone
+conversion/export Action and an explicit converted-result write-back path before
+the provider-neutral stage is complete.
 
 ## 5. Compatibility tests and backend handoff contract
 
