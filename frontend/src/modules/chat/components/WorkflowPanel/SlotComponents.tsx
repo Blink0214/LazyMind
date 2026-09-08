@@ -3225,10 +3225,22 @@ function SlotWriterDocument({
     setRenderedSelection(null);
   }, [rewriteSelection]);
 
-  const handleWriteBackSuccess = useCallback((revision: number) => {
+  const handleWriteBackSuccess = useCallback((
+    revision: number,
+    document: RenderedWriterDocument,
+  ) => {
+    if (isWriterDocument(document)) {
+      setRendered((current) => current ? {
+        ...current,
+        representation: 'ir',
+        document: restoreWriterInternalReferenceDisplayText(
+          restoreLegacyWriterImageReference(document, mediaLibrary),
+        ),
+      } : current);
+    }
     applySavedRevision(revision, 'provider_sync');
     refreshDocument();
-  }, [applySavedRevision, refreshDocument]);
+  }, [applySavedRevision, mediaLibrary, refreshDocument]);
 
   const recordRenderedMarkdownSelection = useCallback(() => {
     const root = markdownPreviewRef.current;

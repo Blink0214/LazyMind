@@ -77,12 +77,15 @@ import { ArtifactRewriteInlineDiff } from './ArtifactRewriteDialog';
 import { ArtifactRewriteSelectionHighlight } from './ArtifactRewriteSelectionHighlight';
 import { selectionActionAnchor, type SelectionActionAnchor } from './artifactRewriteSelection';
 import { highlightCode } from '../MarkdownViewer/syntaxHighlight';
+import {
+  resolveCoreAssetUrl,
+  resolveMarkdownImageUrlAsync,
+} from '@/modules/knowledge/utils/imageUrl';
 import type {
   RewriteSelectionPreview,
   WriterNumberingState,
   WriterNumberingUpdate,
 } from '@/modules/chat/utils/request';
-import { resolveMarkdownImageUrlAsync } from '@/modules/knowledge/utils/imageUrl';
 import { WriterHeadingNumberingMenu } from './WriterHeadingNumberingMenu';
 
 const WRITER_CODE_LANGUAGES = [
@@ -112,7 +115,7 @@ function imageReferencePath(block: WriterBlock): string {
   const reference = block.references?.find((item) => item.type === 'preview_asset')
     ?? block.references?.find((item) => item.type === 'media_asset');
   const value = reference?.url ?? reference?.path;
-  return typeof value === 'string' ? value.trim() : '';
+  return typeof value === 'string' ? resolveCoreAssetUrl(value) : '';
 }
 
 export interface WriterIRRewriteSelection {
@@ -642,8 +645,11 @@ function renderBlock(
   }
   if (block.type === 'image') {
     const source = imageReferencePath(block);
+    const immediateSource = /^https?:\/\//i.test(source)
+      ? ` src="${escapeHtmlAttribute(source)}"`
+      : '';
     const image = source
-      ? `<img data-writer-image="true" data-writer-image-source="${escapeHtmlAttribute(source)}" alt="${escapeHtmlAttribute(block.content ?? '')}">`
+      ? `<img${immediateSource} data-writer-image="true" data-writer-image-source="${escapeHtmlAttribute(source)}" alt="${escapeHtmlAttribute(block.content ?? '')}">`
       : '<div class="writer-ir__image-placeholder" aria-hidden="true"></div>';
     const caption = block.content?.trim()
       ? `<figcaption data-writer-block-content="true">${text}</figcaption>`

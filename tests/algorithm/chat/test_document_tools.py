@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -91,6 +92,50 @@ WORKFLOW_ONLY_APIS = {
     "resolve_create_target",
     "prepare_markdown_for_editor",
 }
+
+
+def test_writing_subtask_progress_keeps_workflow_host_across_threads(monkeypatch):
+    from lazymind.document_tools import execution
+
+    progress = []
+
+    class ThreadedWriterCreateToolkit:
+        def execute_writing_subtasks(self, **kwargs):
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                executor.submit(
+                    kwargs['on_progress'],
+                    [{'subtask_id': 'research', 'status': 'running'}],
+                ).result()
+            return '{}'
+
+    monkeypatch.setattr(execution, '_read_json_string', lambda _path: '{}')
+    monkeypatch.setattr(
+        execution,
+        '_save_writer_document',
+        lambda *_args, **_kwargs: '/tmp/outline.lmd',
+    )
+
+    result = execution.invoke(
+        {
+            'WriterCreateToolkit': ThreadedWriterCreateToolkit,
+            '_emit_writer_progress': lambda phase, **details: progress.append(
+                (phase, details)
+            ),
+        },
+        '_writer_execute_writing_subtasks',
+        {
+            'outline_path': '/tmp/outline.lmd',
+            'writing_context_path': '/tmp/writing-context.json',
+        },
+    )
+
+    assert result == '/tmp/outline.lmd'
+    assert progress == [
+        (
+            '正在执行写作子任务',
+            {'writing_subtasks': [{'subtask_id': 'research', 'status': 'running'}]},
+        )
+    ]
 
 
 def test_legacy_writer_import_uses_shared_document_toolkit():
@@ -303,6 +348,13 @@ def _bound_document(provider="fake"):
             "document_id": "remote-1",
             "uri": f"{provider}:/remote-1",
         },
+        metadata={
+            "source": {"adapter": provider, "uri": f"{provider}:/remote-1"},
+            "provider_metadata": {"remote": True},
+            "block_count": 1,
+            "source_block_count": 1,
+            "semantic": "preserved",
+        },
         blocks=[WriterBlock(
             node_id="body",
             type="paragraph",
@@ -336,6 +388,10 @@ def test_conversion_is_pure_and_cross_provider_content_is_detached(monkeypatch):
     assert detached.revision is None
     assert detached.provider_binding == {}
     assert detached.metadata.get("source") is None
+    assert detached.metadata.get("provider_metadata") is None
+    assert detached.metadata.get("block_count") is None
+    assert detached.metadata.get("source_block_count") is None
+    assert detached.metadata["semantic"] == "preserved"
     assert detached.blocks[0].provider_binding == {}
     assert detached.blocks[0].provider_payload == {}
     assert result["content"] == [{"text": "before"}]
@@ -383,6 +439,85 @@ def test_write_consumes_conversion_without_converting_again(monkeypatch):
         target_document_json=json.dumps({"adapter": "fake", "doc_id": "remote-1"}),
     ))
     assert serialized["publish_result"]["persisted_document"]["document_id"] == "local-1"
+
+
+def test_write_keeps_local_image_reference_after_provider_readback(monkeypatch):
+    source = WriterDocument(
+        document_id="local-1",
+        stage="final",
+        blocks=[WriterBlock(
+            node_id="IMAGE-1",
+            type="image",
+            references=[{
+                "type": "media_asset",
+                "id": "asset-1",
+                "path": "/data/subagent/media/asset-1.jpg",
+            }],
+        )],
+    )
+    persisted = source.model_copy(deep=True)
+    persisted.provider_binding = {
+        "provider": "feishu",
+        "document_id": "remote-1",
+    }
+    source.metadata = {
+        "source": {"adapter": "feishu", "uri": "feishu:/old"},
+        "provider_metadata": {"old": True},
+        "semantic": "preserved",
+    }
+    persisted.metadata = {
+        "source": {"adapter": "notion", "uri": "notion:/new"},
+        "provider_metadata": {"new": True},
+        "block_count": 1,
+    }
+    persisted.blocks[0].node_id = "provider-image-1"
+    persisted.blocks[0].references = []
+    persisted.blocks[0].provider_binding = {
+        "provider": "feishu",
+        "block_id": "remote-block-1",
+    }
+    persisted.blocks[0].provider_payload = {
+        "raw_block": {"image": {"token": "image-token-1"}},
+    }
+    converted = WriterProviderDocument(
+        provider="feishu",
+        format="feishu_blocks",
+        content=[{"block_type": 27}],
+        source_document=source,
+    )
+
+    class FakeProvider:
+        def require_capability(self, _capability):
+            pass
+
+        def write_document(self, _document, _target, **_kwargs):
+            return {
+                "doc_id": "remote-1",
+                "adapter": "feishu",
+                "persisted_document": persisted,
+                "representation": "ir",
+            }
+
+    monkeypatch.setattr(
+        document_resources, "get_writer_provider", lambda _provider: FakeProvider()
+    )
+
+    result = document_resources.write_document(
+        converted.model_dump(),
+        target_document={"adapter": "feishu", "doc_id": "remote-1"},
+    )
+
+    image = result["persisted_document"]["blocks"][0]
+    assert image["node_id"] == "IMAGE-1"
+    assert image["references"] == source.blocks[0].references
+    assert image["provider_binding"] == persisted.blocks[0].provider_binding
+    assert image["provider_payload"] == persisted.blocks[0].provider_payload
+    assert result["persisted_document"]["metadata"] == {
+        "source": {"adapter": "notion", "uri": "notion:/new"},
+        "provider_metadata": {"new": True},
+        "block_count": 1,
+        "semantic": "preserved",
+    }
 
 
 @pytest.mark.parametrize("provider_name", ["feishu", "notion"])

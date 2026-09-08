@@ -169,11 +169,13 @@ func TestEnrichWriterWriteBackSlots_ProviderSyncIsClean(t *testing.T) {
 func TestEnrichWriterWriteBackSlots_NotionProviderSyncIsClean(t *testing.T) {
 	db := newTestDB(t)
 	draft := writerRevision("draft", "session", "draft_document", 2, "provider_sync", json.RawMessage(`{"data":{"provider_binding":{"provider":"notion","document_id":"page-2","uri":"https://app.notion.com/p/0123456789abcdef0123456789abcdef"}}}`))
+	target := writerRevision("target", "session", "target_document", 1, "provider_sync", json.RawMessage(`{"data":{"adapter":"feishu","doc_id":"doc-1","uri":"https://tenant.feishu.cn/docx/doc-1"}}`))
 	mustCreateWriterRecord(t, db.DB.Create(&draft).Error)
+	mustCreateWriterRecord(t, db.DB.Create(&target).Error)
 
-	slots := []slotDTO{toSlotDTO(&draft)}
+	slots := []slotDTO{toSlotDTO(&target), toSlotDTO(&draft)}
 	enrichSlots(context.Background(), db.DB, "session", slots)
-	got := slots[0]
+	got := slots[1]
 	if !got.WriteBackReady || got.WriteBackDirty || got.WriteBackState != writerWriteBackSyncedClean ||
 		got.Provider != "notion" || got.ProviderDocumentID != "page-2" ||
 		got.WriteBackURL != "https://app.notion.com/p/0123456789abcdef0123456789abcdef" {

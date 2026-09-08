@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { resolveMarkdownImageSourceFromMap } from './imageUrl';
+import {
+  resolveMarkdownImageSourceFromMap,
+  resolveMarkdownImageUrlAsync,
+} from './imageUrl';
 
 const mediaUrls = {
   'docs/assets/diagram.png': '/static-files/session/diagram.png?expires=1&sig=test',
@@ -27,5 +30,25 @@ describe('resolveMarkdownImageSourceFromMap', () => {
       'other/diagram.png',
       mediaUrls,
     )).toBe('other/diagram.png');
+  });
+});
+
+describe('resolveMarkdownImageUrlAsync', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('uses an unexpired signed Core URL without signing it again', async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+
+    const resolved = await resolveMarkdownImageUrlAsync(
+      '/static-files/subagent/user/task/image.jpg?expires=4102444800&sig=test',
+    );
+
+    expect(resolved).toContain(
+      '/api/core/static-files/subagent/user/task/image.jpg?expires=4102444800&sig=test',
+    );
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

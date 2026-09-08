@@ -359,7 +359,6 @@ func RenderWriterDocument(w http.ResponseWriter, r *http.Request) {
 		common.ReplyErr(w, "invalid render response", http.StatusBadGateway)
 		return
 	}
-	attachWriterMediaURLs(ctx, db, sessionID, slot, result)
 	// Sessions are pinned to the workflow revision that created them. Older Writer
 	// revisions returned a number-materialized IR document, so enforce the editor
 	// boundary here as well as in the latest workflow implementation.
@@ -372,6 +371,7 @@ func RenderWriterDocument(w http.ResponseWriter, r *http.Request) {
 		}
 		result["document"] = document
 	}
+	attachWriterMediaURLs(ctx, db, sessionID, slot, result)
 	common.ReplyOK(w, result)
 }
 
@@ -796,7 +796,7 @@ func WriteBackWriterDocument(w http.ResponseWriter, r *http.Request) {
 	if representation == "markdown" {
 		schema = "text/markdown"
 	}
-	if representation == "markdown" && len(result.TargetDocument) > 0 {
+	if len(result.TargetDocument) > 0 {
 		targetValue, marshalErr := json.Marshal(map[string]any{
 			"schema":         "lazyllm.tools.writer.data_models.task.TargetDocument",
 			"schema_version": "0.1",
@@ -889,7 +889,7 @@ func WriteBackWriterDocument(w http.ResponseWriter, r *http.Request) {
 		ctx, db, sessionID, revision.StepID, revision.SlotID, revision.Slot,
 		revision.Revision, revision.ListIndex, "provider_sync",
 	)
-	common.ReplyOK(w, map[string]any{
+	reply := map[string]any{
 		"status": "synced", "revision": revision.Revision,
 		"provider_synced": true, "artifact_saved": true,
 		"patch_result":    result.PatchResult,
@@ -898,7 +898,9 @@ func WriteBackWriterDocument(w http.ResponseWriter, r *http.Request) {
 		"representation":  representation,
 		"write_result":    result.WriteResult,
 		"target_document": result.TargetDocument,
-	})
+	}
+	attachWriterMediaURLs(ctx, db, sessionID, slot, reply)
+	common.ReplyOK(w, reply)
 }
 
 func loadSelectedWriterArtifact(
@@ -941,12 +943,68 @@ func attachWriterMediaURLs(
 	documentSlot string,
 	result map[string]any,
 ) {
-	if representation, _ := result["representation"].(string); representation != "markdown" {
+	representation, _ := result["representation"].(string)
+	if representation != "markdown" && representation != "ir" {
 		return
 	}
-	if urls := writerDocumentMediaURLs(ctx, db, sessionID, documentSlot); len(urls) > 0 {
-		result["media_urls"] = urls
+	urls := writerDocumentMediaURLs(ctx, db, sessionID, documentSlot)
+	if len(urls) == 0 {
+		return
 	}
+	if representation == "markdown" {
+		result["media_urls"] = urls
+		return
+	}
+	switch document := result["document"].(type) {
+	case map[string]any:
+		attachWriterIRMediaPreviewURLs(document, urls)
+	case json.RawMessage:
+		var decoded map[string]any
+		if json.Unmarshal(document, &decoded) == nil {
+			attachWriterIRMediaPreviewURLs(decoded, urls)
+			result["document"] = decoded
+		}
+	}
+}
+
+func attachWriterIRMediaPreviewURLs(document map[string]any, urls map[string]string) {
+	blocks, _ := document["blocks"].([]any)
+	var visit func([]any)
+	visit = func(items []any) {
+		for _, item := range items {
+			block, _ := item.(map[string]any)
+			if block == nil {
+				continue
+			}
+			if block["type"] == "image" {
+				references, _ := block["references"].([]any)
+				for _, value := range references {
+					reference, _ := value.(map[string]any)
+					if reference == nil || reference["type"] != "media_asset" {
+						continue
+					}
+					assetID, _ := reference["id"].(string)
+					path, _ := reference["path"].(string)
+					previewURL := urls["asset://"+strings.TrimSpace(assetID)]
+					if previewURL == "" {
+						previewURL = urls[strings.TrimSpace(path)]
+					}
+					if previewURL != "" {
+						block["references"] = append(references, map[string]any{
+							"type": "preview_asset",
+							"id":   assetID,
+							"url":  previewURL,
+						})
+					}
+					break
+				}
+			}
+			if children, ok := block["children"].([]any); ok {
+				visit(children)
+			}
+		}
+	}
+	visit(blocks)
 }
 
 func writerDocumentMediaURLs(
@@ -1155,6 +1213,11 @@ func unbindWriterDocument(document json.RawMessage) (json.RawMessage, error) {
 	}
 	delete(value, "revision")
 	value["provider_binding"] = map[string]any{}
+	if metadata, ok := value["metadata"].(map[string]any); ok {
+		for _, key := range []string{"source", "provider_metadata", "block_count", "source_block_count"} {
+			delete(metadata, key)
+		}
+	}
 	var cleanBlocks func(any)
 	cleanBlocks = func(raw any) {
 		blocks, ok := raw.([]any)

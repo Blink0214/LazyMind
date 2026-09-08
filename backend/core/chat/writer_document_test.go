@@ -158,6 +158,41 @@ func TestAttachWriterMediaURLs(t *testing.T) {
 			t.Fatalf("media URL for %q = %q", reference, url)
 		}
 	}
+
+	irResult := map[string]any{
+		"representation": "ir",
+		"document": map[string]any{
+			"blocks": []any{map[string]any{
+				"type": "heading",
+				"children": []any{map[string]any{
+					"type": "image",
+					"references": []any{map[string]any{
+						"type": "media_asset",
+						"id":   "diagram-id",
+						"path": imagePath,
+					}},
+				}},
+			}},
+		},
+	}
+	rawDocument, err := json.Marshal(irResult["document"])
+	if err != nil {
+		t.Fatalf("marshal IR document: %v", err)
+	}
+	irResult["document"] = json.RawMessage(rawDocument)
+	attachWriterMediaURLs(context.Background(), db.DB, "session", "draft_document", irResult)
+	document := irResult["document"].(map[string]any)
+	heading := document["blocks"].([]any)[0].(map[string]any)
+	image := heading["children"].([]any)[0].(map[string]any)
+	references := image["references"].([]any)
+	preview := references[1].(map[string]any)
+	if preview["type"] != "preview_asset" || preview["id"] != "diagram-id" {
+		t.Fatalf("unexpected IR preview reference: %#v", preview)
+	}
+	if url, _ := preview["url"].(string); !strings.HasPrefix(url, "/static-files/") ||
+		!strings.Contains(url, "sig=") || strings.Contains(url, uploadRoot) {
+		t.Fatalf("IR preview URL = %q", url)
+	}
 }
 
 func TestWriteBackWriterDocumentRequiresExplicitProvider(t *testing.T) {
@@ -654,6 +689,7 @@ func TestUnbindWriterDocumentClearsNestedProviderState(t *testing.T) {
 		"document_id":"page-1",
 		"revision":"rev-1",
 		"provider_binding":{"provider":"notion","document_id":"page-1"},
+		"metadata":{"source":{"adapter":"notion"},"provider_metadata":{"remote":true},"block_count":1,"source_block_count":1,"semantic":"preserved"},
 		"blocks":[{
 			"node_id":"heading-1",
 			"provider_binding":{"provider":"notion","block_id":"block-1"},
@@ -677,6 +713,15 @@ func TestUnbindWriterDocumentClearsNestedProviderState(t *testing.T) {
 	}
 	if binding, _ := document["provider_binding"].(map[string]any); len(binding) != 0 {
 		t.Fatalf("document provider binding = %#v, want empty", binding)
+	}
+	metadata := document["metadata"].(map[string]any)
+	for _, key := range []string{"source", "provider_metadata", "block_count", "source_block_count"} {
+		if _, exists := metadata[key]; exists {
+			t.Fatalf("provider metadata %q was not removed: %#v", key, metadata)
+		}
+	}
+	if metadata["semantic"] != "preserved" {
+		t.Fatalf("provider-neutral metadata was not preserved: %#v", metadata)
 	}
 	blocks := document["blocks"].([]any)
 	parent := blocks[0].(map[string]any)

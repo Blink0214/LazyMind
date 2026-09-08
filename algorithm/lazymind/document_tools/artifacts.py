@@ -105,7 +105,8 @@ def detach_provider_binding(value: Any) -> dict[str, Any]:
     document = WriterDocument.model_validate(value)
     document.revision = None
     document.provider_binding.clear()
-    document.metadata.pop('source', None)
+    for key in ('source', 'provider_metadata', 'block_count', 'source_block_count'):
+        document.metadata.pop(key, None)
     for block in document.iter_blocks():
         block.provider_binding.clear()
         block.provider_payload.clear()

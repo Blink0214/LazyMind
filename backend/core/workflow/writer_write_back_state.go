@@ -105,7 +105,11 @@ func writerWriteBackState(
 	}
 	var binding writerProviderBinding
 	hasBinding := false
-	if target != nil {
+	draftIsMarkdown := writerArtifactIsMarkdown(draftValue)
+	if !draftIsMarkdown {
+		binding, hasBinding = writerProviderBindingFromArtifact(draftValue)
+	}
+	if !hasBinding && draftIsMarkdown && target != nil {
 		targetValue, targetErr := loadWriterSlotDTOValue(ctx, db, sessionID, *target)
 		if targetErr != nil {
 			return info

@@ -433,10 +433,11 @@ def _writer_execute_writing_subtasks(
     writing_context_path: str,
 ) -> str:
     """Execute outline-owned writing subtasks without adding a workflow step."""
+    emit_progress = _HOST.get()['_emit_writer_progress']
     content = WriterCreateToolkit().execute_writing_subtasks(
         outline_json=_read_json_string(outline_path),
         writing_context_json=_read_json_string(writing_context_path),
-        on_progress=lambda subtasks: _emit_writer_progress(
+        on_progress=lambda subtasks: emit_progress(
             '正在执行写作子任务', writing_subtasks=subtasks,
         ),
     )

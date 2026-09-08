@@ -160,6 +160,14 @@ export async function resolveMarkdownImageUrlAsync(
     return trimmed;
   }
   if (
+    extractStaticFilesPath(trimmed)
+    && parseExpires(trimmed) > 0
+    && /[?&]sig=[^&]+/.test(trimmed)
+    && !isExpiredSignedUrl(trimmed)
+  ) {
+    return resolveCoreAssetUrl(trimmed);
+  }
+  if (
     /^https?:\/\//i.test(trimmed) &&
     !trimmed.includes(UPLOAD_ROOT_MARKER) &&
     !trimmed.includes('/static-files/')

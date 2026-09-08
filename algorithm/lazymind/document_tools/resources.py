@@ -67,6 +67,11 @@ def _merge_provider_state(
         local.editable = remote.editable
     merged.revision = persisted.revision
     merged.provider_binding = deepcopy(persisted.provider_binding)
+    for key in ('source', 'provider_metadata', 'block_count', 'source_block_count'):
+        if key in persisted.metadata:
+            merged.metadata[key] = deepcopy(persisted.metadata[key])
+        else:
+            merged.metadata.pop(key, None)
     return merged
 
 
@@ -252,7 +257,10 @@ def write_document(
     else:
         persisted = persisted_value
     if isinstance(persisted, WriterDocument):
-        persisted = _set_document_editable(persisted, stage='final').model_dump()
+        persisted = _set_document_editable(
+            _merge_provider_state(converted.source_document, persisted),
+            stage='final',
+        ).model_dump()
     normalized_write_result = deepcopy(write_result)
     if isinstance(normalized_write_result.get('persisted_document'), WriterDocument):
         normalized_write_result['persisted_document'] = normalized_write_result[

@@ -417,6 +417,37 @@ describe('WriterIRDocumentEditor image preview', () => {
       );
     });
   });
+
+  it('routes a signed Core preview through the API proxy', async () => {
+    const previewDocument: WriterDocument = {
+      ...document,
+      blocks: [{
+        node_id: 'generated-image-1',
+        type: 'image',
+        content: '深海城市',
+        references: [{
+          type: 'preview_asset',
+          id: 'asset-1',
+          url: '/static-files/subagent/user/task/image.jpg?expires=4102444800&sig=test',
+        }],
+      }],
+    };
+    const { container } = render(
+      <WriterIRDocumentEditor
+        document={previewDocument}
+        ariaLabel='Writer document'
+        onChange={vi.fn()}
+        onFocus={vi.fn()}
+        onBlur={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('img')?.getAttribute('src')).toContain(
+        '/api/core/static-files/subagent/user/task/image.jpg?expires=4102444800&sig=test',
+      );
+    });
+  });
 });
 
 describe('WriterIRDocumentEditor cross-reference menu', () => {
