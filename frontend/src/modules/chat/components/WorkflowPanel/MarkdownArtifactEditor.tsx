@@ -562,7 +562,7 @@ export function MarkdownArtifactEditor({
 }: MarkdownArtifactEditorProps) {
   const { t } = useTranslation();
   const tabActive = useContext(WorkflowPanelTabActiveContext);
-  const { setEditing, registerFlush, registerFooterAction } = useContext(SlotEditingContext);
+  const { setEditing, registerFlush, registerFooterAction, registerSnapshot } = useContext(SlotEditingContext);
   const chatPresentation = presentation === 'chat';
   const [baseMarkdown, setBaseMarkdown] = useState(() => normalizeMarkdownForMdxEditor(markdown));
   const [draftMarkdown, setDraftMarkdown] = useState(() => normalizeMarkdownForMdxEditor(markdown));
@@ -1237,6 +1237,11 @@ export function MarkdownArtifactEditor({
     setEditing(editingKey, dirty);
     return () => setEditing(editingKey, false);
   }, [dirty, editingKey, readOnly, setEditing]);
+
+  useEffect(() => {
+    if (!editingKey || !registerSnapshot) return undefined;
+    return registerSnapshot(editingKey, () => draftMarkdownRef.current);
+  }, [editingKey, registerSnapshot]);
 
   useEffect(() => {
     if (!editingKey) return undefined;

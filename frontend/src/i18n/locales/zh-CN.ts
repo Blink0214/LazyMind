@@ -1684,6 +1684,18 @@ const zhCN = {
   },
 
   chat: {
+    writerCopy: {
+      copyAs: "复制 {{format}}",
+      chooseFormat: "选择复制格式",
+      markdown: "Markdown",
+      latex: "LaTeX",
+      text: "纯文本",
+      converting: "转换中…",
+      success: "已复制",
+      failed: "转换失败，请刷新文档后重试",
+      manualTitle: "未能写入剪贴板，可重试或手动复制下方内容",
+      retry: "重试复制"
+    },
     fork: {
       title: "Fork 为新会话", selectAnswerFirst: "请先选定回答，再 Fork",
       creating: "正在创建 Fork 会话…", retryCreate: "重试 Fork", noModels: "暂无可用模型，请配置模型后重新读取。",

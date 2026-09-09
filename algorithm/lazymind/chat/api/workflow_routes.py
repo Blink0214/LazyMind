@@ -238,6 +238,16 @@ def _action_definition(
         raise HTTPException(status_code=404, detail='workflow definition not found')
     raw = base64.b64decode(encoded) if isinstance(encoded, str) else bytes(encoded)
     document = yaml.safe_load(raw.decode('utf-8')) or {}
+    # Portable conversion is a shared, read-only document capability for every
+    # workflow, including pinned packages created before the copy UI existed.
+    if request.action == 'convert_document' and request.arguments.get('output_format') in {
+        'markdown', 'latex', 'text',
+    }:
+        return {
+            'slots': [request.slot],
+            'preview_tool': 'builtin:document.convert_document.v1',
+            'execute_tool': 'builtin:document.convert_document.v1',
+        }, package
     actions = document.get('artifact_actions') or {}
     definition = actions.get(request.action) if isinstance(actions, dict) else None
     if not isinstance(definition, dict):

@@ -15,6 +15,7 @@ from lazyllm.tools.writer.data_models import (
     WriterDocument,
 )
 from lazyllm.tools.writer.provider import (
+    WriterProviderBase,
     WriterProviderDocument,
     WriterProviderWriteOutcomeError,
     get_writer_provider,
@@ -164,11 +165,19 @@ def sync_document(
 
 def convert_document(
     content: str | Mapping[str, Any] | WriterDocument,
-    provider: str,
+    provider: str = '',
     media_assets: Mapping[str, Any] | None = None,
     target_document: Mapping[str, Any] | None = None,
+    *,
+    output_format: str = 'native',
 ) -> dict[str, Any]:
     """Purely convert canonical Writer content to one provider's copyable format."""
+    if output_format != 'native':
+        library = MediaAssetLibrary.model_validate(media_assets) if media_assets else None
+        source = WriterDocument.model_validate(content) if isinstance(content, Mapping) else content
+        return WriterProviderBase.convert_common_document(
+            source, output_format=output_format, media_assets=library,
+        ).model_dump()
     provider_name = provider.strip().lower()
     if not provider_name:
         raise ToolExecutionError('provider is required for document conversion.')
@@ -205,6 +214,8 @@ def write_document(
     if mode not in {'replace', 'append'}:
         raise ToolExecutionError('mode must be replace or append.')
     converted = WriterProviderDocument.model_validate(converted_document)
+    if not converted.provider:
+        raise ToolExecutionError('Portable document conversions cannot be written to a provider.')
     provider = get_writer_provider(converted.provider)
     target = TargetDocument.model_validate(target_document) if target_document else None
     if target is None:
@@ -571,14 +582,16 @@ class WriterResourceCapabilities:
     def convert_document(
         self,
         content_json: str,
-        provider: str,
+        provider: str = '',
         target_document_json: str = '',
         media_assets_json: str = '',
+        output_format: str = 'native',
     ) -> str:
         """Convert Writer content without provider IO."""
         return _json_dumps(convert_document(
             _document_value(content_json),
             provider,
+            output_format=output_format,
             media_assets=(
                 _json_loads(media_assets_json, {}) if media_assets_json.strip() else None
             ),

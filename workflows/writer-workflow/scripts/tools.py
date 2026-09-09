@@ -1088,6 +1088,7 @@ def writer_convert_document(
     provider: str = '',
     target_document_path: str = '',
     media_assets_path: str = '',
+    output_format: str = 'native',
 ) -> str:
     return _DOCUMENT_EXECUTION.invoke(
         globals(), '_writer_convert_document', locals(),

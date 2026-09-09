@@ -7,6 +7,8 @@ import { createContext } from 'react';
  * - registerFooterAction: surface document actions (download / write-back) in the shared panel footer
  */
 export interface SlotFooterAction {
+  /** Shared read-only resource actions may be presented once in the footer. */
+  dedupKey?: string;
   label: string;
   onClick: () => void;
   disabled?: boolean;
@@ -17,7 +19,8 @@ export interface SlotFooterAction {
   /** Lower values render further left within the document action group. */
   order?: number;
   tone?: 'primary' | 'secondary';
-  icon?: 'write-back' | 'download';
+  icon?: 'write-back' | 'download' | 'copy';
+  menu?: Array<{ key: string; label: string; onClick: () => void }>;
   statusText?: string;
   statusTone?: 'success' | 'error';
   statusLink?: {
@@ -27,6 +30,8 @@ export interface SlotFooterAction {
 }
 
 export interface SlotEditingContextValue {
+  registerSnapshot?: (key: string, read: () => unknown) => () => void;
+  getSnapshot?: (key: string) => unknown;
   setEditing: (key: string, editing: boolean) => void;
   registerFlush: (key: string, flush: () => Promise<boolean>) => () => void;
   registerFooterAction: (key: string, action: SlotFooterAction | null) => () => void;

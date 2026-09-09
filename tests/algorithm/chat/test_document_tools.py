@@ -635,3 +635,18 @@ def test_first_publication_creates_target_and_returns_provider_binding(
     assert result["persisted_document"]["blocks"][0]["provider_binding"] == (
         persisted.blocks[0].provider_binding
     )
+
+
+@pytest.mark.parametrize('output_format', ['markdown', 'latex', 'text'])
+def test_workflow_portable_conversion_returns_content_without_artifact_store(tmp_path, output_format):
+    from lazymind.document_tools.execution import invoke
+
+    source = tmp_path / 'article.md'
+    source.write_text('# Article\n\nCurrent content', encoding='utf-8')
+    result = json.loads(invoke({}, '_writer_convert_document', {
+        'content_path': str(source), 'output_format': output_format,
+    }))
+    assert result['format'] == output_format
+    assert result['provider'] == ''
+    assert 'Current content' in result['content']
+    assert list(tmp_path.iterdir()) == [source]

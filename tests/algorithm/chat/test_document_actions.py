@@ -291,7 +291,7 @@ def test_conversion_and_write_actions_are_explicitly_composable(monkeypatch):
     assert calls[0] == (
         "convert",
         "# Draft",
-        {"provider": "notion", "target_document": None, "media_assets": None},
+        {"provider": "notion", "output_format": "native", "target_document": None, "media_assets": None},
     )
     assert calls[1][0] == "write"
     assert calls[1][1]["converted_document"] == converted
@@ -408,3 +408,40 @@ def test_official_provider_errors_preserve_non_retryable_action_contract(
         assert raised.value.details == expected_details
     finally:
         document_actions._BUILTIN_ACTIONS[spec.reference]["preview"] = original
+
+
+@pytest.mark.parametrize('output_format', ['markdown', 'latex', 'text'])
+def test_portable_conversion_uses_unsaved_snapshot_without_platform_io(monkeypatch, output_format):
+    def unexpected(*args, **kwargs):
+        pytest.fail('Portable conversion must not resolve a platform')
+
+    monkeypatch.setattr('lazymind.document_tools.resources.get_writer_provider', unexpected)
+    result = invoke_document_action(
+        'builtin:document.convert_document.v1', 'preview',
+        {'output_format': output_format, 'document': '# Latest\n\nUnsaved $x_1$'},
+        artifact={'data': '# Old content'},
+    )
+    assert result['provider'] == ''
+    assert result['format'] == output_format
+    assert 'Latest' in result['content'] and 'Old content' not in result['content']
+    assert 'provider_synced' not in result
+
+
+def test_conversion_snapshot_is_content_not_a_file_locator(tmp_path):
+    secret = tmp_path / 'private.md'
+    secret.write_text('DO NOT READ', encoding='utf-8')
+    result = invoke_document_action(
+        'builtin:document.convert_document.v1', 'preview',
+        {'output_format': 'markdown', 'document': str(secret)},
+        artifact={'data': '# Original'},
+    )
+    assert 'DO NOT READ' not in result['content']
+
+
+def test_native_conversion_rejects_copy_snapshot():
+    with pytest.raises(DocumentActionError):
+        invoke_document_action(
+            'builtin:document.convert_document.v1', 'preview',
+            {'provider': 'notion', 'document': '# Unsaved'},
+            artifact={'data': '# Original'},
+        )

@@ -66,3 +66,22 @@ func TestOtherArtifactActionsRemainPinned(t *testing.T) {
 		t.Fatalf("non-PPT action must stay pinned, got %#v", got)
 	}
 }
+
+func TestPortableConversionDoesNotRequireModelConfiguration(t *testing.T) {
+	for _, format := range []string{"markdown", "latex", "text"} {
+		if !isPortableDocumentConversion(artifactActionPreviewBody{
+			Action: "convert_document", Input: map[string]any{"output_format": format},
+		}) {
+			t.Fatalf("portable format %q should not require a model", format)
+		}
+	}
+	for _, body := range []artifactActionPreviewBody{
+		{Action: "convert_document", Input: map[string]any{"output_format": "native"}},
+		{Action: "convert_document", Input: map[string]any{}},
+		{Action: "rewrite_selection", Input: map[string]any{"output_format": "text"}},
+	} {
+		if isPortableDocumentConversion(body) {
+			t.Fatalf("other actions must preserve model configuration: %#v", body)
+		}
+	}
+}

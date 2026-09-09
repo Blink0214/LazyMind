@@ -1,11 +1,28 @@
 import base64
 import importlib.util
 import json
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 import yaml
+
+
+def _load_workflow_routes(monkeypatch):
+    # Load this router independently of api/__init__, which starts unrelated
+    # knowledge/RAG routers. The client transport is mocked by these unit tests.
+    __import__('lazyllm')
+    try:
+        __import__('httpx')
+    except ImportError:
+        monkeypatch.setitem(sys.modules, 'httpx', ModuleType('httpx'))
+    path = Path(__file__).resolve().parents[3] / 'algorithm/lazymind/chat/api/workflow_routes.py'
+    spec = importlib.util.spec_from_file_location('workflow_action_routes_test', path)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _load_tools():
@@ -165,7 +182,7 @@ def test_complete_smoke_workflow_with_fixed_model_io():
 
 def test_workflow_action_route_uses_pinned_definition_and_server_owned_arguments(monkeypatch):
     from fastapi import HTTPException
-    from lazymind.chat.api import workflow_routes
+    workflow_routes = _load_workflow_routes(monkeypatch)
 
     definition = yaml.safe_dump({'artifact_actions': {'rewrite_selection': {
         'slots': ['draft_document'], 'preview_tool': 'preview_rewrite',
@@ -221,3 +238,31 @@ def test_workflow_action_route_uses_pinned_definition_and_server_owned_arguments
             workflow_routes.WorkflowActionInvokeRequest.model_validate(payload),
         )
     assert error.value.status_code == 422
+
+
+@pytest.mark.parametrize('workflow_id', ['academic-writer', 'custom-writing-workflow'])
+def test_portable_conversion_available_to_pinned_workflows_without_action_declaration(monkeypatch, workflow_id):
+    workflow_routes = _load_workflow_routes(monkeypatch)
+
+    package = {
+        'revision_id': 'old-revision', 'tree_hash': 'tree',
+        'files': {'workflow.yaml': base64.b64encode(b'id: arbitrary\n').decode()},
+    }
+    class FakeWorkflowClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get_workflow(self, *args):
+            return SimpleNamespace(result=package)
+
+    monkeypatch.setattr(workflow_routes, 'WorkflowClient', FakeWorkflowClient)
+    monkeypatch.setattr(workflow_routes, 'inject_model_config', lambda _config: None)
+    monkeypatch.setattr(workflow_routes, 'inject_tool_config', lambda _config: None)
+    request = workflow_routes.WorkflowActionInvokeRequest(
+        workflow_id=workflow_id, revision_id='old-revision', tree_hash='tree',
+        action='convert_document', phase='preview', slot='custom_article',
+        artifact='# Article', arguments={'output_format': 'latex'},
+    )
+    result = workflow_routes.invoke_workflow_action(request)['result']
+    assert result['format'] == 'latex'
+    assert 'Article' in result['content']

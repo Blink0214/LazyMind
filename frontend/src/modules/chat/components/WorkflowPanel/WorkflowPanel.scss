@@ -981,6 +981,30 @@
     gap: 8px;
   }
 
+  &__split-action {
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+
+    > .workflow-panel__action-btn {
+      border: 0;
+      border-radius: 7px 0 0 7px;
+      min-height: 32px;
+
+      &:hover:not(:disabled) {
+        transform: none;
+        box-shadow: none;
+      }
+
+      &:last-child {
+        border-left: 1px solid #d1d5db;
+        border-radius: 0 7px 7px 0;
+        padding: 0 10px;
+      }
+    }
+  }
+
   &__footer-action-status {
     font-size: 12px;
     color: #6b7280;

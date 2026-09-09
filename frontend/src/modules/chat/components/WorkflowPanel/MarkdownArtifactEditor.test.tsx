@@ -872,6 +872,27 @@ describe('MarkdownArtifactEditor rewrite selection highlight', () => {
 });
 
 describe('MarkdownArtifactEditor autosave', () => {
+  it('exposes unsaved Markdown for copying without invoking save', () => {
+    const onSave = vi.fn();
+    let snapshot: (() => unknown) | undefined;
+    render(
+      <SlotEditingContext.Provider value={{
+        setEditing: vi.fn(),
+        registerFlush: () => () => undefined,
+        registerFooterAction: () => () => undefined,
+        registerSnapshot: (_key, read) => { snapshot = read; return () => undefined; },
+      }}>
+        <MarkdownArtifactEditor markdown='Initial draft' sourceRevision={7}
+          editingKey='copy:document' onSave={onSave} />
+      </SlotEditingContext.Provider>,
+    );
+    const editable = screen.getByTestId('markdown-editable');
+    editable.textContent = 'Unsaved copy snapshot';
+    fireEvent.input(editable);
+    expect(snapshot?.()).toBe('Unsaved copy snapshot');
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it('uses a checkpoint when pending edits are flushed at a version boundary', async () => {
     const onSave = vi.fn(async () => 8);
     let flush: (() => Promise<boolean>) | undefined;

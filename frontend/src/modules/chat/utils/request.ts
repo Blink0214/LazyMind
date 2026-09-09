@@ -361,6 +361,14 @@ export interface RewriteSelectionPreview {
   layout_notes?: string[];
 }
 
+export type WriterCopyFormat = 'markdown' | 'latex' | 'text';
+
+export interface ConvertDocumentResult {
+  provider: string;
+  format: string;
+  content: string;
+}
+
 export interface ExecuteArtifactActionRequest {
   action: 'rewrite_selection';
   base_revision: number;
@@ -470,6 +478,20 @@ export function WorkflowSessionApi() {
           ...(baseRevision !== undefined ? { base_revision: baseRevision } : {}),
         },
         options,
+      );
+    },
+    convertDocument(
+      sessionId: string,
+      slotId: string,
+      listIndex: number,
+      baseRevision: number,
+      outputFormat: WriterCopyFormat,
+      document: unknown,
+    ) {
+      return axiosInstance.post<{ code: number; data: ConvertDocumentResult }>(
+        `${coreApiBaseUrl}/workflow-sessions/${encodeURIComponent(sessionId)}/slots/${encodeURIComponent(slotId)}/items/idx/${listIndex}:action-preview`,
+        { action: 'convert_document', base_revision: baseRevision, input: { output_format: outputFormat, document } },
+        { silentError: true } as RawAxiosRequestConfig,
       );
     },
     previewRewriteSelection(

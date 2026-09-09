@@ -1,8 +1,11 @@
+import { buildDocumentFooterItems } from './documentFooter';
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { message as antdMessage, Popconfirm, Tooltip } from 'antd';
+import { message as antdMessage, Popconfirm, Tooltip, Dropdown } from 'antd';
 import {
+  CopyOutlined,
+  DownOutlined,
   CloudUploadOutlined,
   DownloadOutlined,
   ExportOutlined,
@@ -58,44 +61,7 @@ import {
 } from './compositeArtifactLayout';
 import './WorkflowPanel.scss';
 
-const DOCUMENT_FOOTER_LINK_ORDER = 20;
 const EMPTY_TASK_CENTER_TASKS: SubAgentTask[] = [];
-
-type DocumentFooterItem =
-  | { kind: 'button'; key: string; order: number; action: SlotFooterAction }
-  | { kind: 'link'; key: string; order: number; href: string; label: string };
-
-function buildDocumentFooterItems(footerActions: Map<string, SlotFooterAction>): {
-  statusMessages: Array<{ key: string; text: string; tone?: SlotFooterAction['statusTone'] }>;
-  actionItems: DocumentFooterItem[];
-} {
-  const statusMessages: Array<{ key: string; text: string; tone?: SlotFooterAction['statusTone'] }> = [];
-  const actionItems: DocumentFooterItem[] = [];
-
-  for (const [key, action] of footerActions.entries()) {
-    if (action.statusText) {
-      statusMessages.push({ key: `${key}:status`, text: action.statusText, tone: action.statusTone });
-    }
-    if (action.statusLink) {
-      actionItems.push({
-        kind: 'link',
-        key: `${key}:link`,
-        order: DOCUMENT_FOOTER_LINK_ORDER,
-        href: action.statusLink.href,
-        label: action.statusLink.label,
-      });
-    }
-    actionItems.push({
-      kind: 'button',
-      key,
-      order: action.order ?? 100,
-      action,
-    });
-  }
-
-  actionItems.sort((left, right) => left.order - right.order);
-  return { statusMessages, actionItems };
-}
 
 /** Parse a JSON intent context string and return the text field, or '' if empty/invalid. */
 function parseIntentText(raw?: string): string {
@@ -1665,6 +1631,7 @@ export function WorkflowPanel({
   // Track which slots are currently being edited; dismiss stays blocked until
   // each editor saves or cancels. Footer retry/continue flushes pending saves.
   const editingSlots = useRef<Set<string>>(new Set());
+  const snapshotFns = useRef(new Map<string, () => unknown>());
   const flushFns = useRef<Map<string, () => Promise<boolean>>>(new Map());
   const [anySlotEditing, setAnySlotEditing] = useState(false);
   const [actionPending, setActionPending] = useState(false);
@@ -1720,6 +1687,12 @@ export function WorkflowPanel({
     }
     setAnySlotEditing(editingSlots.current.size > 0);
   }, []);
+
+  const registerSnapshot = useCallback((key: string, read: () => unknown) => {
+    snapshotFns.current.set(key, read);
+    return () => { if (snapshotFns.current.get(key) === read) snapshotFns.current.delete(key); };
+  }, []);
+  const getSnapshot = useCallback((key: string) => snapshotFns.current.get(key)?.(), []);
 
   const registerFlush = useCallback((key: string, flush: () => Promise<boolean>) => {
     flushFns.current.set(key, flush);
@@ -1951,6 +1924,8 @@ export function WorkflowPanel({
     <SlotEditingContext.Provider value={{
       setEditing: handleSlotEditingChange,
       registerFlush,
+      registerSnapshot,
+      getSnapshot,
       registerFooterAction,
     }}>
     <div
@@ -2207,24 +2182,35 @@ export function WorkflowPanel({
 
                     const { action } = item;
                     return (
-                      <button
-                        key={item.key}
-                        type='button'
-                        className={`workflow-panel__action-btn workflow-panel__action-btn--${action.tone ?? 'secondary'}`}
-                        disabled={actionPending || action.disabled}
-                        aria-disabled={actionPending || action.disabled}
-                        onClick={() => {
-                          if (action.flushBeforeAction) {
-                            void runFooterAction(action.onClick, action.flushKey);
-                            return;
-                          }
-                          action.onClick();
-                        }}
-                      >
-                        {action.icon === 'write-back' ? <CloudUploadOutlined aria-hidden /> : null}
-                        {action.icon === 'download' ? <DownloadOutlined aria-hidden /> : null}
-                        {action.label}
-                      </button>
+                      <div key={item.key} className={action.menu ? 'workflow-panel__split-action' : undefined}>
+                        <button
+                          key={item.key}
+                          type='button'
+                          className={`workflow-panel__action-btn workflow-panel__action-btn--${action.tone ?? 'secondary'}`}
+                          disabled={actionPending || action.disabled}
+                          aria-disabled={actionPending || action.disabled}
+                          onClick={() => {
+                            if (action.flushBeforeAction) {
+                              void runFooterAction(action.onClick, action.flushKey);
+                              return;
+                            }
+                            action.onClick();
+                          }}
+                        >
+                          {action.icon === 'write-back' ? <CloudUploadOutlined aria-hidden /> : null}
+                          {action.icon === 'download' ? <DownloadOutlined aria-hidden /> : null}
+                          {action.icon === 'copy' ? <CopyOutlined aria-hidden /> : null}
+                          {action.label}
+                        </button>
+                        {action.menu && (
+                          <Dropdown menu={{ items: action.menu }} trigger={['click']} disabled={actionPending || action.disabled}>
+                            <button type='button' className='workflow-panel__action-btn workflow-panel__action-btn--secondary'
+                              disabled={actionPending || action.disabled} aria-label={t('chat.writerCopy.chooseFormat')}>
+                              <DownOutlined />
+                            </button>
+                          </Dropdown>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

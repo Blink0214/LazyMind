@@ -26,15 +26,31 @@ type artifactActionPreviewBody struct {
 	Input        map[string]any `json:"input"`
 }
 
+func isPortableDocumentConversion(body artifactActionPreviewBody) bool {
+	if body.Action != "convert_document" {
+		return false
+	}
+	switch body.Input["output_format"] {
+	case "markdown", "latex", "text":
+		return true
+	default:
+		return false
+	}
+}
+
 func PreviewArtifactAction(w http.ResponseWriter, r *http.Request) {
 	target, body, ok := prepareArtifactActionPreview(w, r)
 	if !ok {
 		return
 	}
-	llmConfig, err := modelconfig.LoadLLMConfig(r.Context(), target.db, store.UserID(r))
-	if err != nil {
-		common.ReplyErr(w, "load model config failed", http.StatusInternalServerError)
-		return
+	var llmConfig map[string]any
+	if !isPortableDocumentConversion(body) {
+		var err error
+		llmConfig, err = modelconfig.LoadLLMConfig(r.Context(), target.db, store.UserID(r))
+		if err != nil {
+			common.ReplyErr(w, "load model config failed", http.StatusInternalServerError)
+			return
+		}
 	}
 	userID := store.UserID(r)
 	actionWorkflow, err := resolveArtifactActionWorkflow(r.Context(), target, body.Action)

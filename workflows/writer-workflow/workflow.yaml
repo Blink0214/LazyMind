@@ -84,7 +84,7 @@ artifact_actions:
     slots: [draft_document]
     execute_tool: builtin:document.sync_document.v1
   convert_document:
-    slots: [flat_draft_document, draft_document]
+    slots: [source_document, outline_document, flat_draft_document, draft_document]
     preview_tool: builtin:document.convert_document.v1
     execute_tool: builtin:document.convert_document.v1
   write_document:

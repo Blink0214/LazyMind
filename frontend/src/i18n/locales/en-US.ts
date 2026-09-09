@@ -1733,6 +1733,18 @@ const enUS = {
 
   // Chat
   chat: {
+    writerCopy: {
+      copyAs: "Copy {{format}}",
+      chooseFormat: "Choose copy format",
+      markdown: "Markdown",
+      latex: "LaTeX",
+      text: "plain text",
+      converting: "Converting…",
+      success: "Copied",
+      failed: "Conversion failed. Refresh the document and try again.",
+      manualTitle: "Clipboard unavailable. Retry or copy the text below.",
+      retry: "Retry copy"
+    },
     fork: {
       title: "Fork into a new conversation", selectAnswerFirst: "Select an answer before forking",
       creating: "Creating a Fork conversation…", retryCreate: "Retry Fork", noModels: "No models are available. Configure a model, then reload.",

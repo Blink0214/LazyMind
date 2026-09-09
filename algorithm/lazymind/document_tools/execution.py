@@ -873,6 +873,7 @@ def _writer_convert_document(
     provider: str = '',
     target_document_path: str = '',
     media_assets_path: str = '',
+    output_format: str = 'native',
 ) -> str:
     """Convert canonical Writer content to a copyable provider artifact."""
     if not provider and target_document_path:
@@ -882,6 +883,7 @@ def _writer_convert_document(
     content = WriterResourceToolkit().convert_document(
         content_json=_read_json_string(content_path),
         provider=provider,
+        output_format=output_format,
         target_document_json=(
             _read_json_string(target_document_path) if target_document_path else ''
         ),
@@ -889,6 +891,8 @@ def _writer_convert_document(
             _read_json_string(media_assets_path) if media_assets_path else ''
         ),
     )
+    if output_format != 'native':
+        return content
     return _save_json_artifact(
         'converted_document', content,
         'lazyllm.tools.writer.provider.base.WriterProviderDocument',

@@ -291,7 +291,7 @@ export function WriterIRControl({
   onRewritePreviewRejected,
 }: WriterIRControlProps) {
   const { t } = useTranslation();
-  const { registerFlush } = useContext(SlotEditingContext);
+  const { registerFlush, registerSnapshot } = useContext(SlotEditingContext);
   const [baseDocument, setBaseDocument] = useState(document);
   const [baseSourceRevision, setBaseSourceRevision] = useState(sourceRevision);
   const [draft, setDraft] = useState(() => repairWriterCodeToolbarPollution(document));
@@ -335,6 +335,10 @@ export function WriterIRControl({
   const onSaveRef = useRef(onSave);
   const historyRef = useRef(history);
   const futureRef = useRef(future);
+  useEffect(() => {
+    if (!editingKey || !registerSnapshot) return undefined;
+    return registerSnapshot(editingKey, () => draftRef.current);
+  }, [editingKey, registerSnapshot]);
   const outlineId = useId();
   const outlineItems = useMemo(() => collectWriterOutline(draft.blocks), [draft.blocks]);
   const hasOutlineInstructions = useMemo(

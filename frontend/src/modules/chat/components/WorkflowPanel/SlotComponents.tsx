@@ -34,6 +34,7 @@ import {
   writerDownloadFilename,
   writerMarkdownTitle,
 } from './WriterDownloadFormat';
+import { useDocumentCopy } from './useDocumentCopy';
 import { MarkdownArtifactEditor, type MarkdownSaveMode } from './MarkdownArtifactEditor';
 import {
   ArtifactRewriteDialog,
@@ -2061,6 +2062,12 @@ export function SlotText({ slot, widget, sessionId, slotId, revisionCount, onRef
     return text;
   })();
 
+  useDocumentCopy({
+    enabled: !showPending && !isJsonBlock && widget?.widgetType === 'text-markdown',
+    editingKey: `${editingKey}:markdown`, sessionId, slotId, listIndex: apiListIndex,
+    revision: localRevision, document: displayText,
+  });
+
   // Compute the pending draft text for the version badge: non-null only when there
   // is a local draft that differs from the committed artifact text.
   const pendingDraftText = (() => {
@@ -3284,6 +3291,12 @@ function SlotWriterDocument({
   const downloadMarkdownFilename = writerMarkdownFilename(baseFilename, downloadTitle);
   const lmdFilename = writerLmdFilename(baseFilename, downloadTitle);
 
+  useDocumentCopy({
+    enabled: Boolean(rendered) && !loading,
+    editingKey, sessionId, slotId, revision: displayRevision,
+    document: rendered?.document,
+  });
+
   useRegisterArtifactDownload({
     enabled: allowDownload && rendered?.representation === 'ir',
     actionKey: `${editingKey}:download`,
@@ -3782,6 +3795,12 @@ function SlotJsonFile({
     onConflict: onRefresh,
   });
 
+  useDocumentCopy({
+    enabled: writerDocument !== null,
+    editingKey, sessionId, slotId: resolvedSlotId, listIndex: apiListIndex,
+    revision: displayRevision, document: writerDocument,
+  });
+
   useRegisterArtifactDownload({
     enabled: allowDownload && Boolean(writerDocument || url),
     actionKey: sessionId && slotId ? `${editingKey}:download` : undefined,
@@ -4125,6 +4144,12 @@ function SlotInlineStructured({
     synced: slot.write_back_state === 'synced_clean',
     onSuccess: handleWriteBackSuccess,
     onConflict: onRefresh,
+  });
+
+  useDocumentCopy({
+    enabled: writerDocument !== null,
+    editingKey, sessionId, slotId: resolvedSlotId, listIndex: apiListIndex,
+    revision: displayRevision, document: writerDocument,
   });
 
   useRegisterArtifactDownload({
@@ -4588,6 +4613,13 @@ function SlotMarkdownFile({
   const handleMarkdownWriteBackSuccess = useCallback(() => {
     onRefresh?.();
   }, [onRefresh]);
+
+  useDocumentCopy({
+    enabled: !loading && !error,
+    editingKey: markdownEditingKey, sessionId, slotId: resolvedSlotId, listIndex: apiListIndex,
+    revision: displayRevision, document: content,
+    sourceKey: readOnly ? (typeof raw === 'string' ? raw : raw?.path ?? raw?.url) : undefined,
+  });
 
   useRegisterWriterWriteBack({
     enabled: canWriteBack,

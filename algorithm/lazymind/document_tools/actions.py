@@ -66,7 +66,9 @@ class SyncDocumentArguments(_StrictModel):
 
 
 class ConvertDocumentArguments(_StrictModel):
-    provider: str = Field(min_length=1)
+    provider: str = ''
+    output_format: Literal['native', 'markdown', 'latex', 'text'] = 'native'
+    document: str | dict[str, Any] | None = None
     target_document: dict[str, Any] | None = None
     media_assets: dict[str, Any] | None = None
 
@@ -499,7 +501,15 @@ def _sync(*, context: DocumentActionContext, **arguments: Any) -> dict[str, Any]
 
 def _convert(*, context: DocumentActionContext, **arguments: Any) -> dict[str, Any]:
     from .resources import convert_document
-    return convert_document(_artifact_data(context.artifact), **arguments)
+    snapshot = arguments.pop('document', None)
+    if snapshot is not None:
+        if arguments.get('output_format', 'native') == 'native':
+            raise ValueError('Editor snapshots are only supported for portable conversions.')
+        # The snapshot is content, never a file locator supplied by the client.
+        source = snapshot
+    else:
+        source = _artifact_data(context.artifact)
+    return convert_document(source, **arguments)
 
 
 def _write(*, context: DocumentActionContext, **arguments: Any) -> dict[str, Any]:
