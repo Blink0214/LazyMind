@@ -37,6 +37,7 @@ const EmailConnectionPage = lazy(() => import("@/modules/modelProvider/pages/Ema
 const GoogleDriveSetupGuide = lazy(() => import("@/modules/modelProvider/pages/GoogleDriveSetupGuide"));
 const LocalDataSourcePage = lazy(() => import("@/modules/modelProvider/pages/LocalDataSourcePage"));
 const FeishuSetupGuide = lazy(() => import("@/modules/modelProvider/pages/FeishuSetupGuide"));
+const GitHubSetupGuide = lazy(() => import("@/modules/modelProvider/pages/GitHubSetupGuide"));
 const NotionSetupGuide = lazy(() => import("@/modules/modelProvider/pages/NotionSetupGuide"));
 const DatasetListPage = lazy(() => import("@/modules/datasetManagement/pages/list"));
 const DatasetDetailPage = lazy(() => import("@/modules/datasetManagement/pages/detail"));
@@ -190,6 +191,7 @@ export default function AppRouter() {
             <Route path="google-drive" element={<GoogleDriveConnectionPage />} />
             <Route path="mail" element={<EmailConnectionPage />} />
             <Route path="docs/feishu-setup" element={<FeishuSetupGuide />} />
+            <Route path="docs/github-setup" element={<GitHubSetupGuide />} />
             <Route path="docs/notion-setup" element={<NotionSetupGuide />} />
             <Route path="docs/google-drive-setup" element={<GoogleDriveSetupGuide />} />
           </Route>

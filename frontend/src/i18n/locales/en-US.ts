@@ -286,6 +286,8 @@ const enUS = {
       notionCredentialHint: "Enter the Notion Integration OAuth Client ID and Client Secret.",
       githubCredentialHint: "Enter the GitHub OAuth App Client ID and Client Secret, then configure the callback URL in GitHub.",
       githubCallbackLabel: "Authorization callback URL:",
+      githubSetupGuideAction: "View GitHub setup guide",
+      githubSetupGuideHint: " and follow the steps to configure the OAuth app.",
       notionSetupGuideAction: "View Notion setup guide",
       notionSetupGuideHint: " and follow the steps to configure the OAuth app.",
       feishuSetupGuideAction: "View Feishu setup guide",
@@ -4108,6 +4110,32 @@ const enUS = {
         finishNoIngestion:
           "This searches the online Google Drive source directly and does not import files into a LazyMind knowledge base.",
       },
+    },
+    dataSourceGitHubSetupGuide: {
+      "backManagement": "Back to cloud documents",
+      "title": "Cloud documents · GitHub setup guide",
+      "subtitle": "Create a GitHub OAuth app, obtain its Client ID and Client Secret, then authorize your account in LazyMind.",
+      "summaryAria": "GitHub setup overview",
+      "summaryTitle": "Setup steps",
+      "openDevelopers": "Open GitHub OAuth app registration",
+      "field": "Field",
+      "value": "Value",
+      "steps": {
+        "createTitle": "Create a GitHub OAuth app",
+        "createDesc": "Sign in to GitHub and go to Settings → Developer settings → OAuth Apps → New OAuth App. If this is your first app, the button may say Register a new application.",
+        "applicationTitle": "Enter application details (default port 8090)",
+        "applicationDesc": "Use the values below. Click the copy icon beside a value to copy it.",
+        "portHint": "If you change the deployment port, update the port in both Homepage URL and Redirect URI, then open LazyMind at that address to authorize. For example, if the port is 8091, replace 8090 with 8091 in both URLs.",
+        "registerHint": "Confirm the callback matches the address you use to access LazyMind, then click Register application.",
+        "credentialsTitle": "Get credentials and enter them in LazyMind",
+        "credentialsDesc": "On the registered OAuth app’s details page, obtain these credentials:",
+        "credentialsClientId": "Copy the Client ID displayed on the page.",
+        "credentialsClientSecret": "Click Generate a new client secret, complete identity verification if prompted, then copy and securely store the generated Client Secret.",
+        "credentialsFillBack": "Return to Cloud documents in LazyMind and select GitHub. Enter the Client ID in App ID and the Client Secret in App Secret.",
+        "finishTitle": "Save and authorize",
+        "finishDesc": "Click Save and authorize. On GitHub, review the signed-in account, app name, and requested permissions, then click Authorize. Return to LazyMind to check the connection result.",
+        "organizationHint": "Access to organization resources protected by OAuth app access restrictions also requires approval from an organization owner."
+      }
     },
     dataSourceNotionSetupGuide: {
       backManagement: "Back to Cloud Documents",

@@ -270,6 +270,8 @@ const zhCN = {
       notionCredentialHint: "请填写 Notion Integration 的 OAuth Client ID 与 Client Secret。",
       githubCredentialHint: "请填写 GitHub OAuth App 的 Client ID 与 Client Secret，并在 GitHub 中配置回调地址。",
       githubCallbackLabel: "Authorization callback URL：",
+      githubSetupGuideAction: "查看 GitHub 接入教程",
+      githubSetupGuideHint: "，按步骤完成 OAuth 应用配置。",
       notionSetupGuideAction: "查看 Notion 接入教程",
       notionSetupGuideHint: "，按步骤完成 OAuth 应用配置。",
       feishuSetupGuideAction: "查看飞书接入教程",
@@ -3996,6 +3998,32 @@ const zhCN = {
         finishNoIngestion:
           "这里会直接搜索线上 Google Drive 原始库，不会把文件导入 LazyMind 知识库。",
       },
+    },
+    dataSourceGitHubSetupGuide: {
+      "backManagement": "返回云文档",
+      "title": "云文档-GitHub 接入教程",
+      "subtitle": "创建 GitHub OAuth 应用，获取 Client ID 和 Client Secret，在 LazyMind 中完成账号授权。",
+      "summaryAria": "GitHub 接入流程概览",
+      "summaryTitle": "准备流程",
+      "openDevelopers": "打开 GitHub OAuth 应用创建页面",
+      "field": "字段",
+      "value": "填写内容",
+      "steps": {
+        "createTitle": "创建 GitHub OAuth 应用",
+        "createDesc": "登录 GitHub，进入 Settings → Developer settings → OAuth Apps → New OAuth App。首次创建时，按钮可能显示为 Register a new application。",
+        "applicationTitle": "填写应用信息（默认端口 8090）",
+        "applicationDesc": "按下表填写应用信息，可点击每项右侧的复制按钮直接复制。",
+        "portHint": "注意：如果修改了部署端口，需要同步修改 Homepage URL 和 Redirect URI 中的端口号，并使用修改后的地址打开 LazyMind、发起授权。例如，端口改为 8091 时，上述两个地址中的 8090 均需替换为 8091。",
+        "registerHint": "确认回调地址与实际访问地址一致后，点击 Register application 完成创建。",
+        "credentialsTitle": "获取凭证并填回 LazyMind",
+        "credentialsDesc": "在创建好的 OAuth 应用详情页中获取以下凭证：",
+        "credentialsClientId": "复制页面显示的 Client ID。",
+        "credentialsClientSecret": "点击 Generate a new client secret，按提示完成身份验证后，复制生成的 Client Secret 并妥善保管。",
+        "credentialsFillBack": "返回 LazyMind 云文档页面，选择 GitHub，将 Client ID 填入 App ID，将 Client Secret 填入 App Secret。",
+        "finishTitle": "保存并完成授权",
+        "finishDesc": "点击「保存并授权」，在 GitHub 授权页面确认登录账号、应用名称和申请的权限，点击 Authorize 完成授权，然后返回 LazyMind 查看连接结果。",
+        "organizationHint": "如果需要访问受 OAuth 应用访问限制保护的组织资源，还需要组织管理员批准该应用。"
+      }
     },
     dataSourceNotionSetupGuide: {
       backManagement: "返回云文档",

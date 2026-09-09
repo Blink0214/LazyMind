@@ -38,3 +38,6 @@ export const CLOUD_DOCUMENTS_NOTION_SETUP_PATH =
 export const CLOUD_DOCUMENTS_GOOGLE_DRIVE_SETUP_PATH =
   "/cloud-documents/docs/google-drive-setup";
 export const CLOUD_DOCUMENTS_MAIL_PATH = "/cloud-documents/mail";
+
+export const CLOUD_DOCUMENTS_GITHUB_SETUP_PATH =
+  "/cloud-documents/docs/github-setup";
