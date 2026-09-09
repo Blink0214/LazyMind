@@ -2,7 +2,7 @@
 
 Routes:
     POST /api/writer/documents:sync      Persist a LazyMind WriterDocument edit.
-    POST /api/writer/documents:convert   Convert Writer Markdown and LMD content.
+    POST /api/writer/documents:convert   Convert Writer document content.
     POST /api/document/actions:invoke    Invoke a shared built-in document action.
     POST /api/document:inspect           Inspect Markdown or Writer IR content.
     GET  /api/document/providers         List registered document providers.
@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from lazymind.chat.engine.tool_auth import inject_tool_config
 from lazyllm.tools.writer.data_models import WriterDocument
 from lazyllm.tools.writer.utils import convert_writer_content
+from lazyllm.tools.writer.utils.pandoc import PandocError
 from lazymind.document_tools import (
     DocumentActionError,
     inspect_document,
@@ -153,9 +154,11 @@ class WriterDocumentSyncRequest(BaseModel):
 
 class WriterDocumentConvertRequest(BaseModel):
     source_format: Literal['markdown', 'lmd', 'writer_document']
-    target_format: Literal['markdown', 'lmd']
+    target_format: Literal['markdown', 'lmd', 'latex']
     content: str
     document_id: str = 'writer-document'
+    language: Literal['zh-CN', 'en-US'] = 'zh-CN'
+    materialized_numbering: bool = True
 
 
 class PptExportPage(BaseModel):
@@ -225,7 +228,33 @@ def sync_writer_document(request: WriterDocumentSyncRequest) -> dict:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@router.post('/api/writer/documents:convert', summary='Convert Writer Markdown and LMD content')
+_PANDOC_HTTP_STATUS = {
+    'PANDOC_NOT_FOUND': 503,
+    'PANDOC_NOT_EXECUTABLE': 503,
+    'PANDOC_VERSION_UNSUPPORTED': 503,
+    'PANDOC_TIMEOUT': 504,
+    'PANDOC_INPUT_TOO_LARGE': 413,
+    'PANDOC_OUTPUT_TOO_LARGE': 413,
+    'PANDOC_TEMPLATE_INVALID': 500,
+    'PANDOC_FILTER_FAILED': 500,
+    'PANDOC_CONVERSION_FAILED': 422,
+}
+
+
+def _pandoc_http_detail(exc: PandocError) -> Dict[str, Any]:
+    # Diagnostics can contain local paths or excerpts from user input. Expose and
+    # log only stable, non-sensitive fields at this API boundary.
+    safe_detail_keys = {
+        'actual_version', 'input_bytes', 'language', 'max_input_bytes',
+        'max_output_bytes', 'output_bytes', 'required_version', 'stage',
+        'timeout_seconds',
+    }
+    detail: Dict[str, Any] = {'code': exc.code, 'message': str(exc)}
+    detail.update({key: value for key, value in exc.details.items() if key in safe_detail_keys})
+    return detail
+
+
+@router.post('/api/writer/documents:convert', summary='Convert Writer document content')
 def convert_writer_document(request: WriterDocumentConvertRequest) -> Response:
     try:
         converted = convert_writer_content(
@@ -233,11 +262,26 @@ def convert_writer_document(request: WriterDocumentConvertRequest) -> Response:
             request.source_format,
             request.target_format,
             document_id=request.document_id,
+            language=request.language,
+            materialized_numbering=request.materialized_numbering,
         )
+    except PandocError as exc:
+        logger.warning(
+            'Pandoc conversion failed: code=%s details=%s',
+            exc.code,
+            {key: value for key, value in _pandoc_http_detail(exc).items() if key != 'message'},
+        )
+        raise HTTPException(
+            status_code=_PANDOC_HTTP_STATUS.get(exc.code, 500),
+            detail=_pandoc_http_detail(exc),
+        ) from exc
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    media_type = 'text/markdown; charset=utf-8' if request.target_format == 'markdown' \
-        else 'application/vnd.lazymind.writer+json; charset=utf-8'
+    media_type = {
+        'markdown': 'text/markdown; charset=utf-8',
+        'lmd': 'application/vnd.lazymind.writer+json; charset=utf-8',
+        'latex': 'application/x-tex; charset=utf-8',
+    }[request.target_format]
     return Response(content=converted.encode('utf-8'), media_type=media_type)
 
 

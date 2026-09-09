@@ -2556,6 +2556,7 @@ const zhCN = {
       downloadFormatDescription: "请选择一种格式下载当前文档。",
       downloadFormatMarkdownHint: "适合阅读、编辑和分享",
       downloadFormatLmdHint: "保留文档结构，适合继续编辑",
+      downloadFormatLatexHint: "转换为可编辑的 LaTeX 源文件",
       downloadFormatConfirm: "下载 {{format}}",
       downloadFormatFailed: "下载失败，请重试",
       contentStructure: "内容结构",

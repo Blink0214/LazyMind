@@ -2530,6 +2530,10 @@ function writerLmdFilename(name: string, title = ''): string {
   return writerDownloadFilename(title, 'lmd', name);
 }
 
+function writerLatexFilename(name: string, title = ''): string {
+  return writerDownloadFilename(title, 'tex', name);
+}
+
 function shouldRenderInlineStructuredContent(
   slot: SlotRevision,
   expectedType?: 'image' | 'file' | 'text',
@@ -3294,6 +3298,7 @@ function SlotWriterDocument({
   const baseFilename = slot.caption || slotId;
   const downloadMarkdownFilename = writerMarkdownFilename(baseFilename, downloadTitle);
   const lmdFilename = writerLmdFilename(baseFilename, downloadTitle);
+  const latexFilename = writerLatexFilename(baseFilename, downloadTitle);
 
   useDocumentCopy({
     enabled: Boolean(rendered) && !loading,
@@ -3466,6 +3471,14 @@ function SlotWriterDocument({
             conversionSource: downloadContent,
             conversionSourceFormat: 'markdown',
           }}
+          latex={rendered.representation === 'markdown' ? {
+            filename: latexFilename,
+            mimeType: 'application/x-tex;charset=utf-8',
+            cacheKey: writerDownloadCacheKey('writer-document:latex-canonical', markdown),
+            conversionSource: markdown,
+            conversionSourceFormat: 'markdown',
+            materializedNumbering: false,
+          } : undefined}
         />
       )}
     </div>
@@ -4499,12 +4512,20 @@ function SlotMarkdownFile({
     () => writerLmdFilename(name, downloadArticleTitle),
     [downloadArticleTitle, name],
   );
+  const latexFilename = useMemo(
+    () => writerLatexFilename(name, downloadArticleTitle),
+    [downloadArticleTitle, name],
+  );
   const markdownCacheKey = useMemo(
     () => writerDownloadCacheKey('markdown-file:markdown', downloadMarkdownContent),
     [downloadMarkdownContent],
   );
   const lmdCacheKey = useMemo(
     () => writerDownloadCacheKey('markdown-file:lmd', downloadMarkdownContent),
+    [downloadMarkdownContent],
+  );
+  const latexCacheKey = useMemo(
+    () => writerDownloadCacheKey('markdown-file:latex', downloadMarkdownContent),
     [downloadMarkdownContent],
   );
   const canUseOriginalLmd = Boolean(originalUrl && downloadMarkdownContent === content);
@@ -4699,6 +4720,13 @@ function SlotMarkdownFile({
               conversionSource: downloadMarkdownContent,
               conversionSourceFormat: 'markdown',
             }}
+            latex={{
+              filename: latexFilename,
+              mimeType: 'application/x-tex;charset=utf-8',
+              cacheKey: latexCacheKey,
+              conversionSource: downloadMarkdownContent,
+              conversionSourceFormat: 'markdown',
+            }}
           />
         )}
       </div>
@@ -4811,6 +4839,13 @@ function SlotMarkdownFile({
             filename: lmdFilename,
             mimeType: 'application/json;charset=utf-8',
             cacheKey: lmdCacheKey,
+            conversionSource: downloadMarkdownContent,
+            conversionSourceFormat: 'markdown',
+          }}
+          latex={{
+            filename: latexFilename,
+            mimeType: 'application/x-tex;charset=utf-8',
+            cacheKey: latexCacheKey,
             conversionSource: downloadMarkdownContent,
             conversionSourceFormat: 'markdown',
           }}

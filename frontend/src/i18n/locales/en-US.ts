@@ -2610,6 +2610,7 @@ const enUS = {
       downloadFormatDescription: "Choose a format to download this document.",
       downloadFormatMarkdownHint: "Best for reading, editing, and sharing",
       downloadFormatLmdHint: "Preserves document structure for continued editing",
+      downloadFormatLatexHint: "Converts to an editable LaTeX source file",
       downloadFormatConfirm: "Download {{format}}",
       downloadFormatFailed: "Download failed. Please try again.",
       contentStructure: "Content structure",
