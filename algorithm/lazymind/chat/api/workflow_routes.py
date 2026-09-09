@@ -424,6 +424,11 @@ def invoke_workflow_action(request: WorkflowActionInvokeRequest) -> Dict[str, An
         }
         detail.update(exc.details)
         raise HTTPException(status_code=exc.status_code, detail=detail) from exc
+    except PandocError as exc:
+        raise HTTPException(
+            status_code=_PANDOC_HTTP_STATUS.get(exc.code, 500),
+            detail=_pandoc_http_detail(exc),
+        ) from exc
     except ValueError as exc:
         code = str(getattr(exc, 'error_code', 'WORKFLOW_ACTION_INVALID'))
         detail: Dict[str, Any] = {'code': code, 'message': str(exc)}

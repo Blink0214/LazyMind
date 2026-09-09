@@ -108,7 +108,7 @@ interface WriterDownloadFormatButtonProps {
 }
 
 const preparedFileCache = new Map<string, Promise<Blob>>();
-const WRITER_DOWNLOAD_CONVERSION_VERSION = 'lazyllm-writer-conversion-v5';
+const WRITER_DOWNLOAD_CONVERSION_VERSION = 'lazyllm-writer-conversion-v1';
 
 function hashText(value: string): string {
   let hash = 2166136261;
