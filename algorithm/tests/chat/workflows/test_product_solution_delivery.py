@@ -12,7 +12,7 @@ def _stub_module(name, **attributes):
     module = types.ModuleType(name)
     module.__dict__.update(attributes)
     if name in {
-        'lazyllm', 'lazyllm.tools', 'lazyllm.tools.writer', 'lazymind',
+        'lazymind',
         'lazymind.chat', 'lazymind.chat.engine', 'lazymind.chat.engine.subagent',
         'lazymind.chat.engine.tools',
     }:
@@ -22,14 +22,9 @@ def _stub_module(name, **attributes):
 
 def _load_writer_bridge():
     stubs = {
-        'lazyllm': _stub_module('lazyllm', AutoModel=object),
-        'lazyllm.tools': _stub_module('lazyllm.tools'),
-        'lazyllm.tools.writer': _stub_module('lazyllm.tools.writer'),
-        'lazyllm.tools.writer.data_models': _stub_module(
-            'lazyllm.tools.writer.data_models', StringReplaceSet=object,
-        ),
-        'lazyllm.tools.writer.tools': _stub_module(
-            'lazyllm.tools.writer.tools', WriterRevisionTools=object,
+        'lazymind.document_tools.revision': _stub_module(
+            'lazymind.document_tools.revision', preview_selection_rewrite=object,
+            revise_markdown_document=object,
         ),
         'lazymind': _stub_module('lazymind'),
         'lazymind.chat': _stub_module('lazymind.chat'),
@@ -42,8 +37,8 @@ def _load_writer_bridge():
             'lazymind.chat.engine.subagent.tools', _save_artifact=lambda **_kwargs: {},
         ),
         'lazymind.chat.engine.tools': _stub_module('lazymind.chat.engine.tools'),
-        'lazymind.chat.engine.tools.writer': _stub_module(
-            'lazymind.chat.engine.tools.writer',
+        'lazymind.document_tools': _stub_module(
+            'lazymind.document_tools',
             DraftMarkdownStreamEventEmitter=object,
             WriterCreateToolkit=object,
             WriterRevisionToolkit=object,
@@ -70,6 +65,10 @@ def _load_writer_bridge():
 def _load_contract_tools(tmp_path):
     context = types.SimpleNamespace(workspace_path=str(tmp_path))
     stubs = {
+        'lazymind.document_tools.revision': _stub_module(
+            'lazymind.document_tools.revision', preview_selection_rewrite=object,
+            revise_markdown_document=object,
+        ),
         'lazymind': _stub_module('lazymind'),
         'lazymind.chat': _stub_module('lazymind.chat'),
         'lazymind.chat.engine': _stub_module('lazymind.chat.engine'),
@@ -813,3 +812,34 @@ def test_preflight_does_not_reject_large_requested_documents(tmp_path):
     )
 
     assert result['execution_plan']['word_target'] == 50000
+
+
+def test_selection_rewrite_delegates_to_shared_document_tool(monkeypatch, tmp_path):
+    bridge = _load_writer_bridge()
+    calls = []
+    slot = next(iter(bridge.EDITABLE_SLOTS))
+
+    def preview(document, instruction, selection, context, *, artifact_store):
+        calls.append((document, instruction, selection, context))
+        candidate = Path(artifact_store) / 'revised_document.md'
+        candidate.write_text('# Title\n\nRevised.', encoding='utf-8')
+        return {
+            'representation': 'markdown',
+            'target': {'type': 'block', 'block_type': 'paragraph'},
+            'preview': {'old_text': 'Original.', 'new_text': 'Revised.'},
+            'patch': {'type': 'string_replace_set', 'payload': {'replacements': []}},
+            'revised_document_md': str(candidate),
+        }
+
+    monkeypatch.setattr(bridge, 'preview_selection_rewrite', preview)
+    result = bridge.product_writer_preview_selection_rewrite(
+        {'data': '# Title\n\nOriginal.'}, 'Polish',
+        {'type': 'markdown', 'selected_text': 'Original.'},
+        artifact_store=str(tmp_path), slot=slot,
+    )
+    assert len(calls) == 1
+    assert calls[0][3]['meta']['slot'] == slot
+    assert result['preview']['new_text'] == 'Revised.'
+    artifact = result['artifact']['value']
+    assert artifact['filename'] == f'{slot}.md'
+    assert Path(artifact['path']).read_text(encoding='utf-8') == '# Title\n\nRevised.'

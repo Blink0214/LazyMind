@@ -74,9 +74,6 @@ tool_scripts:
       - writer_generate_modify_plan
       - writer_generate_revision_set
       - writer_apply_revision
-      - writer_publish_revision
-      - writer_convert_document
-      - writer_write_document
 
 artifact_actions:
   rewrite_selection:

@@ -259,11 +259,13 @@ def test_markdown_draft_blocks_do_not_pass_resolved_media(monkeypatch, tmp_path)
     visual_plan_path = tmp_path / 'visual_plan.json'
     visual_plan_path.write_text('{"instructions": []}', encoding='utf-8')
 
-    paths = tools.writer_generate_draft_blocks_markdown(
-        str(writing_task_path),
-        str(section_instructions_path),
-        str(writing_context_path),
-        str(visual_plan_path),
+    paths = document_execution.invoke(
+        vars(tools), '_writer_generate_draft_blocks_markdown', {
+            'writing_task_path': str(writing_task_path),
+            'section_instructions_path': str(section_instructions_path),
+            'writing_context_path': str(writing_context_path),
+            'visual_plan_path': str(visual_plan_path),
+        },
     )
 
     assert 'media_assets_json' not in captured
@@ -391,10 +393,12 @@ def test_markdown_assembly_drops_unregistered_images(monkeypatch, tmp_path):
     media_path = tmp_path / 'resolved_media_assets.json'
     media_path.write_text(json.dumps({'data': media_assets}), encoding='utf-8')
 
-    result_path = runtime._assemble_draft_document_markdown(
-        str(sections),
-        str(context_path),
-        resolved_media_assets_path=str(media_path),
+    result_path = document_execution.invoke(
+        vars(tools), '_assemble_draft_document_markdown', {
+            'draft_sections_anchor_path': str(sections),
+            'writing_context_path': str(context_path),
+            'resolved_media_assets_path': str(media_path),
+        },
     )
     filled = Path(result_path).read_text(encoding='utf-8')
 
@@ -538,105 +542,6 @@ def test_markdown_rewrite_no_image_request_skips_visual_planning(monkeypatch, tm
     assert calls == []
     assert result['visual_plan']['instructions'] == []
     assert result['document_title'] == 'Rewritten title'
-
-
-def test_selection_rewrite_uses_slot_markdown_artifact_filename(monkeypatch, tmp_path):
-    tools = _load_tools_module()
-    from lazymind.document_tools import revision as document_revision
-
-    class FakeWriterRevisionTools:
-        def __init__(self, *, llm, artifact_store):
-            self.artifact_store = artifact_store
-
-        def build_selected_markdown_replace_set(self, *_args):
-            return {
-                'replacements': [{
-                    'replacement_id': 'replace-1',
-                    'content_ref': {'document_root': True},
-                    'old_string': 'Original body.',
-                    'new_string': 'Polished body.',
-                }],
-            }
-
-        def apply_string_replace(self, *_args):
-            path = Path(self.artifact_store) / 'revised_document.md'
-            path.write_text('# Title\n\nPolished body.\n', encoding='utf-8')
-            return {'revised_document_md': str(path)}
-
-    monkeypatch.setattr(document_revision, 'AutoModel', lambda **_kwargs: object())
-    monkeypatch.setattr(
-        document_revision, 'WriterRevisionTools', FakeWriterRevisionTools,
-    )
-    source_path = tmp_path / 'revised_document.md'
-    source_path.write_text('# Title\n\nOriginal body.\n', encoding='utf-8')
-
-    result = tools.writer_preview_selection_rewrite(
-        artifact={
-            'path': str(source_path),
-            'filename': source_path.name,
-            'size': source_path.stat().st_size,
-        },
-        instruction='润色',
-        selection={'type': 'markdown', 'selected_text': 'Original body.'},
-        artifact_store=str(tmp_path),
-        slot='draft_document',
-    )
-
-    artifact = result['artifact']['value']
-    assert artifact['filename'] == 'draft_document.md'
-    assert Path(artifact['path']).name == 'draft_document.md'
-    assert Path(artifact['path']).read_text(encoding='utf-8') == (
-        '# Title\n\nPolished body.\n'
-    )
-
-
-def test_selection_rewrite_uses_slot_ir_artifact_filename(monkeypatch, tmp_path):
-    tools = _load_tools_module()
-    from lazymind.document_tools import revision as document_revision
-
-    class FakeWriterRevisionTools:
-        def __init__(self, *, llm, artifact_store):
-            self.artifact_store = artifact_store
-
-        def generate_patch_set(self, *_args):
-            return {'artifact_path': str(tmp_path / 'patch.json')}
-
-    document = {
-        'document_id': 'doc-1',
-        'stage': 'final',
-        'blocks': [{
-            'node_id': 'paragraph-1',
-            'type': 'paragraph',
-            'content': 'Original body.',
-            'stage': 'final',
-        }],
-    }
-    monkeypatch.setattr(document_revision, 'AutoModel', lambda **_kwargs: object())
-    monkeypatch.setattr(
-        document_revision, 'WriterRevisionTools', FakeWriterRevisionTools,
-    )
-    monkeypatch.setattr(
-        document_revision,
-        'load_artifact_json',
-        lambda *_args: document_revision.PatchSet(target_doc_id='doc-1', hunks=[]),
-    )
-    monkeypatch.setattr(
-        document_revision,
-        'apply_patch_to_ir',
-        lambda source, _patch: (source, None),
-    )
-
-    result = tools.writer_preview_selection_rewrite(
-        artifact={'data': document},
-        instruction='Polish',
-        selection={'type': 'ir', 'node_id': 'paragraph-1'},
-        artifact_store=str(tmp_path),
-        slot='draft_document',
-    )
-
-    artifact = result['artifact']['value']
-    assert artifact['filename'] == 'draft_document.lmd'
-    assert Path(artifact['path']).name == 'draft_document.lmd'
 
 
 def test_load_local_lmd_rejects_invalid_document(monkeypatch, tmp_path):

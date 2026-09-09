@@ -14,11 +14,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
-from lazyllm import AutoModel
-from lazyllm.tools.writer.data_models import StringReplaceSet
-from lazyllm.tools.writer.tools import WriterRevisionTools
+from lazymind.document_tools.revision import preview_selection_rewrite
 from lazymind.chat.engine.subagent.context import require_context
-from lazymind.chat.engine.tools.writer import (
+from lazymind.document_tools import (
     DraftMarkdownStreamEventEmitter,
     WriterCreateToolkit,
     WriterRevisionToolkit,
@@ -758,29 +756,15 @@ def bid_writer_preview_selection_rewrite(
     root = root / 'bid-writer-selection' / uuid.uuid4().hex
     root.mkdir(parents=True, exist_ok=True)
     context = {'context_id': f'bid-selection-{uuid.uuid4().hex}', 'meta': {'slot': slot}}
-    revision = WriterRevisionTools(llm=AutoModel(model='llm'), artifact_store=str(root))
-    replace_set = StringReplaceSet.model_validate(
-        revision.build_selected_markdown_replace_set(
-            document,
-            instruction,
-            str(selection.get('selected_text') or ''),
-            context,
-        ),
+    output = preview_selection_rewrite(
+        document, instruction, dict(selection), context, artifact_store=str(root),
     )
-    replacement = replace_set.replacements[0]
-    output = revision.apply_string_replace(document, replace_set, context)
     candidate = Path(str(output['revised_document_md']))
     canonical = root / f'{slot}.md'
     if candidate.resolve() != canonical.resolve():
         canonical.write_bytes(candidate.read_bytes())
     return {
-        'representation': 'markdown',
-        'target': {'type': 'block', 'block_type': 'paragraph'},
-        'preview': {
-            'old_text': replacement.old_string,
-            'new_text': replacement.new_string,
-        },
-        'patch': {'type': 'string_replace_set', 'payload': replace_set.model_dump()},
+        **{key: output[key] for key in ('representation', 'target', 'preview', 'patch')},
         'artifact': {
             'content_type': 'file',
             'value': {

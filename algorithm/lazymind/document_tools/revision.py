@@ -1,6 +1,7 @@
 """AI rewrite and validated document patch capabilities."""
 
 from __future__ import annotations
+import re
 from typing import Any
 
 from lazyllm import AutoModel
@@ -35,6 +36,53 @@ from .artifacts import (
     writer_schema,
 )
 from .resources import _target_from_document, sync_writer_documents
+
+
+def revise_markdown_document(
+    document: str,
+    instruction: str,
+    *,
+    constraints: str = '',
+    artifact_store: str,
+) -> str:
+    """Revise complete Markdown in one model call, without Workflow context."""
+    instruction = str(instruction or '').strip()
+    if not instruction:
+        raise ValueError('instruction must not be empty.')
+    prompt = f'''Revise the complete Markdown document once according to the instruction.
+
+Return only the complete revised Markdown document. Do not return JSON, a patch, a change
+plan, analysis, commentary, or an outer Markdown code fence. The source document is the
+only document source of truth. Preserve unaffected content and the user's latest edits.
+Apply the requested changes directly; do not merely describe them. Do not invent facts,
+data, methods, results, citations, or source metadata.
+
+Constraints:
+{constraints}
+
+Revision instruction:
+{instruction}
+
+Source Markdown:
+{document}
+'''
+    revision = WriterRevisionTools(
+        llm=AutoModel(model='llm'), artifact_store=artifact_store,
+    )
+    revised = str(revision._call_llm_text(prompt) or '').strip()  # noqa: SLF001
+    outer_fence = re.fullmatch(
+        r'```(?:markdown|md)?\s*\n?(.*?)\n?```', revised,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if outer_fence:
+        revised = outer_fence.group(1).strip()
+    if re.search(r'^#{1,6}\s+', document, flags=re.MULTILINE):
+        first_heading = re.search(r'^#{1,6}\s+', revised, flags=re.MULTILINE)
+        if first_heading and first_heading.start() > 0:
+            revised = revised[first_heading.start():].strip()
+    if not revised:
+        raise ValueError('Shared Writer returned no revised Markdown document.')
+    return revised
 
 
 def modify_plan_needs_media(plan: dict[str, Any]) -> bool:

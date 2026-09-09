@@ -11,7 +11,7 @@ def _stub_module(name, **attributes):
     module = types.ModuleType(name)
     module.__dict__.update(attributes)
     if name in {
-        'lazyllm', 'lazyllm.tools', 'lazyllm.tools.writer', 'lazymind',
+        'lazymind',
         'lazymind.chat', 'lazymind.chat.engine', 'lazymind.chat.engine.subagent',
         'lazymind.chat.engine.tools',
     }:
@@ -21,14 +21,9 @@ def _stub_module(name, **attributes):
 
 def _load_writer_bridge():
     stubs = {
-        'lazyllm': _stub_module('lazyllm', AutoModel=object),
-        'lazyllm.tools': _stub_module('lazyllm.tools'),
-        'lazyllm.tools.writer': _stub_module('lazyllm.tools.writer'),
-        'lazyllm.tools.writer.data_models': _stub_module(
-            'lazyllm.tools.writer.data_models', StringReplaceSet=object,
-        ),
-        'lazyllm.tools.writer.tools': _stub_module(
-            'lazyllm.tools.writer.tools', WriterRevisionTools=object,
+        'lazymind.document_tools.revision': _stub_module(
+            'lazymind.document_tools.revision', preview_selection_rewrite=object,
+            revise_markdown_document=object,
         ),
         'lazymind': _stub_module('lazymind'),
         'lazymind.chat': _stub_module('lazymind.chat'),
@@ -38,8 +33,8 @@ def _load_writer_bridge():
             'lazymind.chat.engine.subagent.context', require_context=lambda: None,
         ),
         'lazymind.chat.engine.tools': _stub_module('lazymind.chat.engine.tools'),
-        'lazymind.chat.engine.tools.writer': _stub_module(
-            'lazymind.chat.engine.tools.writer',
+        'lazymind.document_tools': _stub_module(
+            'lazymind.document_tools',
             DraftMarkdownStreamEventEmitter=object,
             WriterCreateToolkit=object,
             WriterRevisionToolkit=object,
@@ -256,8 +251,9 @@ def test_stale_section_plan_is_repaired_before_drafting():
         ],
     }
 
-    plan = {'instructions': [{'section_title': '问题与方法'}]}
-    bridge._assert_section_instructions_match_outline(plan, outline)
+    plan, _ = bridge._normalize_section_instructions(
+        {'instructions': [{'section_title': '问题与方法'}]}, outline,
+    )
 
     assert [item['section_title'] for item in plan['instructions']] == [
         '摘要', '问题与方法',
@@ -373,7 +369,7 @@ def test_feedback_revision_reads_materialized_text_artifact(monkeypatch, tmp_pat
     assert '"text"' not in captured['instruction']
 
 
-def test_full_document_revision_uses_one_model_call_and_accepts_outer_fence(
+def test_full_document_revision_passes_locked_evidence_to_shared_tool(
     monkeypatch, tmp_path,
 ):
     bridge = _load_writer_bridge()
@@ -383,16 +379,11 @@ def test_full_document_revision_uses_one_model_call_and_accepts_outer_fence(
     context.write_text('{"registered": ["SRC-001"]}', encoding='utf-8')
     calls = []
 
-    class Revision:
-        def __init__(self, **_kwargs):
-            pass
+    def revise(document, instruction, *, constraints, artifact_store):
+        calls.append((document, instruction, constraints))
+        return '# 标题\n\n修订正文（SRC-001）。'
 
-        def _call_llm_text(self, prompt):
-            calls.append(prompt)
-            return '```markdown\n# 标题\n\n修订正文（SRC-001）。\n```'
-
-    monkeypatch.setattr(bridge, 'WriterRevisionTools', Revision)
-    monkeypatch.setattr(bridge, 'AutoModel', lambda **_kwargs: object())
+    monkeypatch.setattr(bridge, 'revise_markdown_document', revise)
     revision_root = tmp_path / 'revision'
     revision_root.mkdir()
     monkeypatch.setattr(bridge, '_run_root', lambda _name: revision_root)
@@ -402,7 +393,7 @@ def test_full_document_revision_uses_one_model_call_and_accepts_outer_fence(
     )
 
     assert len(calls) == 1
-    assert 'SRC-001' in calls[0]
+    assert 'SRC-001' in calls[0][2]
     assert Path(result['revised_document']).read_text(encoding='utf-8') == (
         '# 标题\n\n修订正文（SRC-001）。\n'
     )
@@ -419,16 +410,11 @@ def test_full_document_revision_failure_preserves_source_without_retry(monkeypat
     context.write_text('{}', encoding='utf-8')
     calls = []
 
-    class Revision:
-        def __init__(self, **_kwargs):
-            pass
+    def revise(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise ValueError('provider returned empty output')
 
-        def _call_llm_text(self, prompt):
-            calls.append(prompt)
-            raise ValueError('provider returned empty output')
-
-    monkeypatch.setattr(bridge, 'WriterRevisionTools', Revision)
-    monkeypatch.setattr(bridge, 'AutoModel', lambda **_kwargs: object())
+    monkeypatch.setattr(bridge, 'revise_markdown_document', revise)
     revision_root = tmp_path / 'revision'
     revision_root.mkdir()
     monkeypatch.setattr(bridge, '_run_root', lambda _name: revision_root)
@@ -442,3 +428,34 @@ def test_full_document_revision_failure_preserves_source_without_retry(monkeypat
     assert Path(result['revised_document']).read_text(encoding='utf-8') == (
         '# 标题\n\n已批准正文。\n'
     )
+
+
+def test_selection_rewrite_delegates_to_shared_document_tool(monkeypatch, tmp_path):
+    bridge = _load_writer_bridge()
+    calls = []
+    slot = next(iter(bridge.EDITABLE_SLOTS))
+
+    def preview(document, instruction, selection, context, *, artifact_store):
+        calls.append((document, instruction, selection, context))
+        candidate = Path(artifact_store) / 'revised_document.md'
+        candidate.write_text('# Title\n\nRevised.', encoding='utf-8')
+        return {
+            'representation': 'markdown',
+            'target': {'type': 'block', 'block_type': 'paragraph'},
+            'preview': {'old_text': 'Original.', 'new_text': 'Revised.'},
+            'patch': {'type': 'string_replace_set', 'payload': {'replacements': []}},
+            'revised_document_md': str(candidate),
+        }
+
+    monkeypatch.setattr(bridge, 'preview_selection_rewrite', preview)
+    result = bridge.academic_writer_preview_selection_rewrite(
+        {'data': '# Title\n\nOriginal.'}, 'Polish',
+        {'type': 'markdown', 'selected_text': 'Original.'},
+        artifact_store=str(tmp_path), slot=slot,
+    )
+    assert len(calls) == 1
+    assert calls[0][3]['meta']['slot'] == slot
+    assert result['preview']['new_text'] == 'Revised.'
+    artifact = result['artifact']['value']
+    assert artifact['filename'] == f'{slot}.md'
+    assert Path(artifact['path']).read_text(encoding='utf-8') == '# Title\n\nRevised.'

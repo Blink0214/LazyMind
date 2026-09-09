@@ -3,12 +3,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-from lazyllm.tools.agent import ToolExecutionError
 from lazyllm.tools.writer.data_models import TargetDocument, WriterBlock, WriterDocument
 from lazyllm.tools.writer.provider import WriterProviderDocument
 
-from lazymind.chat.engine.tools.writer import (
-    WriterCreateToolkit as LegacyWriterCreateToolkit,
+from lazymind.chat.engine.tools import (
+    WriterCreateToolkit as RegisteredWriterCreateToolkit,
 )
 from lazymind.chat.engine.tools import (
     WriterRevisionToolkit as RegisteredWriterRevisionToolkit,
@@ -35,7 +34,6 @@ from lazymind.document_tools.resources import WriterResourceCapabilities
 from lazymind.document_tools import resources as document_resources
 from lazymind.document_tools.references import bind_cross_reference_targets
 from lazymind.document_tools.revision import WriterRevisionCapabilities
-from lazymind.document_tools.toolkits import WriterToolkitBase
 from lazymind.document_tools.writing import WriterWritingCapabilities
 
 
@@ -138,26 +136,83 @@ def test_writing_subtask_progress_keeps_workflow_host_across_threads(monkeypatch
     ]
 
 
-def test_legacy_writer_import_uses_shared_document_toolkit():
-    assert LegacyWriterCreateToolkit is WriterCreateToolkit
+def test_chat_registration_uses_shared_document_toolkits():
+    assert RegisteredWriterCreateToolkit is WriterCreateToolkit
     assert DocumentWritingToolkit is WriterCreateToolkit
     assert DocumentRevisionToolkit is WriterRevisionToolkit
     assert DocumentResourceToolkit is WriterResourceToolkit
     assert RegisteredWriterRevisionToolkit is WriterRevisionToolkit
 
 
-def test_legacy_writer_import_retains_provider_integration_symbols():
-    from lazymind.chat.engine.tools.writer import (
-        ToolExecutionError as LegacyToolExecutionError,
-        WriterResourceTools as LegacyWriterResourceTools,
-        _prepare_wechat_cover,
-        _published_link,
-    )
+def test_chat_tool_calls_work_without_a_workflow_context():
+    from lazyllm.tools.agent import ToolManager
 
-    assert LegacyToolExecutionError is ToolExecutionError
-    assert LegacyWriterResourceTools.__name__ == "WriterResourceTools"
-    assert callable(_prepare_wechat_cover)
-    assert callable(_published_link)
+    manager = ToolManager([RegisteredWriterCreateToolkit(), RegisteredWriterRevisionToolkit()])
+
+    def call(name, **arguments):
+        result, = manager([{
+            'id': name, 'type': 'function',
+            'function': {'name': name, 'arguments': arguments},
+        }])
+        assert result['ok'], result
+        return json.loads(result['value'])
+
+    task = call('WriterCreateToolkit_build_writing_task', query='写一篇800字的报告')
+    assert task['task_type'] == 'write'
+    assert task['constraints']['target_chars'] == 800
+    context = call(
+        'WriterCreateToolkit_create_writing_context',
+        writing_task_json=json.dumps(task),
+    )
+    assert context['context_id']
+    revised = call(
+        'WriterRevisionToolkit_build_revision_task',
+        query='润色报告', writer_document_json='# 报告\n\n正文。',
+    )
+    assert revised['task_type'] == 'revise'
+
+
+@pytest.mark.parametrize('response', [
+    '# Title\n\nRevised.',
+    '```markdown\n# Title\n\nRevised.\n```',
+    'Here is the revision:\n# Title\n\nRevised.',
+])
+def test_complete_markdown_revision_uses_shared_tool_once(monkeypatch, tmp_path, response):
+    from lazymind.document_tools import revision
+
+    calls = []
+
+    class Revision:
+        def __init__(self, **kwargs):
+            assert kwargs['artifact_store'] == str(tmp_path)
+
+        def _call_llm_text(self, prompt):
+            calls.append(prompt)
+            return response
+
+    monkeypatch.setattr(revision, 'WriterRevisionTools', Revision)
+    monkeypatch.setattr(revision, 'AutoModel', lambda **kwargs: object())
+    result = revision.revise_markdown_document(
+        '# Title\n\nOriginal.', 'Polish',
+        constraints='Only use SRC-001.', artifact_store=str(tmp_path),
+    )
+    assert result == '# Title\n\nRevised.'
+    assert len(calls) == 1
+    assert 'SRC-001' in calls[0]
+    assert 'Original.' in calls[0]
+
+
+def test_complete_markdown_revision_rejects_empty_result(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from lazymind.document_tools import revision
+
+    monkeypatch.setattr(revision, 'AutoModel', lambda **kwargs: object())
+    monkeypatch.setattr(
+        revision, 'WriterRevisionTools',
+        lambda **kwargs: SimpleNamespace(_call_llm_text=lambda prompt: ''),
+    )
+    with pytest.raises(ValueError, match='no revised Markdown'):
+        revision.revise_markdown_document('Original.', 'Polish', artifact_store=str(tmp_path))
 
 
 def test_document_action_registry_is_explicit_and_deterministic():
@@ -241,19 +296,6 @@ def test_chat_toolkit_exposure_remains_the_36_tool_snapshot():
     )
     assert WORKFLOW_ONLY_APIS.isdisjoint(WriterCreateToolkit.__public_apis__)
     assert WORKFLOW_ONLY_APIS.isdisjoint(WriterResourceToolkit.__public_apis__)
-
-
-def test_legacy_aggregate_retains_all_45_capabilities():
-    expected = (
-        WRITING_CHAT_APIS | REVISION_CHAT_APIS | RESOURCE_CHAT_APIS | WORKFLOW_ONLY_APIS
-    )
-    capabilities = {
-        name
-        for name in dir(WriterToolkitBase)
-        if not name.startswith("_") and callable(getattr(WriterToolkitBase, name))
-    }
-    assert capabilities == expected
-    assert len(capabilities) == 45
 
 
 def test_markdown_heading_normalization_accepts_tab_separator():

@@ -11,7 +11,6 @@ from contextvars import ContextVar
 import hashlib
 import json
 import re
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Mapping
@@ -25,14 +24,11 @@ from .artifacts import (
     normalize_writer_document,
     persist_artifact_json,
     render_document,
-    save_document,
     writer_schema,
 )
-from .resources import sync_document
 from .revision import (
     apply_document_revision,
     generate_revision_set,
-    preview_selection_rewrite,
 )
 from .toolkits import (
     DraftMarkdownStreamEventEmitter as _DraftMarkdownStreamEventEmitter,
@@ -712,19 +708,6 @@ def _writer_render_document(artifact: Any) -> dict:
     return render_document(_action_artifact_data(artifact))
 
 
-def _writer_save_document(
-    artifact: Any,
-    base_artifact: Any,
-    numbering_update: Mapping[str, Any] | None = None,
-) -> dict:
-    """Normalize an edit to clean source and return numbering as sidecar data."""
-    return save_document(
-        _action_artifact_data(artifact),
-        _action_artifact_data(base_artifact),
-        numbering_update,
-    )
-
-
 def _writer_build_revision_task(query: str, base_document_path: str) -> str:
     """Build a revision task for either an outline or a full document."""
     content = WriterRevisionToolkit().build_revision_task(
@@ -735,69 +718,6 @@ def _writer_build_revision_task(query: str, base_document_path: str) -> str:
     return _save_json_artifact(
         'revision_task', content, writer_schema('task.WritingTask'),
         directory=_run_root('revision-task'),
-    )
-
-
-def _writer_preview_selection_rewrite(
-    artifact: Any,
-    instruction: str,
-    selection: Mapping[str, Any],
-    artifact_store: str = '',
-    slot: str = '',
-) -> dict:
-    """Preview a selected IR block or Markdown paragraph rewrite."""
-    document = _action_artifact_data(artifact)
-    if slot not in {'outline_document', 'flat_draft_document', 'draft_document'}:
-        raise ValueError(
-            'selection rewrite requires an outline_document, flat_draft_document, '
-            'or draft_document slot.',
-        )
-    root = _action_root(artifact_store, 'rewrite-preview')
-    result = preview_selection_rewrite(
-        document,
-        instruction,
-        dict(selection or {}),
-        _action_context(document),
-        artifact_store=str(root),
-        flat_markdown=slot == 'flat_draft_document',
-    )
-    if result['representation'] == 'ir':
-        revised = result.pop('revised_document')
-        candidate_path = Path(_save_writer_document(
-            slot, revised,
-            expected_stage='outline' if slot == 'outline_document' else None,
-            editable=slot in {'flat_draft_document', 'draft_document'},
-            directory=root,
-        ))
-    else:
-        candidate_path = Path(result.pop('revised_document_md'))
-        canonical_path = candidate_path.with_name(f'{slot}.md')
-        if candidate_path != canonical_path:
-            candidate_path.replace(canonical_path)
-            candidate_path = canonical_path
-    result['artifact'] = {
-        'content_type': 'file',
-        'value': {
-            'path': str(candidate_path),
-            'filename': candidate_path.name,
-            'size': candidate_path.stat().st_size,
-        },
-    }
-    return result
-
-
-def _writer_sync_document(
-    source_document: Mapping[str, Any],
-    revised_document: Mapping[str, Any],
-    media_assets: Mapping[str, Any] | None = None,
-    artifact_store: str = '',
-) -> dict:
-    """Forward bound document patch synchronization to the shared Runtime."""
-    return sync_document(
-        source_document=source_document,
-        revised_document=revised_document,
-        media_assets=media_assets,
-        artifact_store=str(_action_root(artifact_store, 'sync-document')),
     )
 
 
@@ -1079,21 +999,6 @@ def _action_artifact_data(value: Any) -> Any:
         except json.JSONDecodeError:
             return value
     raise TypeError('artifact must be a JSON value, Markdown string, or file reference.')
-
-
-def _action_context(document: Any) -> dict:
-    return {
-        'context_id': f'selection-{uuid.uuid4().hex}',
-        'doc_id': document.get('document_id') if isinstance(document, dict) else None,
-        'meta': {'source': 'rewrite_selection_action'},
-    }
-
-
-def _action_root(artifact_store: str, name: str) -> Path:
-    base = Path(artifact_store) if artifact_store else Path(tempfile.gettempdir())
-    root = base / 'writer-workflow' / f'{name}-{uuid.uuid4().hex}'
-    root.mkdir(parents=True, exist_ok=True)
-    return root
 
 
 def _read_json_string(path: str) -> str:

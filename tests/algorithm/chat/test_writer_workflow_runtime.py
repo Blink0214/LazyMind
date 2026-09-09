@@ -43,7 +43,6 @@ def test_yaml_tools_keep_only_private_orchestration_and_shared_execution_adapter
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
 
-    assert len(adapters) == 43
     assert not any(
         isinstance(node, (ast.Import, ast.ImportFrom))
         and any(

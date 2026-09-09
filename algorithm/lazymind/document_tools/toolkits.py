@@ -1,4 +1,4 @@
-"""Toolkit composition and legacy compatibility exports."""
+"""Shared document toolkits for Chat Agents and Workflow plugins."""
 
 from __future__ import annotations
 
@@ -82,19 +82,6 @@ DocumentRevisionToolkit = WriterRevisionToolkit
 DocumentResourceToolkit = WriterResourceToolkit
 
 
-class WriterToolkitBase(
-    WriterWritingCapabilities,
-    WriterRevisionCapabilities,
-    WriterResourceCapabilities,
-    WriterArtifactCapabilities,
-):
-    """Legacy aggregate. New code should use a concrete capability toolkit."""
-
-    WRITER_IR_SCHEMA = WRITER_IR_SCHEMA
-    WRITER_BLOCK_SCHEMA = WRITER_BLOCK_SCHEMA
-    __public_apis__: list[str] = []
-
-
 __all__ = [
     'DocumentResourceToolkit',
     'DocumentRevisionToolkit',
@@ -106,7 +93,6 @@ __all__ = [
     'WriterCreateToolkit',
     'WriterResourceToolkit',
     'WriterRevisionToolkit',
-    'WriterToolkitBase',
     'sync_writer_documents',
     'writer_schema',
 ]

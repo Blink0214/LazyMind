@@ -1,8 +1,7 @@
 """Shared document capabilities for Chat Agents and Workflow plugins.
 
-The package is the stable LazyMind boundary over LazyLLM Writer.  Legacy
-imports from ``lazymind.chat.engine.tools.writer`` remain supported while new
-callers should import document capabilities from here.
+The package is the stable LazyMind boundary over LazyLLM Writer for both
+Chat Agents and Workflow plugins.
 """
 
 from .actions import (
@@ -51,7 +50,6 @@ from .toolkits import (
     WriterCreateToolkit,
     WriterResourceToolkit,
     WriterRevisionToolkit,
-    WriterToolkitBase,
 )
 from .writing import (
     assemble_draft_document,
@@ -76,7 +74,6 @@ __all__ = [
     'WriterCreateToolkit',
     'WriterResourceToolkit',
     'WriterRevisionToolkit',
-    'WriterToolkitBase',
     'apply_document_revision',
     'assemble_draft_document',
     'assemble_markdown_document',

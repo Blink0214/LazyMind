@@ -25,7 +25,6 @@ from lazymind.document_tools.resources import (
 from lazymind.document_tools.revision import modify_plan_needs_media
 from lazymind.document_tools.writing import (
     classify_document_structure,
-    parse_writer_request_constraints,
     resolve_prepare_control,
 )
 
@@ -277,13 +276,6 @@ def _authoritative_writer_user_input(user_input: str) -> str:
     return _state_authoritative_user_input(require_context(), user_input)
 
 
-def _has_verified_kb_evidence() -> bool:
-    """Return whether this prepare task has a successful KB retrieval result."""
-    return _state_has_verified_kb_evidence(
-        require_context(), _KB_EVIDENCE_TOOL_NAMES, LOG
-    )
-
-
 def _verified_knowledge_text(knowledge_text: str) -> str:
     return _state_verified_knowledge_text(
         require_context(), knowledge_text, _KB_EVIDENCE_TOOL_NAMES, LOG
@@ -401,11 +393,6 @@ def _provider_document_reference(value: str) -> str:
     return provider_reference(value)
 
 
-def _parse_writer_request_constraints(query: str) -> dict[str, Any]:
-    """Translate Writer Workflow request language into structured task policy."""
-    return parse_writer_request_constraints(query)
-
-
 def _resolve_prepare_control(
     user_input: str,
     suggested_operation: str,
@@ -434,37 +421,6 @@ def _read_json_file(path: str) -> Any:
     )
 
 
-def _writer_tool_artifact_data(result: Any) -> Any:
-    path = str(result.get('artifact_path') or '').strip() if isinstance(result, dict) else ''
-    if not path:
-        raise ValueError(f'Writer tool did not return artifact_path: {result!r}')
-    return _read_json_file(path)
-
-
-def _action_artifact_data(value: Any) -> Any:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_action_artifact_data', locals(),
-    )
-
-
-def _action_context(document: Any) -> dict:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_action_context', locals(),
-    )
-
-
-def _action_root(artifact_store: str, name: str) -> Path:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_action_root', locals(),
-    )
-
-
-def _read_json_string(path: str) -> str:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_read_json_string', locals(),
-    )
-
-
 def _json_loads(value: str, default: Any = None) -> Any:
     return _DOCUMENT_EXECUTION.invoke(
         globals(), '_json_loads', locals(),
@@ -481,32 +437,6 @@ def _save_json_artifact(
 ) -> str:
     return _DOCUMENT_EXECUTION.invoke(
         globals(), '_save_json_artifact', locals(),
-    )
-
-
-def _save_writer_document(
-    name: str,
-    value: str | dict,
-    *,
-    expected_stage: str | None = None,
-    editable: bool = False,
-    directory: Path | None = None,
-    extra_meta: dict[str, Any] | None = None,
-) -> str:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_save_writer_document', locals(),
-    )
-
-
-def _emit_draft_markdown_preview(document_path: str) -> None:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_emit_draft_markdown_preview', locals(),
-    )
-
-
-def _save_publish_payload(payload: dict, root: Path) -> dict:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_save_publish_payload', locals(),
     )
 
 
@@ -781,25 +711,6 @@ def _outline_workspace_fingerprint(
         writing_task_path=writing_task_path,
         source_document_path=source_document_path,
         outline_document_path=outline_document_path,
-    )
-
-
-def _outline_workspace_checkpoint_path(fingerprint: str) -> Path | None:
-    try:
-        context = require_context()
-    except RuntimeError:
-        return None
-    return _state_load_workspace_state(
-        context,
-        'outline',
-        fingerprint,
-        allow_without_context=True,
-    )[1]
-
-
-def _write_outline_workspace_checkpoint(path: Path, state: Mapping[str, Any]) -> None:
-    _state_persist_workspace_state(
-        dict(state), path, completed=bool(state.get('completed'))
     )
 
 
@@ -1078,54 +989,6 @@ def writer_resolve_revision_media(
     )
 
 
-def writer_generate_draft_blocks(
-    writing_task_path: str,
-    section_instructions_path: str,
-    writing_context_path: str,
-    visual_plan_path: str = '',
-    media_assets_path: str = '',
-    checkpoint_dir: str = '',
-) -> list[str]:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_writer_generate_draft_blocks', locals(),
-    )
-
-
-def writer_generate_draft_blocks_markdown(
-    writing_task_path: str,
-    section_instructions_path: str,
-    writing_context_path: str,
-    visual_plan_path: str = '',
-    checkpoint_dir: str = '',
-) -> list[str]:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_writer_generate_draft_blocks_markdown', locals(),
-    )
-
-
-def _assemble_draft_document_ir(
-    draft_blocks_anchor_path: str,
-    writing_context_path: str,
-    outline_path: str = '',
-    document_title: str = '',
-) -> str:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_assemble_draft_document_ir', locals(),
-    )
-
-
-def _assemble_draft_document_markdown(
-    draft_sections_anchor_path: str,
-    writing_context_path: str,
-    outline_path: str = '',
-    document_title: str = '',
-    resolved_media_assets_path: str = '',
-) -> str:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_assemble_draft_document_markdown', locals(),
-    )
-
-
 def writer_generate_draft_document(
     writing_task_path: str,
     section_instructions_path: str,
@@ -1155,48 +1018,9 @@ def writer_export_markdown(content_path: str) -> str:
     )
 
 
-def writer_render_document(artifact: Any) -> dict:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_writer_render_document', locals(),
-    )
-
-
-def writer_save_document(
-    artifact: Any,
-    base_artifact: Any,
-    numbering_update: Mapping[str, Any] | None = None,
-) -> dict:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_writer_save_document', locals(),
-    )
-
-
 def writer_build_revision_task(query: str, base_document_path: str) -> str:
     return _DOCUMENT_EXECUTION.invoke(
         globals(), '_writer_build_revision_task', locals(),
-    )
-
-
-def writer_preview_selection_rewrite(
-    artifact: Any,
-    instruction: str,
-    selection: Mapping[str, Any],
-    artifact_store: str = '',
-    slot: str = '',
-) -> dict:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_writer_preview_selection_rewrite', locals(),
-    )
-
-
-def writer_sync_document(
-    source_document: Mapping[str, Any],
-    revised_document: Mapping[str, Any],
-    media_assets: Mapping[str, Any] | None = None,
-    artifact_store: str = '',
-) -> dict:
-    return _DOCUMENT_EXECUTION.invoke(
-        globals(), '_writer_sync_document', locals(),
     )
 
 

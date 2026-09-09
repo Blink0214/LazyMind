@@ -11,10 +11,8 @@ from lazyllm.tools.writer.data_models import (
     WriterDocument,
 )
 from lazyllm.tools.writer.provider.wechat import WeChatWriterProvider
-from lazymind.chat.engine.tools.writer import (
-    WriterResourceToolkit,
-    _prepare_wechat_cover,
-)
+from lazymind.document_tools import WriterResourceToolkit
+from lazyllm.tools.writer.provider.wechat import prepare_wechat_cover as _prepare_wechat_cover
 from PIL import Image
 
 
@@ -216,7 +214,8 @@ def test_wechat_cover_generation_does_not_run_for_existing_or_other_targets(
 
 
 def test_missing_provider_url_reports_writeback_error():
-    from lazymind.chat.engine.tools.writer import _published_link, ToolExecutionError
+    from lazymind.document_tools.resources import _published_link
+    from lazyllm.tools.agent import ToolExecutionError
 
     with pytest.raises(ToolExecutionError, match='no browser URL was returned'):
         _published_link(TargetDocument(adapter='wechat', doc_id='existing-doc'))
