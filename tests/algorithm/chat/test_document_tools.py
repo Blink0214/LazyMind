@@ -21,6 +21,8 @@ from lazymind.document_tools import (
     WriterRevisionToolkit,
     document_action_names,
     get_document_action,
+    inspect_document,
+    list_document_providers,
     register_document_action,
 )
 from lazymind.document_tools.artifacts import (
@@ -142,6 +144,32 @@ def test_chat_registration_uses_shared_document_toolkits():
     assert DocumentRevisionToolkit is WriterRevisionToolkit
     assert DocumentResourceToolkit is WriterResourceToolkit
     assert RegisteredWriterRevisionToolkit is WriterRevisionToolkit
+
+
+def test_document_inspection_distinguishes_supported_representations():
+    markdown = inspect_document('Short prose without headings.', 'text/markdown')
+    writer_ir = inspect_document(WriterDocument(
+        document_id='document-1',
+        provider_binding={'provider': 'notion'},
+    ).model_dump())
+
+    assert markdown['representation'] == 'markdown'
+    assert markdown['features']['provider_binding'] is False
+    assert writer_ir['representation'] == 'ir'
+    assert writer_ir['features']['provider_binding'] is True
+    assert inspect_document('ordinary status text')['is_document'] is False
+    assert inspect_document({'status': 'done'})['is_document'] is False
+    with pytest.raises(ValueError, match='does not match the Writer IR schema'):
+        inspect_document({'status': 'done'}, 'application/vnd.lazymind.writer+json')
+
+
+def test_document_provider_projection_matches_registered_adapters():
+    providers = {provider['id']: provider['capabilities']
+                 for provider in list_document_providers()}
+
+    assert set(providers) == {'feishu', 'github', 'notion', 'wechat'}
+    assert 'append' in providers['github']
+    assert 'append' not in providers['wechat']
 
 
 def test_chat_tool_calls_work_without_a_workflow_context():

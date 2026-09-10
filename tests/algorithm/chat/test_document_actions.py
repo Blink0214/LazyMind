@@ -118,9 +118,8 @@ def test_rewrite_execute_uses_exact_preview_without_second_model_call(
 ):
     calls = []
 
-    def fake_preview(document, instruction, selection, context, *, artifact_store,
-                     flat_markdown):
-        calls.append((document, instruction, selection, context, flat_markdown))
+    def fake_preview(document, instruction, selection, context, *, artifact_store):
+        calls.append((document, instruction, selection, context))
         candidate = Path(artifact_store) / "candidate.md"
         candidate.write_text("# Title\n\nRewritten.\n", encoding="utf-8")
         return {
@@ -147,7 +146,7 @@ def test_rewrite_execute_uses_exact_preview_without_second_model_call(
         },
         artifact={"data": source},
         artifact_store=str(tmp_path),
-        slot="draft_document",
+        slot="prd_document",
     )
     executed = invoke_document_action(
         "builtin:document.rewrite_selection.v1",
@@ -159,6 +158,7 @@ def test_rewrite_execute_uses_exact_preview_without_second_model_call(
     )
 
     assert len(calls) == 1
+    assert calls[0][1] == "Improve it"
     assert executed == {
         "representation": "markdown",
         "artifact": {

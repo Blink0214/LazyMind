@@ -20,6 +20,7 @@ from lazyllm.tools.writer.provider import (
     WriterProviderWriteOutcomeError,
     get_writer_provider,
     is_ambiguous_write_error,
+    list_writer_providers,
     match_writer_provider,
     resolve_writer_create_target,
 )
@@ -41,6 +42,10 @@ _PROVIDER_LOCATOR_RE = re.compile(
     r"(?:https?://|[a-z][a-z0-9_+.-]*:(?://)?)[^\s<>\"'，。；！？、（）【】《》「」『』]+",
     re.IGNORECASE,
 )
+
+
+def list_document_providers() -> list[dict[str, Any]]:
+    return list_writer_providers()
 
 
 def _provider_name_from_document(document: WriterDocument) -> str:
@@ -681,6 +686,7 @@ __all__ = [
     'WriterResourceCapabilities',
     'convert_document',
     'extract_provider_resources',
+    'list_document_providers',
     'provider_reference',
     'resolve_provider_target',
     'resolve_provider_targets',

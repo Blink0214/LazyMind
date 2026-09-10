@@ -240,6 +240,46 @@ def test_workflow_action_route_uses_pinned_definition_and_server_owned_arguments
     assert error.value.status_code == 422
 
 
+def test_builtin_document_action_route_does_not_load_a_workflow(monkeypatch):
+    workflow_routes = _load_workflow_routes(monkeypatch)
+    calls = []
+
+    monkeypatch.setattr(
+        workflow_routes,
+        'WorkflowClient',
+        lambda *_args, **_kwargs: pytest.fail('public document actions must not load a workflow'),
+    )
+    monkeypatch.setattr(workflow_routes, 'inject_model_config', lambda config: calls.append(('model', config)))
+    monkeypatch.setattr(workflow_routes, 'inject_tool_config', lambda config: calls.append(('tool', config)))
+    monkeypatch.setattr(
+        workflow_routes,
+        'invoke_document_action',
+        lambda reference, phase, arguments, **context: {
+            'reference': reference,
+            'phase': phase,
+            'artifact': context['artifact'],
+        },
+    )
+
+    request = workflow_routes.DocumentActionInvokeRequest(
+        reference='builtin:document.rewrite_selection.v1',
+        phase='preview',
+        artifact='# Draft',
+        arguments={
+            'instruction': '润色',
+            'selection': {'type': 'markdown', 'selected_text': 'Draft'},
+        },
+    )
+    result = workflow_routes.invoke_builtin_document_action(request)['result']
+
+    assert result == {
+        'reference': 'builtin:document.rewrite_selection.v1',
+        'phase': 'preview',
+        'artifact': '# Draft',
+    }
+    assert calls == [('model', {}), ('tool', {})]
+
+
 @pytest.mark.parametrize('workflow_id', ['academic-writer', 'custom-writing-workflow'])
 def test_portable_conversion_available_to_pinned_workflows_without_action_declaration(monkeypatch, workflow_id):
     workflow_routes = _load_workflow_routes(monkeypatch)

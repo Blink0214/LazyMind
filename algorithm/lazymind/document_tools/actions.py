@@ -421,9 +421,6 @@ def _rewrite_preview(instruction: str,
     from .revision import preview_selection_rewrite
 
     document = _artifact_data(context.artifact)
-    if context.slot not in {'outline_document', 'flat_draft_document',
-                            'draft_document'}:
-        raise ValueError('selection rewrite is not enabled for this document slot')
     root = _rewrite_store(context)
     result = preview_selection_rewrite(
         document, instruction, selection.model_dump(),
@@ -433,7 +430,6 @@ def _rewrite_preview(instruction: str,
             'meta': {'source': 'rewrite_selection_action'},
         },
         artifact_store=str(root),
-        flat_markdown=context.slot == 'flat_draft_document',
     )
     representation = result['representation']
     candidate = (

@@ -40,6 +40,10 @@ _MARKDOWN_ATX_HEADING_RE = re.compile(
     r'^(?P<indent> {0,3})(?P<marks>#{1,6})[ \t]+(?P<title>.*?)(?:[ \t]+#+)?[ \t]*$'
 )
 _MARKDOWN_FENCE_RE = re.compile(r'^ {0,3}(?P<marks>`{3,}|~{3,})')
+_MARKDOWN_DOCUMENT_RE = re.compile(
+    r'(?m)^(?: {0,3}#{1,6}\s| {0,3}(?:[-*+] |\d+[.)] )| {0,3}> | {0,3}(?:```|~~~))'
+    r'|\[[^\]]+\]\([^)]+\)'
+)
 _MARKDOWN_DRAFT_ROOT_ERROR = (
     'Markdown draft section must contain exactly one H2 root heading.'
 )
@@ -47,6 +51,74 @@ _MARKDOWN_DRAFT_ROOT_ERROR = (
 
 def writer_schema(name: str) -> str:
     return f'{WRITER_DATA_MODEL_SCHEMA_PREFIX}.{name}'
+
+
+def inspect_document(value: Any, schema: str = '') -> dict[str, Any]:
+    """Identify Markdown or Writer IR without rendering or changing it."""
+    declared_schema = str(schema or '').strip()
+    if isinstance(value, Mapping) and 'data' in value:
+        declared_schema = declared_schema or str(value.get('schema_name') or '')
+        value = value['data']
+
+    markdown_declared = declared_schema in {'markdown', 'text/markdown'}
+    writer_declared = declared_schema in {
+        WRITER_IR_SCHEMA,
+        'application/vnd.lazymind.writer+json',
+    }
+
+    if isinstance(value, str):
+        if writer_declared:
+            raise ValueError('Artifact does not match the Writer IR schema.')
+        is_markdown = markdown_declared or bool(_MARKDOWN_DOCUMENT_RE.search(value))
+        if not is_markdown:
+            return _non_document_inspection()
+        return _document_inspection('markdown', 'text/markdown', False)
+
+    if not isinstance(value, Mapping):
+        return _non_document_inspection()
+    try:
+        document = WriterDocument.model_validate(value)
+    except (TypeError, ValueError) as exc:
+        if writer_declared:
+            raise ValueError('Artifact does not match the Writer IR schema.') from exc
+        return _non_document_inspection()
+    return _document_inspection(
+        'ir',
+        'application/vnd.lazymind.writer+json',
+        bool(document.provider_binding),
+    )
+
+
+def _document_inspection(
+    representation: str,
+    schema: str,
+    provider_binding: bool,
+) -> dict[str, Any]:
+    return {
+        'is_document': True,
+        'representation': representation,
+        'schema': schema,
+        'features': {
+            'headings': True,
+            'numbering': True,
+            'cross_references': True,
+            'provider_binding': provider_binding,
+        },
+    }
+
+
+def _non_document_inspection() -> dict[str, Any]:
+    return {
+        'is_document': False,
+        'representation': None,
+        'schema': None,
+        'features': {
+            'headings': False,
+            'numbering': False,
+            'cross_references': False,
+            'provider_binding': False,
+        },
+    }
 
 
 def persist_artifact_json(
@@ -434,6 +506,7 @@ __all__ = [
     'WRITER_IR_SCHEMA',
     'WriterArtifactCapabilities',
     'WriterDocument',
+    'inspect_document',
     'lmd_to_markdown',
     'markdown_to_lmd',
     'markdown_filename',

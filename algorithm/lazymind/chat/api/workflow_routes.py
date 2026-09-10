@@ -3,6 +3,9 @@
 Routes:
     POST /api/writer/documents:sync      Persist a LazyMind WriterDocument edit.
     POST /api/writer/documents:convert   Convert Writer Markdown and LMD content.
+    POST /api/document/actions:invoke    Invoke a shared built-in document action.
+    POST /api/document:inspect           Inspect Markdown or Writer IR content.
+    GET  /api/document/providers         List registered document providers.
     POST /api/subagent/tasks:cancel      LazyMind task cancellation callback.
 """
 from __future__ import annotations
@@ -29,7 +32,9 @@ from lazyllm.tools.writer.data_models import WriterDocument
 from lazyllm.tools.writer.utils import convert_writer_content
 from lazymind.document_tools import (
     DocumentActionError,
+    inspect_document,
     invoke_document_action,
+    list_document_providers,
     sync_writer_documents,
 )
 from lazymind.config import config
@@ -187,6 +192,21 @@ class WorkflowActionInvokeRequest(BaseModel):
     tool_config: Optional[Dict[str, Any]] = None
 
 
+class DocumentActionInvokeRequest(BaseModel):
+    reference: str
+    phase: Literal['preview', 'execute']
+    artifact: Any = None
+    arguments: Dict[str, Any] = Field(default_factory=dict)
+    artifact_store: str = ''
+    llm_config: Optional[Dict[str, Any]] = None
+    tool_config: Optional[Dict[str, Any]] = None
+
+
+class DocumentInspectRequest(BaseModel):
+    artifact: Any
+    document_schema: str = Field(default='', alias='schema')
+
+
 @router.post(
     '/api/writer/documents:sync',
     summary='Deprecated: persist an edited bound WriterDocument',
@@ -219,6 +239,44 @@ def convert_writer_document(request: WriterDocumentConvertRequest) -> Response:
     media_type = 'text/markdown; charset=utf-8' if request.target_format == 'markdown' \
         else 'application/vnd.lazymind.writer+json; charset=utf-8'
     return Response(content=converted.encode('utf-8'), media_type=media_type)
+
+
+@router.post('/api/document/actions:invoke', summary='Invoke a built-in document action')
+def invoke_builtin_document_action(
+    request: DocumentActionInvokeRequest,
+) -> Dict[str, Any]:
+    try:
+        inject_model_config(request.llm_config or {})
+        inject_tool_config(request.tool_config or {})
+        result = invoke_document_action(
+            request.reference,
+            request.phase,
+            request.arguments,
+            artifact=request.artifact,
+            artifact_store=request.artifact_store,
+        )
+        return {'result': result}
+    except DocumentActionError as exc:
+        detail: Dict[str, Any] = {
+            'code': exc.error_code,
+            'message': str(exc),
+            'retryable': exc.retryable,
+        }
+        detail.update(exc.details)
+        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
+
+
+@router.post('/api/document:inspect', summary='Inspect a document artifact')
+def inspect_document_artifact(request: DocumentInspectRequest) -> Dict[str, Any]:
+    try:
+        return inspect_document(request.artifact, request.document_schema)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get('/api/document/providers', summary='List document providers')
+def document_providers() -> Dict[str, Any]:
+    return {'providers': list_document_providers()}
 
 
 def _action_definition(

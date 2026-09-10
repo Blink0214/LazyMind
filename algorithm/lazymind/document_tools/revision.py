@@ -196,7 +196,6 @@ def preview_selection_rewrite(
     context: Any,
     *,
     artifact_store: str,
-    flat_markdown: bool = False,
 ) -> dict[str, Any]:
     """Generate one selected-block rewrite candidate and its deterministic patch."""
     instruction = str(instruction or '').strip()
@@ -241,10 +240,6 @@ def preview_selection_rewrite(
 
     if selection_type != 'markdown':
         raise ValueError("Markdown artifacts require selection.type='markdown'.")
-    if flat_markdown:
-        instruction += (
-            '\nKeep the replacement as exactly one Markdown paragraph; do not split it.'
-        )
     replace_set = StringReplaceSet.model_validate(
         revision.build_selected_markdown_replace_set(
             document,
