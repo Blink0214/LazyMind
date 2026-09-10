@@ -874,6 +874,7 @@ def _writer_convert_document(
     target_document_path: str = '',
     media_assets_path: str = '',
     output_format: str = 'native',
+    template: str = '',
 ) -> str:
     """Convert canonical Writer content to a copyable provider artifact."""
     if not provider and target_document_path:
@@ -890,6 +891,7 @@ def _writer_convert_document(
         media_assets_json=(
             _read_json_string(media_assets_path) if media_assets_path else ''
         ),
+        template=template,
     )
     if output_format != 'native':
         return content

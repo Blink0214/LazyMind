@@ -71,6 +71,7 @@ class ConvertDocumentArguments(_StrictModel):
     document: str | dict[str, Any] | None = None
     target_document: dict[str, Any] | None = None
     media_assets: dict[str, Any] | None = None
+    template: str = ''
 
 
 class WriteDocumentArguments(_StrictModel):

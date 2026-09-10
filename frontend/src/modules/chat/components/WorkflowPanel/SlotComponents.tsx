@@ -2761,6 +2761,9 @@ function useRegisterWriterWriteBack({
     setStatus('loading');
     try {
       const currentRevision = getLatestRevision?.() ?? revision;
+      const template = initialDelivery && targetProvider === 'wechat'
+        ? 'structured'
+        : undefined;
       const response = await WorkflowSessionApi().writeBackWriterDocument(
         sessionId,
         currentRevision,
@@ -2768,6 +2771,7 @@ function useRegisterWriterWriteBack({
         undefined,
         slotId,
         targetProvider,
+        template,
         { silentError: true } as never,
       );
       const result = response?.data?.data;
@@ -2804,7 +2808,7 @@ function useRegisterWriterWriteBack({
         setStatus('error');
       }
     }
-  }, [getLatestRevision, onConflict, onSuccess, revision, sessionId, slotId]);
+  }, [getLatestRevision, initialDelivery, onConflict, onSuccess, revision, sessionId, slotId]);
   const writeBackRef = useRef(writeBack);
   writeBackRef.current = writeBack;
 

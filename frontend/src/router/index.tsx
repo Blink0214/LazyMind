@@ -38,6 +38,7 @@ const GoogleDriveSetupGuide = lazy(() => import("@/modules/modelProvider/pages/G
 const LocalDataSourcePage = lazy(() => import("@/modules/modelProvider/pages/LocalDataSourcePage"));
 const FeishuSetupGuide = lazy(() => import("@/modules/modelProvider/pages/FeishuSetupGuide"));
 const GitHubSetupGuide = lazy(() => import("@/modules/modelProvider/pages/GitHubSetupGuide"));
+const WeChatSetupGuide = lazy(() => import("@/modules/modelProvider/pages/WeChatSetupGuide"));
 const NotionSetupGuide = lazy(() => import("@/modules/modelProvider/pages/NotionSetupGuide"));
 const DatasetListPage = lazy(() => import("@/modules/datasetManagement/pages/list"));
 const DatasetDetailPage = lazy(() => import("@/modules/datasetManagement/pages/detail"));
@@ -192,6 +193,7 @@ export default function AppRouter() {
             <Route path="mail" element={<EmailConnectionPage />} />
             <Route path="docs/feishu-setup" element={<FeishuSetupGuide />} />
             <Route path="docs/github-setup" element={<GitHubSetupGuide />} />
+            <Route path="docs/wechat-official-account-setup" element={<WeChatSetupGuide />} />
             <Route path="docs/notion-setup" element={<NotionSetupGuide />} />
             <Route path="docs/google-drive-setup" element={<GoogleDriveSetupGuide />} />
           </Route>
@@ -207,6 +209,7 @@ export default function AppRouter() {
           <Route path="model-providers/cloud-documents/wechat-official-account" element={<Navigate to="/cloud-documents/wechat-official-account" replace />} />
           <Route path="model-providers/cloud-documents/google-drive" element={<Navigate to="/cloud-documents/google-drive" replace />} />
           <Route path="model-providers/cloud-documents/docs/feishu-setup" element={<Navigate to="/cloud-documents/docs/feishu-setup" replace />} />
+          <Route path="model-providers/cloud-documents/docs/wechat-official-account-setup" element={<Navigate to="/cloud-documents/docs/wechat-official-account-setup" replace />} />
           <Route path="model-providers/cloud-documents/docs/notion-setup" element={<Navigate to="/cloud-documents/docs/notion-setup" replace />} />
           <Route path="model-providers/cloud-documents/docs/google-drive-setup" element={<Navigate to="/cloud-documents/docs/google-drive-setup" replace />} />
           <Route path="memory-management" element={<MemoryManagement />}>

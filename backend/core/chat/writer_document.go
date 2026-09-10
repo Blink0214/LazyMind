@@ -37,6 +37,7 @@ type writerDocumentWriteBackBody struct {
 	BaseRevision int    `json:"base_revision"`
 	Slot         string `json:"slot"`
 	Provider     string `json:"provider"`
+	Template     string `json:"template"`
 	// Legacy client fields remain accepted, but the selected server-side
 	// revision and synchronized baseline are authoritative.
 	SourceDocument  json.RawMessage `json:"source_document"`
@@ -636,6 +637,7 @@ func WriteBackWriterDocument(w http.ResponseWriter, r *http.Request) {
 	syncRequest := algo.WriterDocumentSyncRequest{
 		WorkflowID: session.WorkflowID, RevisionID: session.WorkflowRevisionID,
 		TreeHash: session.WorkflowTreeHash, UserID: userID,
+		Template: strings.TrimSpace(body.Template),
 	}
 	var targetArtifact *selectedWriterArtifact
 	mediaSlot := "resolved_media_assets"

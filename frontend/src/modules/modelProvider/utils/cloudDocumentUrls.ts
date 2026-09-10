@@ -29,10 +29,14 @@ export const CLOUD_DOCUMENTS_LOCAL_PATH = "/cloud-documents/local";
 export const CLOUD_DOCUMENTS_FEISHU_PATH = "/cloud-documents/feishu";
 export const CLOUD_DOCUMENTS_WECHAT_OFFICIAL_ACCOUNT_PATH =
   "/cloud-documents/wechat-official-account";
+export const WECHAT_OFFICIAL_ACCOUNT_PLATFORM_URL =
+  "https://developers.weixin.qq.com/console/index?tab1=business&tab2=dev";
 export const CLOUD_DOCUMENTS_GOOGLE_DRIVE_PATH =
   "/cloud-documents/google-drive";
 export const CLOUD_DOCUMENTS_FEISHU_SETUP_PATH =
   "/cloud-documents/docs/feishu-setup";
+export const CLOUD_DOCUMENTS_WECHAT_SETUP_PATH =
+  "/cloud-documents/docs/wechat-official-account-setup";
 export const CLOUD_DOCUMENTS_NOTION_SETUP_PATH =
   "/cloud-documents/docs/notion-setup";
 export const CLOUD_DOCUMENTS_GOOGLE_DRIVE_SETUP_PATH =

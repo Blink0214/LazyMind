@@ -18,6 +18,7 @@ type WriterDocumentSyncRequest struct {
 	TargetDocument  json.RawMessage `json:"target_document"`
 	Title           string          `json:"title"`
 	Adapter         string          `json:"adapter"`
+	Template        string          `json:"template,omitempty"`
 	ToolConfig      map[string]any  `json:"tool_config"`
 }
 
@@ -82,6 +83,9 @@ func convertAndWriteWriterDocument(
 		return nil, 0, fmt.Errorf("document content is required for conversion")
 	}
 	convertArguments := map[string]any{"provider": req.Adapter}
+	if req.Template != "" {
+		convertArguments["template"] = req.Template
+	}
 	if len(req.TargetDocument) > 0 {
 		convertArguments["target_document"] = req.TargetDocument
 	}

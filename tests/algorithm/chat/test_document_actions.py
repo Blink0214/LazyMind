@@ -291,7 +291,13 @@ def test_conversion_and_write_actions_are_explicitly_composable(monkeypatch):
     assert calls[0] == (
         "convert",
         "# Draft",
-        {"provider": "notion", "output_format": "native", "target_document": None, "media_assets": None},
+        {
+            "provider": "notion",
+            "output_format": "native",
+            "target_document": None,
+            "media_assets": None,
+            "template": "",
+        },
     )
     assert calls[1][0] == "write"
     assert calls[1][1]["converted_document"] == converted

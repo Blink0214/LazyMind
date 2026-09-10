@@ -411,6 +411,13 @@ def test_conversion_is_pure_and_cross_provider_content_is_detached(monkeypatch):
     calls = []
     class FakeProvider:
         def convert_document(self, content, *, target=None, media_assets=None):
+            return self.convert_document_with_template(
+                content, target=target, media_assets=media_assets,
+            )
+
+        def convert_document_with_template(
+            self, content, *, target=None, media_assets=None, template=None,
+        ):
             calls.append((content, target, media_assets))
             return WriterProviderDocument(
                 provider="destination",

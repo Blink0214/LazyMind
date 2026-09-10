@@ -246,6 +246,7 @@ export type WriterWriteBackProvider = 'feishu' | 'notion' | 'github' | 'wechat';
 export interface WriteBackWriterDocumentRequest {
   base_revision: number;
   slot?: WriterDocumentSlot;
+  template?: string;
   source_document: Record<string, unknown>;
   revised_document: Record<string, unknown>;
 }
@@ -593,6 +594,7 @@ export function WorkflowSessionApi() {
       revisedDocument?: Record<string, unknown>,
       slot?: WriterDocumentSlot,
       provider?: WriterWriteBackProvider,
+      template?: string,
       options?: RawAxiosRequestConfig,
     ) {
       const payload: Record<string, unknown> = { base_revision: baseRevision };
@@ -602,6 +604,7 @@ export function WorkflowSessionApi() {
       if (revisedDocument !== undefined) payload.revised_document = revisedDocument;
       if (slot !== undefined && slot !== 'draft_document') payload.slot = slot;
       if (provider !== undefined) payload.provider = provider;
+      if (template !== undefined) payload.template = template;
       return axiosInstance.post<{
         code: number;
         message: string;

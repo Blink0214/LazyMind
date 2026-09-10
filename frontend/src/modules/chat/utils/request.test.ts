@@ -88,6 +88,24 @@ describe('WorkflowSessionApi.writeBackWriterDocument', () => {
       undefined,
     );
   });
+
+  it('passes a WeChat rendering template through the shared write-back endpoint', () => {
+    WorkflowSessionApi().writeBackWriterDocument(
+      'ps-wechat',
+      8,
+      undefined,
+      undefined,
+      'draft_document',
+      'wechat',
+      'clean',
+    );
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/api/core/workflow-sessions/ps-wechat/writer-document:write-back',
+      { base_revision: 8, provider: 'wechat', template: 'clean' },
+      undefined,
+    );
+  });
 });
 
 describe('chat entry defaults', () => {

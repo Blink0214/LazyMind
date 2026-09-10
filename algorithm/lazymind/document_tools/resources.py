@@ -170,6 +170,7 @@ def convert_document(
     target_document: Mapping[str, Any] | None = None,
     *,
     output_format: str = 'native',
+    template: str = '',
 ) -> dict[str, Any]:
     """Purely convert canonical Writer content to one provider's copyable format."""
     if output_format != 'native':
@@ -194,10 +195,12 @@ def convert_document(
     if target is not None and target.adapter and target.adapter != provider_name:
         raise ToolExecutionError('target_document provider does not match provider.')
     media_library = MediaAssetLibrary.model_validate(media_assets) if media_assets else None
-    converted = get_writer_provider(provider_name).convert_document(
+    writer_provider = get_writer_provider(provider_name)
+    converted = writer_provider.convert_document_with_template(
         content,
         target=target,
         media_assets=media_library,
+        template=template,
     )
     return converted.model_dump()
 
@@ -586,6 +589,7 @@ class WriterResourceCapabilities:
         target_document_json: str = '',
         media_assets_json: str = '',
         output_format: str = 'native',
+        template: str = '',
     ) -> str:
         """Convert Writer content without provider IO."""
         return _json_dumps(convert_document(
@@ -600,6 +604,7 @@ class WriterResourceCapabilities:
                 if target_document_json.strip()
                 else None
             ),
+            template=template,
         ))
 
     def write_document(

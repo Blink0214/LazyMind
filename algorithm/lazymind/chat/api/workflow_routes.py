@@ -309,6 +309,12 @@ def invoke_workflow_action(request: WorkflowActionInvokeRequest) -> Dict[str, An
     except HTTPException:
         raise
     except DocumentActionError as exc:
+        print(
+            f'Workflow document action error: workflow={request.workflow_id} '
+            f'action={request.action} phase={request.phase}; '
+            f'code={exc.error_code}; error={str(exc)!r}; details={exc.details!r}',
+            flush=True,
+        )
         detail: Dict[str, Any] = {
             'code': exc.error_code,
             'message': str(exc),
@@ -328,6 +334,11 @@ def invoke_workflow_action(request: WorkflowActionInvokeRequest) -> Dict[str, An
             detail={'code': 'WORKFLOW_ACTION_INVALID', 'message': str(exc)},
         ) from exc
     except Exception as exc:
+        print(
+            f'Workflow artifact action failed: workflow={request.workflow_id} '
+            f'action={request.action} phase={request.phase}; error={exc!r}',
+            flush=True,
+        )
         logger.exception(
             'Workflow artifact action failed: workflow=%s action=%s phase=%s',
             request.workflow_id, request.action, request.phase,

@@ -19,6 +19,7 @@ import {
   ArrowLeftOutlined,
   DeleteOutlined,
   EditOutlined,
+  FileTextOutlined,
   PlusOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
@@ -33,11 +34,14 @@ import type {
 import { dataSourceCloudOauthApi } from "@/modules/dataSource/api/clients";
 import { getCloudConnectionItems } from "@/modules/dataSource/mappers/cloudConnection";
 import { formatDateTime } from "@/modules/dataSource/utils/format";
-import { CLOUD_DOCUMENTS_PATH } from "../utils/cloudDocumentUrls";
+import {
+  CLOUD_DOCUMENTS_PATH,
+  CLOUD_DOCUMENTS_WECHAT_SETUP_PATH,
+  WECHAT_OFFICIAL_ACCOUNT_PLATFORM_URL,
+} from "../utils/cloudDocumentUrls";
 
 const { Link, Paragraph, Text } = Typography;
 const WECHAT_PROVIDER = "wechat";
-const WECHAT_PLATFORM_URL = "https://developers.weixin.qq.com/console/product/mp";
 
 interface AccountFormValues {
   name?: string;
@@ -202,7 +206,7 @@ export default function WeChatOfficialAccountPage() {
                   {ip}
                 </Text>
               ) : null}
-              <Link href={WECHAT_PLATFORM_URL} target="_blank" rel="noreferrer">
+              <Link href={WECHAT_OFFICIAL_ACCOUNT_PLATFORM_URL} target="_blank" rel="noreferrer">
                 {t("modelProvider.wechatOfficialAccount.openPlatform")}
               </Link>
             </Space>
@@ -382,9 +386,17 @@ export default function WeChatOfficialAccountPage() {
               <p>{t("modelProvider.wechatOfficialAccount.subtitle")}</p>
             </div>
           </div>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openAccountModal()}>
-            {t("modelProvider.wechatOfficialAccount.createAccount")}
-          </Button>
+          <Space size={10} wrap>
+            <Button
+              icon={<FileTextOutlined />}
+              onClick={() => navigate(CLOUD_DOCUMENTS_WECHAT_SETUP_PATH)}
+            >
+              {t("modelProvider.wechatOfficialAccount.setupGuideAction")}
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openAccountModal()}>
+              {t("modelProvider.wechatOfficialAccount.createAccount")}
+            </Button>
+          </Space>
         </div>
 
         <div className="model-provider-cloud-doc-setup-card">
@@ -399,7 +411,7 @@ export default function WeChatOfficialAccountPage() {
           </div>
           <Link
             className="model-provider-cloud-doc-open-platform"
-            href={WECHAT_PLATFORM_URL}
+            href={WECHAT_OFFICIAL_ACCOUNT_PLATFORM_URL}
             target="_blank"
             rel="noreferrer"
           >

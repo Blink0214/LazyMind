@@ -2362,7 +2362,9 @@ type writerDocumentWriteBackPathParams struct {
 }
 
 type writerDocumentWriteBackOpenAPIRequest struct {
-	BaseRevision int `json:"base_revision"`
+	BaseRevision int    `json:"base_revision"`
+	Provider     string `json:"provider,omitempty"`
+	Template     string `json:"template,omitempty"`
 }
 
 type artifactActionPathParams struct {
