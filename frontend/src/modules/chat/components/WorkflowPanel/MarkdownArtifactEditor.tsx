@@ -604,6 +604,7 @@ export function MarkdownArtifactEditor({
   const autoSaveTimerRef = useRef<number | undefined>(undefined);
   const viewRestoreFrameRef = useRef<number | undefined>(undefined);
   const draftMarkdownRef = useRef(draftMarkdown);
+  const copySnapshotRef = useRef(markdown);
   const dirtyRef = useRef(false);
   const savingRef = useRef(false);
   const conflictRef = useRef(false);
@@ -628,6 +629,9 @@ export function MarkdownArtifactEditor({
     ),
     [anchorSourceMarkdown, draftMarkdown],
   );
+  copySnapshotRef.current = dirty
+    ? writerMarkdownForSave(materializedDraftMarkdown)
+    : anchorSourceMarkdown;
   const markdownOutline = useMemo(
     () => collectWriterMarkdownOutline(materializedDraftMarkdown),
     [materializedDraftMarkdown],
@@ -1240,7 +1244,7 @@ export function MarkdownArtifactEditor({
 
   useEffect(() => {
     if (!editingKey || !registerSnapshot) return undefined;
-    return registerSnapshot(editingKey, () => draftMarkdownRef.current);
+    return registerSnapshot(editingKey, () => copySnapshotRef.current);
   }, [editingKey, registerSnapshot]);
 
   useEffect(() => {
