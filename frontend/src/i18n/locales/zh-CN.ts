@@ -2630,6 +2630,7 @@ const zhCN = {
       },
     },
     writerIR: {
+      referenceTargetMissing: "引用目标不存在，可能是生成内容格式有误，请检查对应标题或段落。",
       documentRegion: "结构化文档",
       displaySettings: "文档显示设置",
       outline: "目录",

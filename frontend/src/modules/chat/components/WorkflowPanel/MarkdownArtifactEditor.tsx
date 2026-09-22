@@ -34,7 +34,7 @@ import {
   MoreOutlined,
   PictureOutlined,
 } from '@ant-design/icons';
-import { Dropdown } from 'antd';
+import { Dropdown, message } from 'antd';
 import { createPortal } from 'react-dom';
 import '@mdxeditor/editor/style.css';
 import {
@@ -1595,8 +1595,12 @@ export function MarkdownArtifactEditor({
     const target = Array.from(
       rootRef.current?.querySelectorAll<HTMLElement>('[id]') ?? [],
     ).find((element) => element.id === anchorId) ?? null;
+    if (!target) {
+      void message.warning(t('chat.writerIR.referenceTargetMissing'));
+      return;
+    }
     scrollToMarkdownTarget(target);
-  }, [scrollToMarkdownTarget]);
+  }, [scrollToMarkdownTarget, t]);
 
   const navigateToDocumentTitle = useCallback(() => {
     const target = rootRef.current?.querySelector<HTMLElement>(

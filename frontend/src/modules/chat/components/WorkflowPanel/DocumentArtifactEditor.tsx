@@ -35,6 +35,9 @@ function key() { return crypto.randomUUID(); }
 function responseCode(error: unknown): string | undefined {
   return (error as { response?: { data?: { data?: { code?: string } } } })?.response?.data?.data?.code;
 }
+function rewriteConflict(code: 'DRAFT_VERSION_CONFLICT' | 'SELECTION_STALE'): Error & { code: string } {
+  return Object.assign(new Error(code), { code });
+}
 type Baseline = { id: string; revision: number; draft?: number; value: unknown };
 
 async function readDocumentValue(value: unknown, representation: string): Promise<unknown> {
@@ -337,7 +340,8 @@ export function DocumentArtifactEditor({ slot: incomingSlot, sessionId, readOnly
   const applyPreview = async () => {
     if (!preview?.value.commit?.token) return undefined;
     const baseline=previewSource.current;
-    if (dirty.current || !baseline || external.current.id!==baseline.id || external.current.revision!==baseline.revision || external.current.draft!==baseline.draft) throw new Error('rewrite baseline changed');
+    if (dirty.current) throw rewriteConflict('SELECTION_STALE');
+    if (!baseline || external.current.id!==baseline.id || external.current.revision!==baseline.revision || external.current.draft!==baseline.draft) throw rewriteConflict('DRAFT_VERSION_CONFLICT');
     const response = await WorkflowSessionApi().executeDocumentAction(preview.id, { action: 'rewrite_selection',
       base_revision: preview.value.base_revision, base_draft_version: preview.value.base_draft_version,
       input: { commit_token: preview.value.commit.token } });
@@ -484,6 +488,7 @@ export function DocumentArtifactEditor({ slot: incomingSlot, sessionId, readOnly
       baseRevision={latest.current.revision} baseDraftVersion={latest.current.draft} selection={selection}
       onClose={() => setSelection(null)} onApplied={() => { setPreview(null); onRefresh?.(); }}
       requestPreview={async (instruction, picked) => {
+        if (dirty.current && flushEditor.current && !await flushEditor.current()) throw rewriteConflict('DRAFT_VERSION_CONFLICT');
         const current = latest.current; previewSource.current = { ...current };
         if (picked.type === 'ppt_html') throw new Error('unsupported document selection');
         const response = await WorkflowSessionApi().previewDocumentAction(current.id, { action: 'rewrite_selection',
