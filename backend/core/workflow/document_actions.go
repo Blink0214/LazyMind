@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -146,6 +147,10 @@ type documentActionFailure struct {
 	status int
 }
 
+type documentConversionFailure struct{ cause string }
+
+func (failure documentConversionFailure) Error() string { return failure.cause }
+
 func (failure documentActionFailure) Error() string { return failure.code }
 func documentFailure(code string, status int) error { return documentActionFailure{code, status} }
 func replyDocumentFailure(w http.ResponseWriter, err error) {
@@ -162,7 +167,12 @@ func replyDocumentFailure(w http.ResponseWriter, err error) {
 	case 409:
 		message = "revision conflict"
 	}
-	common.ReplyErrWithData(w, message, map[string]any{"code": failure.code}, failure.status)
+	data := map[string]any{"code": failure.code}
+	var conversion documentConversionFailure
+	if errors.As(err, &conversion) {
+		data["cause"] = conversion.cause
+	}
+	common.ReplyErrWithData(w, message, data, failure.status)
 }
 func decodeDocumentJSON(reader io.Reader, target any) error {
 	decoder := json.NewDecoder(reader)
@@ -515,6 +525,8 @@ func documentUpstreamFailure(status int, err error) error {
 		}
 		if json.Unmarshal(upstream.Body, &body) == nil {
 			switch {
+			case isSafePandocFailure(body.Detail.Code):
+				return fmt.Errorf("%w: %w", documentFailure("DOCUMENT_CONVERSION_FAILED", 502), documentConversionFailure{body.Detail.Code})
 			case status == 409 && (body.Detail.Code == "SELECTION_STALE" || body.Detail.Code == "SELECTION_AMBIGUOUS"):
 				return documentFailure(body.Detail.Code, 409)
 			case status == 422 && body.Detail.Code == "WORKFLOW_ACTION_INVALID":
@@ -530,6 +542,17 @@ func documentUpstreamFailure(status int, err error) error {
 		return documentFailure("DOCUMENT_ACTION_RESULT_INVALID", 502)
 	}
 	return documentFailure("DOCUMENT_ACTION_FAILED", 502)
+}
+
+func isSafePandocFailure(code string) bool {
+	switch code {
+	case "PANDOC_NOT_FOUND", "PANDOC_NOT_EXECUTABLE", "PANDOC_VERSION_UNSUPPORTED",
+		"PANDOC_TIMEOUT", "PANDOC_INPUT_TOO_LARGE", "PANDOC_OUTPUT_TOO_LARGE",
+		"PANDOC_TEMPLATE_INVALID", "PANDOC_FILTER_FAILED", "PANDOC_CONVERSION_FAILED":
+		return true
+	default:
+		return false
+	}
 }
 
 func commitDocumentRewrite(ctx context.Context, target *documentActionContext, request documentActionRequest, artifact *DocumentActionArtifact) (*orm.WorkflowSlotRevision, error) {
