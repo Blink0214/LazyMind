@@ -744,6 +744,9 @@ func algorithmServiceEnv(cfg RuntimeConfig, paths RuntimePaths, service string) 
 	if libPath := editablePPTLibraryPath(exportDeps); libPath != "" {
 		env = append(env, "LD_LIBRARY_PATH="+joinPathList(libPath, os.Getenv("LD_LIBRARY_PATH")))
 	}
+	if pandocPath := strings.TrimSpace(paths.PandocBin); pandocPath != "" {
+		env = append(env, "LAZYMIND_PANDOC_PATH="+pandocPath)
+	}
 	return env
 }
 
