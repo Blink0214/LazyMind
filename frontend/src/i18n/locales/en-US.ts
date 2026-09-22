@@ -2744,7 +2744,6 @@ const enUS = {
       writingSubtasks: "Subtasks",
       subtaskTypes: {
         retrieve: "Retrieve",
-        extract: "Extract",
         reason: "Reason",
       },
       unorderedList: "Bulleted list",

@@ -160,6 +160,7 @@ const outlineInstructionDocument: WriterDocument = {
       type: 'heading',
       content: '旧日的仪式',
       numbering: { level: 1 },
+      outline_description: '以约1800字承接禁忌线索，并在成稿前厘清仪式此时失控的原因。',
       target_chars: 1800,
       context_relations: [
         {
@@ -1019,7 +1020,7 @@ describe('WriterIRDocumentEditor cross-reference menu', () => {
 });
 
 describe('WriterIRDocumentEditor outline instructions', () => {
-  it('renders structured instructions under the heading and preserves them after editing', async () => {
+  it('renders one natural sentence under the heading and preserves metadata after editing', async () => {
     const onDocumentChange = vi.fn();
     const { container } = render(
       <ControlledWriter
@@ -1028,15 +1029,14 @@ describe('WriterIRDocumentEditor outline instructions', () => {
       />,
     );
 
-    const details = container.querySelector<HTMLDetailsElement>(
+    const details = container.querySelector<HTMLElement>(
       '[data-writer-outline-instructions]',
     );
     expect(details).not.toBeNull();
-    expect(details?.open).toBe(true);
-    expect(details).toHaveTextContent('chat.writerIR.outlineInstructions');
+    expect(details).toHaveTextContent('以约1800字承接禁忌线索，并在成稿前厘清仪式此时失控的原因。');
     expect(details).toHaveTextContent('1800');
-    expect(details).toHaveTextContent('承接前文已暴露的禁忌线索');
-    expect(details).toHaveTextContent('仪式为什么会在此时失控？');
+    expect(details?.querySelector('ul, table, summary, strong')).toBeNull();
+    expect(details).toHaveAttribute('contenteditable', 'false');
 
     const heading = container.querySelector<HTMLElement>(
       '[data-node-id="outline-section-1"] > [data-writer-block-content]',
@@ -1050,6 +1050,7 @@ describe('WriterIRDocumentEditor outline instructions', () => {
     const updated = lastCall?.[0] as WriterDocument;
     expect(updated.blocks[0]).toMatchObject({
       content: '旧日的仪式（修订）',
+      outline_description: outlineInstructionDocument.blocks[0].outline_description,
       target_chars: 1800,
       context_relations: outlineInstructionDocument.blocks[0].context_relations,
       subtasks: outlineInstructionDocument.blocks[0].subtasks,
