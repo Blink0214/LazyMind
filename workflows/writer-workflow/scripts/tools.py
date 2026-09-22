@@ -1283,7 +1283,7 @@ def writer_draft_workspace() -> dict:
                     outline_path=outline_document_path,
                     writing_context_path=writing_context_path,
                 )
-                _emit_writer_progress('子任务已完成，正在生成 section instructions')
+                _emit_writer_progress('子任务处理结束，正在生成章节写作指令')
                 planning = writer_generate_section_instructions(
                     writing_task_path=writing_task_path,
                     outline_path=result['outline_document'],
