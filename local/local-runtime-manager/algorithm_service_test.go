@@ -142,6 +142,33 @@ func TestAlgorithmServiceEnvPinsLocalRouterHost(t *testing.T) {
 	assertEnvContains(t, env, "LAZYMIND_WORKFLOWS_DIR="+filepath.Join(repo, "workflows"))
 }
 
+func TestAlgorithmServiceEnvUsesBundledPandocWhenConfigured(t *testing.T) {
+	repo := t.TempDir()
+	writeComposeFixture(t, repo)
+	cfg, paths, err := NewRuntimeConfig(defaultProfileValue(), repo)
+	if err != nil {
+		t.Fatalf("runtime config: %v", err)
+	}
+	paths.PandocBin = executablePath(filepath.Join(paths.ResourcesRoot, "bin"), "pandoc")
+
+	env := algorithmServiceEnv(cfg, paths, chatProcessName)
+
+	assertEnvContains(t, env, "LAZYMIND_PANDOC_PATH="+paths.PandocBin)
+}
+
+func TestAlgorithmServiceEnvLeavesPandocUnsetWithoutBundledBinary(t *testing.T) {
+	repo := t.TempDir()
+	writeComposeFixture(t, repo)
+	cfg, paths, err := NewRuntimeConfig(defaultProfileValue(), repo)
+	if err != nil {
+		t.Fatalf("runtime config: %v", err)
+	}
+
+	env := algorithmServiceEnv(cfg, paths, chatProcessName)
+
+	assertEnvNotContains(t, env, "LAZYMIND_PANDOC_PATH=")
+}
+
 func TestAlgorithmServiceEnvUsesSQLiteServerAliases(t *testing.T) {
 	repo := t.TempDir()
 	writeComposeFixture(t, repo)

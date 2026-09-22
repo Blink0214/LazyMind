@@ -214,6 +214,7 @@ type RuntimePaths struct {
 	MilvusLiteDBPath         string
 	LocalProxyBin            string
 	CaddyBin                 string
+	PandocBin                string
 	LocalProxyConfig         string
 	LocalProxyStopScript     string
 	CaddyConfig              string
@@ -1091,6 +1092,9 @@ func applyDesktopManifestPaths(paths *RuntimePaths) error {
 	}
 	if value := joinResource(manifest.Binaries["caddy"]); value != "" {
 		paths.CaddyBin = value
+	}
+	if value := joinResource(manifest.Binaries["pandoc"]); value != "" {
+		paths.PandocBin = value
 	}
 	if value := joinResource(manifest.Paths.LocalProxyConfig); value != "" {
 		paths.LocalProxyConfig = value
