@@ -496,14 +496,17 @@ def _rewrite_preview(type: Literal['ir', 'markdown'], instruction: str,
                      selection_ranges: list[IRSelection | MarkdownSelection], *,
                      context: DocumentActionContext) -> dict[str, Any]:
     from .revision import preview_selection_rewrite
+    from lazymind.rewrite.context import matching_context
 
     document = _artifact_data(context.artifact)
     if type != ('markdown' if isinstance(document, str) else 'ir'):
         raise ValueError('request type does not match the document representation')
     root = _rewrite_store(context)
+    contexts = context.artifact.get('writing_contexts', []) if isinstance(context.artifact, Mapping) else []
+    writing_context = matching_context(document, contexts)
     result = preview_selection_rewrite(
         document, instruction, [selection.model_dump(exclude_none=True) for selection in selection_ranges],
-        {
+        writing_context or {
             'context_id': f'selection-{uuid.uuid4().hex}',
             'doc_id': document.get('document_id') if isinstance(document, dict) else None,
             'meta': {'source': 'rewrite_selection_action'},

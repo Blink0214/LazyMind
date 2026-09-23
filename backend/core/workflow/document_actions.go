@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 	"lazymind/core/algo"
@@ -345,9 +347,18 @@ func runDocumentRewrite(w http.ResponseWriter, r *http.Request, phase, owner str
 	namespace, _ := json.Marshal([]any{owner, target.session.ID, target.revision.ID, *request.baseRevision, target.artifact.DraftVersion, documentRewriteReference})
 	digest := sha256.Sum256(namespace)
 	artifactStore := filepath.Join(subagent.WorkspaceRoot(), "document-actions", hex.EncodeToString(digest[:]))
-	artifact, _ := json.Marshal(map[string]json.RawMessage{"data": target.content.Value})
+	artifactPayload := map[string]any{"data": target.content.Value}
+	if phase == "preview" {
+		contexts, contextErr := documentWritingContexts(r.Context(), target)
+		if contextErr != nil {
+			replyDocumentFailure(w, documentFailure("DOCUMENT_ACTION_FAILED", 500))
+			return
+		}
+		artifactPayload["writing_contexts"] = contexts
+	}
+	artifact, _ := json.Marshal(artifactPayload)
 	response, status, err := algo.InvokeDocumentAction(r.Context(), algo.DocumentActionInvokeRequest{
-		Reference: documentRewriteReference, Phase: phase, Artifact: artifact, Arguments: request.arguments, ArtifactStore: artifactStore, LLMConfig: config,
+		Reference: documentRewriteReference, Phase: phase, Artifact: artifact, Arguments: request.arguments, ArtifactStore: artifactStore, LLMConfig: config, Timeout: 5 * time.Minute,
 	})
 	if err != nil {
 		replyDocumentFailure(w, documentUpstreamFailure(status, err))
@@ -406,6 +417,30 @@ func runDocumentRewrite(w http.ResponseWriter, r *http.Request, phase, owner str
 	}
 	NotifyWorkflowArtifactUpdated(r.Context(), target.db, saved.SessionID, saved.StepID, saved.SlotID, saved.Slot, saved.Revision, saved.ListIndex, "human")
 	common.ReplyOK(w, DocumentRewriteExecuteResult{ArtifactID: saved.ID, Revision: saved.Revision, DraftVersion: 1})
+}
+
+func documentWritingContexts(ctx context.Context, target *documentActionContext) ([]json.RawMessage, error) {
+	artifacts, err := workflowstore.New(target.db).ListArtifacts(ctx, target.owner, target.session.ID)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(artifacts, func(i, j int) bool { return artifacts[i].CreatedAt.After(artifacts[j].CreatedAt) })
+	contexts := make([]json.RawMessage, 0)
+	for _, artifact := range artifacts {
+		if artifact.Validity != "effective" {
+			continue
+		}
+		var envelope struct {
+			Schema string          `json:"schema"`
+			Data   json.RawMessage `json:"data"`
+		}
+		if json.Unmarshal(artifact.Value, &envelope) != nil ||
+			envelope.Schema != "lazyllm.tools.writer.data_models.context.WritingContext" {
+			continue
+		}
+		contexts = append(contexts, envelope.Data)
+	}
+	return contexts, nil
 }
 
 func prepareDocumentAction(ctx context.Context, owner, id string, request documentActionRequest, checkLive bool) (*documentActionContext, error) {
