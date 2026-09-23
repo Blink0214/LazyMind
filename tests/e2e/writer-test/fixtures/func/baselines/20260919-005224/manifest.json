@@ -1,0 +1,63 @@
+{
+  "created_at": "2026-09-18T16:52:24.170268+00:00",
+  "sources": {
+    "obsidian": {
+      "status": "saved",
+      "document_id": "露营指南.md",
+      "title": "露营指南",
+      "revision": "9c428ef50d40410c0a3d0c16e8505db523bfaf00d90c21edc8b6c74b971eb928",
+      "sha256": "9c428ef50d40410c0a3d0c16e8505db523bfaf00d90c21edc8b6c74b971eb928",
+      "baseline_file": "camping-guide.md",
+      "vault": "/Users/chensiyu2/Documents/Obsidian Vault",
+      "local_path": "/Users/chensiyu2/Documents/Obsidian Vault/露营指南.md",
+      "restore_original": {
+        "replace": {
+          "from": "```json\n{",
+          "to": "```\n{"
+        },
+        "trailing_newlines": 0
+      },
+      "note": "共用 Markdown 加了 json 语言标签和末尾换行；精确恢复原笔记时按 restore_original 还原，再校验原始 SHA-256。",
+      "file_sha256": "625b680fb656d00c6dd8fc7be93515f332a6417543e6cc0a9e335f025b181033"
+    },
+    "notion": {
+      "status": "saved",
+      "document_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+      "title": "周末露营活动指南",
+      "revision": "2026-09-18T16:34:00.000Z",
+      "content_sha256": "d917e4715a9f679f09056c706c86285dc97d2359ef4cb011fae6ea12a99ec75f",
+      "baseline_file": "notion.json",
+      "file_sha256": "af859082db99bf86ba074865cc46e228f66acfcc64b57aa7c6669397e7943cea"
+    },
+    "wechat": {
+      "status": "saved",
+      "document_id": "Kiht2tDbEYTbO_-S-HguBkbuVmFF-dtBo35UV_F8j4UG7z3M9xO9EaIj2uJXBWQu:article-0",
+      "title": "周末露营活动指南",
+      "revision": "54450b30fb62c14279165cb741b2b9cd0e983104c74e7bfd11cb4977e88265ec",
+      "image_count": 0,
+      "content_sha256": "f325c7e8ad25f62b0b8191e78b73a1114a73e7fc437c8bc3d9d08cc9cbedef7e",
+      "baseline_file": "wechat.json",
+      "file_sha256": "f3d28530713ffd3d0bc611ddb91bc83480f6ff34ce24ddc091669cc7017c8263"
+    },
+    "github": {
+      "status": "uploaded_and_verified",
+      "repository": "Blink0214/LazyMind",
+      "branch": "github-test",
+      "path": "tests/e2e/fixtures/camping-guide.md",
+      "base_commit": "db26dbc80407c9b52c1067d8e8b7fc67eeeff5d3",
+      "commit": "0ff08f19052437f6bd5beb242f02f4a3df32d562",
+      "sha256": "625b680fb656d00c6dd8fc7be93515f332a6417543e6cc0a9e335f025b181033",
+      "url": "https://github.com/Blink0214/LazyMind/blob/github-test/tests/e2e/fixtures/camping-guide.md",
+      "baseline_file": "camping-guide.md",
+      "file_sha256": "625b680fb656d00c6dd8fc7be93515f332a6417543e6cc0a9e335f025b181033"
+    }
+  },
+  "comparison": "Notion text matches Obsidian in order. WeChat prose and table match; JSON example uses curly quotes instead of ASCII quotes (4 lines). Original HTML preserved without correction.",
+  "notes": [
+    "此目录已取消 Git 忽略，可随测试用例纳入版本管理。",
+    "三份源文档均无图片附件。",
+    "Notion 原始块含只读字段，恢复前需转换为可创建块；当前尚无已验证的恢复脚本。",
+    "微信 JSON 示例弯引号保留原样，未修改源草稿。",
+    "R03 仍为旧 README 修订要求，待确认后更新 YAML 目标和提示词。"
+  ]
+}

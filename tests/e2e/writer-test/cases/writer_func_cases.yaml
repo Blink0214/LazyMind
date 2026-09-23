@@ -1,0 +1,602 @@
+schema_version: 2
+suite: ai-writer-core
+
+fixtures:
+  markdown_outline: {kind: local_file, path: fixtures/func/writer-outline.md}
+  markdown_full: {kind: local_file, path: fixtures/func/writer-full.md}
+  markdown_refs: {kind: local_file, path: fixtures/func/writer-refs.md}
+
+# 飞书测试文档统一登记（URL + 基线版本），功能与性能各自独立记录。
+# 基线以文档当前状态为准：跑前比较当前正文与 baseline_revision_id 内容，
+# 不同则 history-revert 到 history_version_id。
+feishu_docs:
+  outline:            # 功能测试大纲（C03/I02）
+    url: https://sensetime.feishu.cn/wiki/FgOfw3gh8ivcajk8FPyc086Knvg
+    history_version_id: '32768'
+    baseline_revision_id: 78
+  full:               # 功能测试全文（C05/C07）
+    url: https://sensetime.feishu.cn/wiki/G828wPWqDiokGvkqTNzcUPuDnec
+    history_version_id: '31744'
+    baseline_revision_id: 95
+
+# 非飞书文档统一登记；reference 为 URL / URI，微信按草稿完整标题定位。
+provider_docs:
+  notion_file:
+    provider: notion
+    reference: "https://app.notion.com/p/3df7b0d754e080b7a5c8dc5a5f4fb186"
+  github_file:
+    provider: github
+    reference: "https://github.com/Blink0214/LazyMind/blob/github-test/tests/e2e/fixtures/camping-guide.md"
+  obsidian_file:
+    provider: obsidian
+    reference: "obsidian://open?vault=Obsidian%20Vault&file=%E9%9C%B2%E8%90%A5%E6%8C%87%E5%8D%97"
+  wechat_title:
+    provider: wechat
+    reference: "周末露营活动指南"
+
+scenarios:
+  - id: C01
+    title: 从零创建 Markdown 全文
+    request:
+      text: 写一篇面向社会公众的《台风天安全防范指南》公众号文章，全文1500字左右，无需配图。
+      attachment: {kind: none}
+    expected:
+      route: create
+      steps: [prepare, outline, write_document]
+      workspaces:
+        prepare: {structure_mode: sectioned, representation: markdown, next_step: outline}
+        outline: {operation: generate, next_step: write_document}
+        write_document: {operation: generate, representation: markdown, next_step: __end__}
+      tools:
+        # 新业务逻辑将各步骤封装为顶层 workspace 工具，内部子步骤不再单独出 trace。
+        required: [writer_prepare_workspace, writer_outline_workspace, writer_draft_workspace]
+        forbidden: []
+      artifacts:
+        required:
+          outline_document: {extension: .md}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [source_document, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content: {min_chars: 900, max_chars: 2800}
+      sse: {required: true, min_deltas: 2, reconstruct_final: true}
+
+  - id: C02
+    title: 根据 Markdown 大纲扩写全文
+    request:
+      text: 请根据我上传的大纲扩写成一篇完整文章，全文1500字左右，无需配图。
+      attachment: {fixture: markdown_outline}
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          outline_document: {extension: .md}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content: {min_chars: 900, max_chars: 2800, source_heading_coverage_min: 0.8}
+
+  - id: C03
+    title: 根据飞书 IR 大纲扩写全文
+    request:
+      text: 请根据这份飞书大纲扩写成一篇完整文章，全文1500字左右，正文中无需配图：${outline}
+    feishu_doc: outline
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: outline, provider: feishu}
+          target_document: {provider: feishu}
+          outline_document: {extension: .lmd, stage: outline}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+          document_write_result: {success: true}
+        forbidden: []
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {mode: replace, calls: 1, provider_revision_increases: true}
+      content: {min_chars: 900, max_chars: 2800, source_heading_coverage_min: 0.8}
+      provider_materialization: true
+
+  - id: C04
+    title: Markdown 全文重写
+    request:
+      text: 请重写我上传的完整文章并调整结构，全文1500字左右，无需配图。
+      attachment: {fixture: markdown_full}
+    expected:
+      route: rewrite
+      steps: [prepare, write_document]
+      workspaces:
+        prepare: {structure_mode: sectioned, representation: markdown, next_step: write_document}
+        write_document: {operation: rewrite, representation: markdown, next_step: __end__}
+      tools:
+        required: [writer_prepare_workspace, writer_draft_workspace]
+        forbidden: [writer_outline_workspace]
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [outline_document, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content: {min_chars: 900, max_chars: 2800, source_similarity_max: 0.95}
+
+  - id: C05
+    title: 飞书 IR 全文重写
+    request:
+      text: 请重写这篇飞书文章并调整结构，全文1500字左右，无需配图：${full} 
+    feishu_doc: full
+    expected:
+      route: rewrite
+      steps: [prepare, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: draft_or_final, provider: feishu}
+          target_document: {provider: feishu}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+          document_write_result: {success: true}
+        forbidden: [outline_document]
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {mode: replace, calls: 1, provider_revision_increases: true}
+      content: {min_chars: 900, max_chars: 2800, source_similarity_max: 0.95}
+      provider_materialization: true
+
+  - id: C06
+    title: Markdown 组合局部修改
+    request:
+      text: >-
+        请对我上传的完整文章执行以下修改，其他内容保持不变：1) 在“台风来临前的准备工作”这一章后面插入新的一章“应急物资准备”；
+        2) 将“台风过后的注意事项”和“台风期间的安全措施”两个章节交换顺序。
+      attachment: {fixture: markdown_full}
+    expected:
+      route: revise
+      steps: [prepare, write_document]
+      modify_types: [create, move]
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          document_revision_task: {task_type: revise}
+          document_modify_plan: {}
+          document_revision_set: {schema: lazyllm.tools.writer.data_models.revision.StringReplaceSet}
+          document_revision_result: {success: true}
+        forbidden: [outline_document, section_instructions, draft_blocks, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content:
+        required_headings: [应急物资准备]
+        # 新提示词不再要求删除或改写，这些原文应保留。
+        required_text:
+          - 地下通道、地下车库及下沉式建筑
+          - 台风过境后，天气的短暂好转往往容易让人误以为危险已经完全解除，实际上灾后环境中潜藏着诸多次生风险。这一阶段的核心原则是：在没有接到官方明确的风险解除通知前，仍须保持高度警惕，所有行动应以安全评估为前提。
+        ordered_headings: [台风来临前的准备工作, 应急物资准备, 台风过后的注意事项, 台风期间的安全措施]
+        source_similarity_min: 0.55
+
+  - id: C07
+    title: 飞书 IR 组合局部修改
+    request:
+      text: >-
+        请对这篇飞书文章执行以下修改，其他内容保持不变：1) 在“台风来临前的准备工作”这一章后面插入新的一章“应急物资准备”；
+        2) 将“台风过后的注意事项”和“台风期间的安全措施”两个章节交换顺序：${full}
+    feishu_doc: full
+    expected:
+      route: revise
+      steps: [prepare, write_document]
+      modify_types: [create, move]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: draft_or_final, provider: feishu}
+          document_revision_task: {task_type: revise}
+          document_modify_plan: {}
+          document_revision_set: {schema: lazyllm.tools.writer.data_models.revision.PatchSet}
+          document_revision_result: {success: true}
+        forbidden: [outline_document, section_instructions, draft_blocks]
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {tool: writer_publish_revision, calls: 1, provider_revision_increases: true}
+      content:
+        required_headings: [应急物资准备]
+        # 新提示词不再要求删除或改写，这些原文应保留。
+        required_text:
+          - 地下通道、地下车库及下沉式建筑
+          - 台风过境后，天气的短暂好转往往容易让人误以为危险已经完全解除，实际上灾后环境中潜藏着诸多次生风险。这一阶段的核心原则是：在没有接到官方明确的风险解除通知前，仍须保持高度警惕，所有行动应以安全评估为前提。
+        ordered_headings: [台风来临前的准备工作, 应急物资准备, 台风过后的注意事项, 台风期间的安全措施]
+        source_similarity_min: 0.55
+      provider_materialization: true
+
+  - id: I01
+    title: Markdown 配图插入
+    request:
+      text: >-
+        请写一篇面向社会公众的《台风天安全防范指南》公众号文章，全文1500字左右。正文需要包含至少 2 张与内容紧密相关的配图并插入对应章节。
+      attachment: {kind: none}
+    expected:
+      route: create
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          outline_document: {extension: .md}
+          section_instructions: {}
+          visual_plan: {}
+          resolved_media_assets: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [source_document, document_write_result]
+      media: {min_images: 2}
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content: {min_chars: 900, max_chars: 2800}
+
+  - id: I02
+    title: 飞书 IR 配图插入
+    request:
+      text: >-
+        请根据这份飞书大纲完成全文，全文1500字左右，正文需要包含至少 2 张与内容紧密相关的配图并插入对应章节：${outline}。
+    feishu_doc: outline
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: outline, provider: feishu}
+          target_document: {provider: feishu}
+          outline_document: {extension: .lmd, stage: outline}
+          section_instructions: {}
+          visual_plan: {}
+          resolved_media_assets: {}
+          draft_blocks: {min_items: 1}
+          document_write_result: {success: true}
+        forbidden: []
+      media: {min_images: 2}
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {mode: replace, calls: 1, provider_revision_increases: true}
+      content: {min_chars: 900, max_chars: 2800, source_heading_coverage_min: 0.8}
+      provider_materialization: true
+
+  - id: X01
+    title: Markdown 创建含章节交叉引用
+    request:
+      text: >-
+        请写一篇面向社会公众的《台风天安全防范指南》公众号文章，全文1500字左右，无需配图。正文需要包含至少 1 处提及其他章节的内部交叉引用。
+      attachment: {kind: none}
+    expected:
+      route: create
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          outline_document: {extension: .md}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [source_document, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      image_calls: 0
+      content: {min_chars: 900, max_chars: 2800}
+      cross_ref: {min_links: 1, min_section_links: 1}
+      ref_integrity: true
+      numbering: {require: true}
+
+  - id: X02
+    title: 飞书 IR 成稿含章节引用
+    request:
+      text: >-
+        请根据这份飞书大纲完成全文，全文1500字左右，无需配图。正文需要包含至少 1 处提及其他章节的内部交叉引用：${outline}。
+    feishu_doc: outline
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: outline, provider: feishu}
+          target_document: {provider: feishu}
+          outline_document: {extension: .lmd, stage: outline}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+          document_write_result: {success: true}
+        forbidden: []
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {mode: replace, calls: 1, provider_revision_increases: true}
+      image_calls: 0
+      content: {min_chars: 900, max_chars: 2800, source_heading_coverage_min: 0.8}
+      cross_ref: {min_links: 1, min_section_links: 1}
+      ref_integrity: {require_numbering: true}
+      numbering: {require: true}
+      provider_materialization: true
+
+  - id: X03
+    title: 含交叉引用的 Markdown 局部修改后引用保留
+    request:
+      text: >-
+        请对我上传的完整文章执行以下修改，其他内容保持不变：将《台风过境后的注意事项》整个章节移动到
+        《台风期间的安全措施》之前（调整章节顺序），保证正文中的原有的所有交叉引用链接正确，无需新增或生成图片。
+      attachment: {fixture: markdown_refs}
+    expected:
+      route: revise
+      steps: [prepare, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          document_revision_task: {task_type: revise}
+          document_modify_plan: {}
+          document_revision_set: {schema: lazyllm.tools.writer.data_models.revision.StringReplaceSet}
+          document_revision_result: {success: true}
+        forbidden: [outline_document, section_instructions, draft_blocks, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      image_calls: 0
+      content:
+        ordered_headings: [台风过境后的注意事项, 台风期间的安全措施]
+        source_similarity_min: 0.7
+      cross_ref: {min_links: 2, preserve_from_source: true}
+      ref_integrity: true
+      numbering: {require: true}
+      ref_number_consistency: true
+
+  # 写作 3.0（9月）新增用例，来源文档 revision 771：
+  # https://sensetime.feishu.cn/wiki/MnyvwLI9xiXd61ky83scTHsHnyc
+  # acceptance 是验收设计元数据，当前 case_loader/Runner 不执行此字段。
+  # 新增用例的发布、复制、非飞书基线与独立回读尚未接入；机械通过不代表完整验收通过。
+  - id: W01
+    title: 0→1 多平台写入
+    request:
+      text: 写一篇《周末露营准备指南》，约1500字，包含装备清单、行程安排和安全提醒。正文需要有两张配图、一张装备表格、有序和无序列表，以及一个用 JSON 记录行程的代码块。
+      attachment:
+        kind: none
+    expected:
+      route: create
+      steps:
+      - prepare
+      - outline
+      - write_document
+      artifacts:
+        required:
+          outline_document:
+            extension: .md
+          section_instructions: {}
+          draft_blocks:
+            min_items: 1
+        forbidden:
+        - source_document
+        - document_write_result
+      final:
+        extension: .md
+        representation: markdown
+        new_revision: true
+      write_back:
+        calls: 0
+      content:
+        min_chars: 900
+        max_chars: 2800
+      media:
+        min_images: 2
+    acceptance:
+      automation_status: generation_only; publication/readback pending
+      providers:
+      - feishu
+      - notion
+      - github
+      - wechat
+      - obsidian
+      steps:
+      - 检查生成稿包含文本、两张配图、装备表格、有序和无序列表、JSON 代码块。
+      - 固定同一份生成稿，通过 UI 分别发布到五个平台；各平台独立记录结果。
+      - 独立回读目标文档，检查正文、表格、列表、代码及图片引用保留。
+      - 汇总实际返回的文档链接；微信无预览链接时记录草稿 ID，Obsidian 记录本地路径。
+      - 人工打开目标文档核查图文显示。
+      note: write_back.calls=0 只检查生成阶段，不包含后续 UI 主动发布。
+
+  - id: E02
+    title: Markdown / LaTeX 复制
+    request:
+      text: 写一篇《机器学习中的常见损失函数》，介绍均方误差、交叉熵和 Huber 损失，包含相关公式和推导、一张对比表格、使用建议列表及 Python 示例代码，约1500字，无需配图。
+      attachment:
+        kind: none
+    expected:
+      route: create
+      steps:
+      - prepare
+      - outline
+      - write_document
+      artifacts:
+        required:
+          outline_document:
+            extension: .md
+          section_instructions: {}
+          draft_blocks:
+            min_items: 1
+        forbidden:
+        - source_document
+        - document_write_result
+      final:
+        extension: .md
+        representation: markdown
+        new_revision: true
+      write_back:
+        calls: 0
+      content:
+        min_chars: 900
+        max_chars: 2800
+      image_calls: 0
+    acceptance:
+      automation_status: generation_only; render/clipboard pending
+      steps:
+      - 检查 LazyMind 中公式与推导、对比表格、建议列表、Python 代码块正常渲染。
+      - 对同一份稿件分别点击复制 Markdown 和 LaTeX，保存实际剪贴板内容。
+      - 检查复制内容保留公式、表格、列表及代码块。
+      - 人工粘贴到语雀与 Overleaf，分别核查显示与 LaTeX 编译结果。
+
+  - id: R01
+    provider_doc: notion_file
+    title: Revise Notion
+    constraints: revise
+    request:
+      text: 修改这份Notion文档，将“安全与环保”整节移到“装备准备”之前，其他内容不变：${notion_file}
+      attachment:
+        kind: none
+    expected:
+      route: revise
+      steps:
+      - prepare
+      - write_document
+      artifacts:
+        required:
+          source_document:
+            provider: notion
+          document_revision_task:
+            task_type: revise
+          document_modify_plan: {}
+          document_revision_result:
+            success: true
+        forbidden:
+        - outline_document
+        - section_instructions
+        - draft_blocks
+      final:
+        provider: notion
+        new_revision: true
+      write_back:
+        calls: 1
+    acceptance:
+      automation_status: provider baseline/readback and business checks pending
+      provider: notion
+      preconditions:
+      - 运行前保存并确认原始基线；重复执行前恢复基线或使用经确认的测试副本。
+      steps:
+      - 安全与环保章节整体位于装备准备之前，无重复或丢失。
+      - 确认目标文档实际写回成功，独立回读并与修订前基线比对。
+      - 未要求修改的正文、结构和图片保持不变；保存目标链接或路径供人工核查。
+      source_registry_key: notion_file
+
+  - id: R02
+    provider_doc: wechat_title
+    title: Revise Wechat
+    constraints: revise
+    request:
+      text: 修改微信公众号草稿箱中的《${wechat_title}》，将“安全与环保”章节改得具体些，让第一次露营的人知道该注意什么。
+      attachment:
+        kind: none
+    expected:
+      route: revise
+      steps:
+      - prepare
+      - write_document
+      artifacts:
+        required:
+          source_document:
+            provider: wechat
+          document_revision_task:
+            task_type: revise
+          document_modify_plan: {}
+          document_revision_result:
+            success: true
+        forbidden:
+        - outline_document
+        - section_instructions
+        - draft_blocks
+      final:
+        provider: wechat
+        new_revision: true
+      write_back:
+        calls: 1
+    acceptance:
+      automation_status: provider baseline/readback and business checks pending
+      provider: wechat
+      preconditions:
+      - 运行前保存并确认原始基线；重复执行前恢复基线或使用经确认的测试副本。
+      steps:
+      - 按完整标题定位草稿；同名草稿需先确认，不任意选择。
+      - 安全与环保章节改写为具体、可操作的新手建议。
+      - 确认目标文档实际写回成功，独立回读并与修订前基线比对。
+      - 未要求修改的正文、结构和图片保持不变；保存目标链接或路径供人工核查。
+
+  - id: R03
+    provider_doc: github_file
+    title: Revise Github
+    constraints: revise
+    request:
+      text: '修改这份《周末露营活动指南》，在“活动概况”章节新增一张露营相关的宣传图： ${github_file} 。'
+      attachment:
+        kind: none
+    expected:
+      route: revise
+      steps:
+      - prepare
+      - write_document
+      artifacts:
+        required:
+          source_document:
+            provider: github
+          document_revision_task:
+            task_type: revise
+          document_modify_plan: {}
+          document_revision_result:
+            success: true
+        forbidden:
+        - outline_document
+        - section_instructions
+        - draft_blocks
+      final:
+        provider: github
+        new_revision: true
+      write_back:
+        calls: 1
+    acceptance:
+      automation_status: provider baseline/readback and business checks pending
+      provider: github
+      preconditions:
+      - 运行前保存并确认原始基线；重复执行前恢复基线或使用经确认的测试副本。
+      steps:
+      - 在“活动概况”章节新增一张露营相关的宣传图，图片引用有效且能够正常显示。
+      - 原有章节正文与图片保留。
+      - 回读实际写入分支或提交；若生成 PR，不用默认分支代替。
+      - 确认目标文档实际写回成功，独立回读并与修订前基线比对。
+      - 未要求修改的正文、结构和图片保持不变；保存目标链接或路径供人工核查。
+      source_registry_key: github_file
+
+      
+  - id: R04
+    provider_doc: obsidian_file
+    title: Revise Obsidian
+    constraints: revise
+    request:
+      text: 修改这个Obsidian文档，在“安全与环保”章节补充一段迷路时的应对办法，写得实用一点：${obsidian_file}
+      attachment:
+        kind: none
+    expected:
+      route: revise
+      steps:
+      - prepare
+      - write_document
+      artifacts:
+        required:
+          source_document:
+            provider: obsidian
+          document_revision_task:
+            task_type: revise
+          document_modify_plan: {}
+          document_revision_result:
+            success: true
+        forbidden:
+        - outline_document
+        - section_instructions
+        - draft_blocks
+      final:
+        provider: obsidian
+        new_revision: true
+      write_back:
+        calls: 1
+    acceptance:
+      automation_status: provider baseline/readback and business checks pending
+      provider: obsidian
+      preconditions:
+      - 运行前保存并确认原始基线；重复执行前恢复基线或使用经确认的测试副本。
+      steps:
+      - 在安全与环保章节新增实用的迷路应对段落。
+      - 运行前确认 Obsidian Vault 对应的实际本地路径。
+      - 确认目标文档实际写回成功，独立回读并与修订前基线比对。
+      - 未要求修改的正文、结构和图片保持不变；保存目标链接或路径供人工核查。
+      source_registry_key: obsidian_file

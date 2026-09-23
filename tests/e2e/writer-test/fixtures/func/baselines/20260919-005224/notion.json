@@ -1,0 +1,1608 @@
+{
+  "provider": "notion",
+  "document_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+  "revision_id": "2026-09-18T16:34:00.000Z",
+  "content": "一、活动概况\n本次露营面向初次参加户外活动的朋友，计划于周六在青山营地举行，共 6 人参加。集合时间为上午 9:00，集合地点为公园东门，预计下午 17:00 返回。\n活动以休闲体验为主，包括搭建帐篷、户外午餐和自然观察。\n二、装备准备\n以下装备由参与者提前准备，出发前统一清点。\n装备名称\t数量\t用途\n帐篷\t2 顶\t休息与遮阳\n野餐垫\t3 张\t就餐与放置物品\n饮用水\t12 瓶\t补充水分\n急救包\t1 个\t处理轻微擦伤\n个人随身物品：\n遮阳帽和防晒霜\n轻便外套\n个人餐具\n垃圾袋\n三、行程安排\n09:00 在公园东门集合，清点人员和装备。\n10:00 到达营地，分组搭建帐篷。\n12:00 进行户外午餐。\n14:00 开展自然观察和自由活动。\n16:30 收拾装备，清理营地。\n17:00 集合返程。\n四、摄影打卡\n午餐后安排 20 分钟拍照时间，参与者可以在营地入口和草地区域合影。照片由活动结束后的值日人员统一整理。\n五、安全与环保\n出发前查看天气预报，遇到雷雨或大风天气时取消活动。活动过程中不要单独离队，儿童应由家长陪同。\n离开营地前，请带走全部垃圾，检查是否遗漏个人物品，并恢复场地原貌。\n六、活动记录示例\n可以使用以下 JSON 记录本次活动信息：\n{\n  \"destination\": \"青山营地\",\n  \"meeting_time\": \"09:00\",\n  \"participants\": 6,\n  \"equipment\": [\"帐篷\", \"野餐垫\", \"饮用水\", \"急救包\"]\n}",
+  "title": "周末露营活动指南",
+  "url": "https://app.notion.com/p/3df7b0d754e080b7a5c8dc5a5f4fb186",
+  "raw": {
+    "page": {
+      "cover": null,
+      "created_by": {
+        "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+        "object": "user"
+      },
+      "created_time": "2026-09-18T16:34:00.000Z",
+      "icon": null,
+      "id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+      "in_trash": false,
+      "is_archived": false,
+      "is_locked": false,
+      "last_edited_by": {
+        "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+        "object": "user"
+      },
+      "last_edited_time": "2026-09-18T16:34:00.000Z",
+      "object": "page",
+      "parent": {
+        "type": "workspace",
+        "workspace": true
+      },
+      "properties": {
+        "title": {
+          "id": "title",
+          "title": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "周末露营活动指南",
+              "text": {
+                "content": "周末露营活动指南",
+                "link": null
+              },
+              "type": "text"
+            }
+          ],
+          "type": "title"
+        }
+      },
+      "public_url": null,
+      "request_id": "9d5cea73-1b22-4d6f-b662-989a345de1ce",
+      "url": "https://app.notion.com/p/3df7b0d754e080b7a5c8dc5a5f4fb186"
+    },
+    "blocks": [
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "heading_1": {
+          "color": "default",
+          "is_toggleable": false,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "一、活动概况",
+              "text": {
+                "content": "一、活动概况",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "id": "3df7b0d7-54e0-8055-bc4f-e9078820e92b",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "heading_1"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-8040-b606-c7184c756c8c",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "paragraph": {
+          "color": "default",
+          "icon": null,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "本次露营面向初次参加户外活动的朋友，计划于周六在青山营地举行，共 6 人参加。集合时间为上午 9:00，集合地点为公园东门，预计下午 17:00 返回。",
+              "text": {
+                "content": "本次露营面向初次参加户外活动的朋友，计划于周六在青山营地举行，共 6 人参加。集合时间为上午 9:00，集合地点为公园东门，预计下午 17:00 返回。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "paragraph"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-80ed-9b8e-da64b210fa00",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "paragraph": {
+          "color": "default",
+          "icon": null,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "活动以休闲体验为主，包括搭建帐篷、户外午餐和自然观察。",
+              "text": {
+                "content": "活动以休闲体验为主，包括搭建帐篷、户外午餐和自然观察。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "paragraph"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "heading_1": {
+          "color": "default",
+          "is_toggleable": false,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "二、装备准备",
+              "text": {
+                "content": "二、装备准备",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "id": "3df7b0d7-54e0-80f5-95bc-cbeaebb9385c",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "heading_1"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-80c1-8e00-ffe793e3abd3",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "paragraph": {
+          "color": "default",
+          "icon": null,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "以下装备由参与者提前准备，出发前统一清点。",
+              "text": {
+                "content": "以下装备由参与者提前准备，出发前统一清点。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "paragraph"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": true,
+        "id": "3df7b0d7-54e0-800d-af18-e64ae98073ff",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "table": {
+          "has_column_header": true,
+          "has_row_header": false,
+          "table_width": 3
+        },
+        "type": "table",
+        "children": [
+          {
+            "created_by": {
+              "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+              "object": "user"
+            },
+            "created_time": "2026-09-18T16:34:00.000Z",
+            "has_children": false,
+            "id": "3df7b0d7-54e0-8057-9564-eaf37d9aee31",
+            "in_trash": false,
+            "last_edited_by": {
+              "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+              "object": "user"
+            },
+            "last_edited_time": "2026-09-18T16:34:00.000Z",
+            "object": "block",
+            "parent": {
+              "block_id": "3df7b0d7-54e0-800d-af18-e64ae98073ff",
+              "type": "block_id"
+            },
+            "table_row": {
+              "cells": [
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "装备名称",
+                    "text": {
+                      "content": "装备名称",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ],
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "数量",
+                    "text": {
+                      "content": "数量",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ],
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "用途",
+                    "text": {
+                      "content": "用途",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ]
+              ]
+            },
+            "type": "table_row"
+          },
+          {
+            "created_by": {
+              "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+              "object": "user"
+            },
+            "created_time": "2026-09-18T16:34:00.000Z",
+            "has_children": false,
+            "id": "3df7b0d7-54e0-800a-8a1b-cb5579da657c",
+            "in_trash": false,
+            "last_edited_by": {
+              "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+              "object": "user"
+            },
+            "last_edited_time": "2026-09-18T16:34:00.000Z",
+            "object": "block",
+            "parent": {
+              "block_id": "3df7b0d7-54e0-800d-af18-e64ae98073ff",
+              "type": "block_id"
+            },
+            "table_row": {
+              "cells": [
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "帐篷",
+                    "text": {
+                      "content": "帐篷",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ],
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "2 顶",
+                    "text": {
+                      "content": "2 顶",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ],
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "休息与遮阳",
+                    "text": {
+                      "content": "休息与遮阳",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ]
+              ]
+            },
+            "type": "table_row"
+          },
+          {
+            "created_by": {
+              "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+              "object": "user"
+            },
+            "created_time": "2026-09-18T16:34:00.000Z",
+            "has_children": false,
+            "id": "3df7b0d7-54e0-8000-8b70-d80888830fb1",
+            "in_trash": false,
+            "last_edited_by": {
+              "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+              "object": "user"
+            },
+            "last_edited_time": "2026-09-18T16:34:00.000Z",
+            "object": "block",
+            "parent": {
+              "block_id": "3df7b0d7-54e0-800d-af18-e64ae98073ff",
+              "type": "block_id"
+            },
+            "table_row": {
+              "cells": [
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "野餐垫",
+                    "text": {
+                      "content": "野餐垫",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ],
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "3 张",
+                    "text": {
+                      "content": "3 张",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ],
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "就餐与放置物品",
+                    "text": {
+                      "content": "就餐与放置物品",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ]
+              ]
+            },
+            "type": "table_row"
+          },
+          {
+            "created_by": {
+              "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+              "object": "user"
+            },
+            "created_time": "2026-09-18T16:34:00.000Z",
+            "has_children": false,
+            "id": "3df7b0d7-54e0-8029-99fa-de3339c66f3f",
+            "in_trash": false,
+            "last_edited_by": {
+              "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+              "object": "user"
+            },
+            "last_edited_time": "2026-09-18T16:34:00.000Z",
+            "object": "block",
+            "parent": {
+              "block_id": "3df7b0d7-54e0-800d-af18-e64ae98073ff",
+              "type": "block_id"
+            },
+            "table_row": {
+              "cells": [
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "饮用水",
+                    "text": {
+                      "content": "饮用水",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ],
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "12 瓶",
+                    "text": {
+                      "content": "12 瓶",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ],
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "补充水分",
+                    "text": {
+                      "content": "补充水分",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ]
+              ]
+            },
+            "type": "table_row"
+          },
+          {
+            "created_by": {
+              "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+              "object": "user"
+            },
+            "created_time": "2026-09-18T16:34:00.000Z",
+            "has_children": false,
+            "id": "3df7b0d7-54e0-8091-a625-db3a97e595f6",
+            "in_trash": false,
+            "last_edited_by": {
+              "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+              "object": "user"
+            },
+            "last_edited_time": "2026-09-18T16:34:00.000Z",
+            "object": "block",
+            "parent": {
+              "block_id": "3df7b0d7-54e0-800d-af18-e64ae98073ff",
+              "type": "block_id"
+            },
+            "table_row": {
+              "cells": [
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "急救包",
+                    "text": {
+                      "content": "急救包",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ],
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "1 个",
+                    "text": {
+                      "content": "1 个",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ],
+                [
+                  {
+                    "annotations": {
+                      "bold": false,
+                      "code": false,
+                      "color": "default",
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false
+                    },
+                    "href": null,
+                    "plain_text": "处理轻微擦伤",
+                    "text": {
+                      "content": "处理轻微擦伤",
+                      "link": null
+                    },
+                    "type": "text"
+                  }
+                ]
+              ]
+            },
+            "type": "table_row"
+          }
+        ]
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-80a8-b52f-d649315d72ca",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "paragraph": {
+          "color": "default",
+          "icon": null,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": true,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "个人随身物品",
+              "text": {
+                "content": "个人随身物品",
+                "link": null
+              },
+              "type": "text"
+            },
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "：",
+              "text": {
+                "content": "：",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "paragraph"
+      },
+      {
+        "bulleted_list_item": {
+          "color": "default",
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "遮阳帽和防晒霜",
+              "text": {
+                "content": "遮阳帽和防晒霜",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-8078-bb9b-c52c20937b0b",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "bulleted_list_item"
+      },
+      {
+        "bulleted_list_item": {
+          "color": "default",
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "轻便外套",
+              "text": {
+                "content": "轻便外套",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-8018-bc00-cbf5aa0d32c0",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "bulleted_list_item"
+      },
+      {
+        "bulleted_list_item": {
+          "color": "default",
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "个人餐具",
+              "text": {
+                "content": "个人餐具",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-80ba-be69-d33c56f0da29",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "bulleted_list_item"
+      },
+      {
+        "bulleted_list_item": {
+          "color": "default",
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "垃圾袋",
+              "text": {
+                "content": "垃圾袋",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-8053-a952-cbf0b64ecb78",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "bulleted_list_item"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "heading_1": {
+          "color": "default",
+          "is_toggleable": false,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "三、行程安排",
+              "text": {
+                "content": "三、行程安排",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "id": "3df7b0d7-54e0-807f-8a3c-c1d4a773f60c",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "heading_1"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-805c-b5db-e7d0e079f109",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "numbered_list_item": {
+          "color": "default",
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "09:00 在公园东门集合，清点人员和装备。",
+              "text": {
+                "content": "09:00 在公园东门集合，清点人员和装备。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "numbered_list_item"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-8030-995e-dfe2c85e385e",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "numbered_list_item": {
+          "color": "default",
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "10:00 到达营地，分组搭建帐篷。",
+              "text": {
+                "content": "10:00 到达营地，分组搭建帐篷。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "numbered_list_item"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-801c-aaaf-d92d7464de37",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "numbered_list_item": {
+          "color": "default",
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "12:00 进行户外午餐。",
+              "text": {
+                "content": "12:00 进行户外午餐。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "numbered_list_item"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-80d0-bc6f-d2086214c075",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "numbered_list_item": {
+          "color": "default",
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "14:00 开展自然观察和自由活动。",
+              "text": {
+                "content": "14:00 开展自然观察和自由活动。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "numbered_list_item"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-80f0-9439-ecfdb642bb64",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "numbered_list_item": {
+          "color": "default",
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "16:30 收拾装备，清理营地。",
+              "text": {
+                "content": "16:30 收拾装备，清理营地。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "numbered_list_item"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-8075-8d94-e51262029f7c",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "numbered_list_item": {
+          "color": "default",
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "17:00 集合返程。",
+              "text": {
+                "content": "17:00 集合返程。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "numbered_list_item"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "heading_1": {
+          "color": "default",
+          "is_toggleable": false,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "四、摄影打卡",
+              "text": {
+                "content": "四、摄影打卡",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "id": "3df7b0d7-54e0-80ab-a8b3-ec5259fcfe10",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "heading_1"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-800a-83ba-e7343803a25b",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "paragraph": {
+          "color": "default",
+          "icon": null,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "午餐后安排 20 分钟拍照时间，参与者可以在营地入口和草地区域合影。照片由活动结束后的值日人员统一整理。",
+              "text": {
+                "content": "午餐后安排 20 分钟拍照时间，参与者可以在营地入口和草地区域合影。照片由活动结束后的值日人员统一整理。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "paragraph"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "heading_1": {
+          "color": "default",
+          "is_toggleable": false,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "五、安全与环保",
+              "text": {
+                "content": "五、安全与环保",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "id": "3df7b0d7-54e0-803e-9341-c37ad0f9f030",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "heading_1"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-80c6-89d8-e5f91bda6412",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "paragraph": {
+          "color": "default",
+          "icon": null,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "出发前查看天气预报，遇到雷雨或大风天气时取消活动。活动过程中不要单独离队，儿童应由家长陪同。",
+              "text": {
+                "content": "出发前查看天气预报，遇到雷雨或大风天气时取消活动。活动过程中不要单独离队，儿童应由家长陪同。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "paragraph"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-804d-ab29-ce27579c6c5b",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "paragraph": {
+          "color": "default",
+          "icon": null,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "离开营地前，请带走全部垃圾，检查是否遗漏个人物品，并恢复场地原貌。",
+              "text": {
+                "content": "离开营地前，请带走全部垃圾，检查是否遗漏个人物品，并恢复场地原貌。",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "paragraph"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "heading_1": {
+          "color": "default",
+          "is_toggleable": false,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "六、活动记录示例",
+              "text": {
+                "content": "六、活动记录示例",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "id": "3df7b0d7-54e0-8027-ad87-e01caa768eea",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "heading_1"
+      },
+      {
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-80ba-b173-dc2aa311f1bc",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "paragraph": {
+          "color": "default",
+          "icon": null,
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "可以使用以下 JSON 记录本次活动信息：",
+              "text": {
+                "content": "可以使用以下 JSON 记录本次活动信息：",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "paragraph"
+      },
+      {
+        "code": {
+          "caption": [],
+          "language": "plain text",
+          "rich_text": [
+            {
+              "annotations": {
+                "bold": false,
+                "code": false,
+                "color": "default",
+                "italic": false,
+                "strikethrough": false,
+                "underline": false
+              },
+              "href": null,
+              "plain_text": "{\n  \"destination\": \"青山营地\",\n  \"meeting_time\": \"09:00\",\n  \"participants\": 6,\n  \"equipment\": [\"帐篷\", \"野餐垫\", \"饮用水\", \"急救包\"]\n}",
+              "text": {
+                "content": "{\n  \"destination\": \"青山营地\",\n  \"meeting_time\": \"09:00\",\n  \"participants\": 6,\n  \"equipment\": [\"帐篷\", \"野餐垫\", \"饮用水\", \"急救包\"]\n}",
+                "link": null
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "created_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "created_time": "2026-09-18T16:34:00.000Z",
+        "has_children": false,
+        "id": "3df7b0d7-54e0-8095-a8dd-dc7c657584e6",
+        "in_trash": false,
+        "last_edited_by": {
+          "id": "3add872b-594c-8118-bad4-0002ba1e2fff",
+          "object": "user"
+        },
+        "last_edited_time": "2026-09-18T16:34:00.000Z",
+        "object": "block",
+        "parent": {
+          "page_id": "3df7b0d7-54e0-80b7-a5c8-dc5a5f4fb186",
+          "type": "page_id"
+        },
+        "type": "code"
+      }
+    ]
+  }
+}
