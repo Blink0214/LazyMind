@@ -331,7 +331,12 @@ func runDocumentRewrite(w http.ResponseWriter, r *http.Request, phase, owner str
 			replyDocumentFailure(w, documentFailure("DOCUMENT_ACTION_FAILED", 500))
 			return
 		}
-		if !workflowstore.RewriteModelAvailable(config) {
+		ready, err := workflowstore.RewriteModelAvailable(r.Context(), config)
+		if err != nil {
+			replyDocumentFailure(w, documentFailure("DOCUMENT_ACTION_FAILED", 502))
+			return
+		}
+		if !ready {
 			replyDocumentFailure(w, documentFailure("MODEL_CONFIG_REQUIRED", 400))
 			return
 		}
