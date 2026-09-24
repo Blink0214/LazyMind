@@ -55,7 +55,6 @@ scenarios:
         required:
           outline_document: {extension: .md}
           section_instructions: {}
-          draft_blocks: {min_items: 1}
         forbidden: [source_document, document_write_result]
       final: {extension: .md, representation: markdown, new_revision: true}
       write_back: {calls: 0}
@@ -75,7 +74,6 @@ scenarios:
           source_document: {extension: .md}
           outline_document: {extension: .md}
           section_instructions: {}
-          draft_blocks: {min_items: 1}
         forbidden: [document_write_result]
       final: {extension: .md, representation: markdown, new_revision: true}
       write_back: {calls: 0}
@@ -95,7 +93,6 @@ scenarios:
           target_document: {provider: feishu}
           outline_document: {extension: .lmd, stage: outline}
           section_instructions: {}
-          draft_blocks: {min_items: 1}
           document_write_result: {success: true}
         forbidden: []
       final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
@@ -121,7 +118,6 @@ scenarios:
         required:
           source_document: {extension: .md}
           section_instructions: {}
-          draft_blocks: {min_items: 1}
         forbidden: [outline_document, document_write_result]
       final: {extension: .md, representation: markdown, new_revision: true}
       write_back: {calls: 0}
@@ -140,7 +136,6 @@ scenarios:
           source_document: {extension: .lmd, stage: draft_or_final, provider: feishu}
           target_document: {provider: feishu}
           section_instructions: {}
-          draft_blocks: {min_items: 1}
           document_write_result: {success: true}
         forbidden: [outline_document]
       final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
@@ -166,7 +161,7 @@ scenarios:
           document_modify_plan: {}
           document_revision_set: {schema: lazyllm.tools.writer.data_models.revision.StringReplaceSet}
           document_revision_result: {success: true}
-        forbidden: [outline_document, section_instructions, draft_blocks, document_write_result]
+        forbidden: [outline_document, section_instructions, document_write_result]
       final: {extension: .md, representation: markdown, new_revision: true}
       write_back: {calls: 0}
       content:
@@ -196,7 +191,7 @@ scenarios:
           document_modify_plan: {}
           document_revision_set: {schema: lazyllm.tools.writer.data_models.revision.PatchSet}
           document_revision_result: {success: true}
-        forbidden: [outline_document, section_instructions, draft_blocks]
+        forbidden: [outline_document, section_instructions]
       final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
       write_back: {tool: writer_publish_revision, calls: 1, provider_revision_increases: true}
       content:
@@ -208,6 +203,33 @@ scenarios:
         ordered_headings: [台风来临前的准备工作, 应急物资准备, 台风过后的注意事项, 台风期间的安全措施]
         source_similarity_min: 0.55
       provider_materialization: true
+
+  - id: C08
+    title: 从零创建 Markdown 分章节科幻小说
+    request:
+      text: 请启动 AI Writer，帮我写一篇科幻小说，讲述人类在一颗资源枯竭的流浪行星上发现远古文明遗迹、最终跨越种族隔阂重建家园的故事，包含序章、若干章节正文和尾声。 全文控制在 6000 字左右，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。
+      attachment: {kind: none}
+    expected:
+      route: create
+      steps: [prepare, outline, write_document]
+      workspaces:
+        prepare: {structure_mode: sectioned, representation: markdown, next_step: outline}
+        outline: {operation: generate, next_step: write_document}
+        write_document: {operation: generate, representation: markdown, next_step: __end__}
+      tools:
+        # 新业务逻辑将各步骤封装为顶层 workspace 工具，内部子步骤不再单独出 trace。
+        required: [writer_prepare_workspace, writer_outline_workspace, writer_draft_workspace]
+        forbidden: []
+      artifacts:
+        required:
+          outline_document: {extension: .md}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [source_document, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content: {min_chars: 5100, max_chars: 7500}
+      sse: {required: true, min_deltas: 2, reconstruct_final: true}
 
   - id: I01
     title: Markdown 配图插入
@@ -224,7 +246,6 @@ scenarios:
           section_instructions: {}
           visual_plan: {}
           resolved_media_assets: {}
-          draft_blocks: {min_items: 1}
         forbidden: [source_document, document_write_result]
       media: {min_images: 2}
       final: {extension: .md, representation: markdown, new_revision: true}
@@ -248,7 +269,6 @@ scenarios:
           section_instructions: {}
           visual_plan: {}
           resolved_media_assets: {}
-          draft_blocks: {min_items: 1}
           document_write_result: {success: true}
         forbidden: []
       media: {min_images: 2}
@@ -270,7 +290,6 @@ scenarios:
         required:
           outline_document: {extension: .md}
           section_instructions: {}
-          draft_blocks: {min_items: 1}
         forbidden: [source_document, document_write_result]
       final: {extension: .md, representation: markdown, new_revision: true}
       write_back: {calls: 0}
@@ -295,7 +314,6 @@ scenarios:
           target_document: {provider: feishu}
           outline_document: {extension: .lmd, stage: outline}
           section_instructions: {}
-          draft_blocks: {min_items: 1}
           document_write_result: {success: true}
         forbidden: []
       final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
@@ -324,7 +342,7 @@ scenarios:
           document_modify_plan: {}
           document_revision_set: {schema: lazyllm.tools.writer.data_models.revision.StringReplaceSet}
           document_revision_result: {success: true}
-        forbidden: [outline_document, section_instructions, draft_blocks, document_write_result]
+        forbidden: [outline_document, section_instructions, document_write_result]
       final: {extension: .md, representation: markdown, new_revision: true}
       write_back: {calls: 0}
       image_calls: 0
@@ -357,8 +375,6 @@ scenarios:
           outline_document:
             extension: .md
           section_instructions: {}
-          draft_blocks:
-            min_items: 1
         forbidden:
         - source_document
         - document_write_result
@@ -406,8 +422,6 @@ scenarios:
           outline_document:
             extension: .md
           section_instructions: {}
-          draft_blocks:
-            min_items: 1
         forbidden:
         - source_document
         - document_write_result
@@ -454,7 +468,6 @@ scenarios:
         forbidden:
         - outline_document
         - section_instructions
-        - draft_blocks
       final:
         provider: notion
         new_revision: true
@@ -496,7 +509,6 @@ scenarios:
         forbidden:
         - outline_document
         - section_instructions
-        - draft_blocks
       final:
         provider: wechat
         new_revision: true
@@ -538,7 +550,6 @@ scenarios:
         forbidden:
         - outline_document
         - section_instructions
-        - draft_blocks
       final:
         provider: github
         new_revision: true
@@ -583,7 +594,6 @@ scenarios:
         forbidden:
         - outline_document
         - section_instructions
-        - draft_blocks
       final:
         provider: obsidian
         new_revision: true

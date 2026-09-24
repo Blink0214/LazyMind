@@ -105,9 +105,6 @@ WRITER_PHASE_FUNCTIONS = {
         "writer_update_writing_context",
     },
 }
-WRITER_DRAFT_SPANS = {
-    "writer_generate_draft_blocks", "writer_generate_draft_blocks_markdown",
-}
 
 
 def step_id_from_observation(obs: dict) -> str:

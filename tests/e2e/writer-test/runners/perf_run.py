@@ -24,6 +24,7 @@ Skip trace fetch (output only run_N.json + final Markdown):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -45,6 +46,7 @@ from shared.api import (
     wait_for_writer_completion,
 )
 from shared.case_loader import Case, load_perf_case
+from shared.document_metrics import document_stats, revision_source_from_trace
 from shared.execution import (
     collect_trace_evidence,
     prepare_execution,
@@ -54,7 +56,7 @@ from shared.execution import (
 from analyze_common import analyze, run_checks
 from analyze_perf import avg_traces, render_table
 from validate_diagnostics import validate_diagnostics
-from shared.document_metrics import document_stats
+from shared.document_metrics import visible_text
 
 
 SESSION_START_GRACE_S = 20
@@ -149,7 +151,7 @@ def run_case(case: Case,
             base_url, session_obj.token, writer_session, str(final_md_path),
         )
         doc_stats_dict = _compute_document_stats(
-            case, final_md_path, output_dir, writer_session,
+            final_md_path, output_dir,
         )
         if compute_stats and doc_stats_dict is None:
             raise RuntimeError("document metrics unavailable")
@@ -172,6 +174,10 @@ def run_case(case: Case,
         trace_json = trace_evidence.trace
         trace_id = trace_evidence.trace_id
         trace_error = trace_evidence.error
+
+    if case.scenario in {"P04", "P05"} and final_md_path.is_file():
+        doc_stats_dict = _compute_document_stats(
+            final_md_path, output_dir, scenario=case.scenario, trace=trace_json)
 
     collection_validation = None
     if fetch_trace_after:
@@ -247,46 +253,31 @@ def _send(case: Case, state: dict, base_url: str, token: str, recipe: str) -> Ch
     return result
 
 
-def _compute_document_stats(case: Case, final_md_path: Path,
-                            output_dir: Path,
-                            session_payload: dict | None = None) -> dict | None:
-    """计算与数据表“生成/修改文章字数”对齐的文档度量，并落盘 document_stats.json。
-
-    写作类只出“生成字数”（最终可见字符）；修订类额外出“修改字数”
-    （相对原文的变更字符数，原文取附件或飞书基线版本，best-effort）。
-    """
+def _compute_document_stats(final_md_path: Path, output_dir: Path, *,
+                            scenario: str = "", trace: dict | None = None) -> dict | None:
+    """最终全文及修改量；修改基线只取本次 trace 的完整原文。"""
     if not final_md_path.is_file():
         return None
     try:
         final_md = final_md_path.read_text(encoding="utf-8")
-        original_md = None
-        if str(case.extras.get("constraints") or "") == "revise":
-            if case.has_attachment and case.attachment_path and case.attachment_path.is_file():
-                original_md = case.attachment_path.read_text(encoding="utf-8")
-            elif case.has_feishu_reference:
-                try:
-                    from shared.feishu import fetch_feishu_document
-                    baseline = int(case.extras.get("feishu_baseline_revision_id") or -1)
-                    original_md = fetch_feishu_document(
-                        str(case.extras["feishu_reference"]),
-                        revision_id=baseline,
-                    ).content
-                except Exception:
-                    original_md = None
-        stats = document_stats(final_md, original_md)
-        draft_indices = {
-            item.get("list_index")
-            for item in ((session_payload or {}).get("slots") or [])
-            if str((item or {}).get("slot_id") or "") == "draft_blocks"
-            and (item or {}).get("selected", True)
-            and (item or {}).get("list_index") is not None
-        }
-        if draft_indices:
-            stats["draft_sections"] = len(draft_indices)
-            stats["draft_sections_source"] = "session.list_index"
+        stats = {"final": {"visible_characters": len(visible_text(final_md))}}
+        if scenario in {"P04", "P05"}:
+            original, audit = revision_source_from_trace(trace, provider_title=scenario == "P05")
+            stats = document_stats(final_md, original)
+            audit["method"] = "visible_text_sequence_matcher_autojunk_false_added_plus_deleted_v1"
+            audit["final_sha256"] = hashlib.sha256(final_md.encode()).hexdigest()
+            if original is not None:
+                (output_dir / "original.recovered.md").write_text(original, encoding="utf-8")
+                audit["original_sha256"] = hashlib.sha256(original.encode()).hexdigest()
+            else:
+                (output_dir / "original.recovered.md").unlink(missing_ok=True)
+            if (output_dir / "trace.json").is_file():
+                audit["trace_sha256"] = hashlib.sha256((output_dir / "trace.json").read_bytes()).hexdigest()
+            stats["revision"]["source_audit"] = audit
+            (output_dir / "revision_audit.json").write_text(
+                json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
         path = output_dir / "document_stats.json"
-        path.write_text(json.dumps(stats, ensure_ascii=False, indent=2),
-                        encoding="utf-8")
+        path.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
         return stats
     except Exception:
         return None

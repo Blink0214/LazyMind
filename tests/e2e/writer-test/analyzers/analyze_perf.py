@@ -4,7 +4,7 @@
 统计维度对齐《写作性能优化》文档：每个阶段合并统计
 阶段总耗时、LLM 推理轮数与累计耗时、Agent 工具调用次数、工具实际执行时间、
 LLM 累计输入/输出（token 与原始载荷字符）；write_document 额外统计
-draft 章节数与生成/修改文章字数。
+最终全文可见字符数。
 
 阶段只统计 advance_step 的完整执行子树；步骤外发起决策只计全流程。
 workspace 用于识别阶段，不是计时边界；不使用前端状态或相邻阶段时间窗。
@@ -599,23 +599,6 @@ def _span_wall(spans, exclude_engine=False):
     )
 
 
-def _draft_chapters(writer_spans, index, valid_llms):
-    chapters = 0
-    for span in writer_spans:
-        if span.get("name") != "writer_draft_workspace":
-            continue
-        attrs = (span.get("metadata") or {}).get("attributes") or {}
-        raw = attrs.get("lazyllm.io.output") or ""
-        try:
-            payload = json.loads(raw) if raw.strip().startswith(("{", "[")) else {}
-        except json.JSONDecodeError:
-            payload = {}
-        count = (payload or {}).get("draft_section_count")
-        if isinstance(count, int):
-            chapters = max(chapters, count)
-    return chapters
-
-
 def _step_succeeded(group, index):
     last_succeeded = not _has_error(group["workspaces"][-1], index)
     outcome = group["root"].get("output")
@@ -677,7 +660,6 @@ def _phase_aggregate(observations, index, raw_llms, groups, phase):
             "input": agg["input"], "output": agg["output"],
             "input_chars": agg["input_chars"], "output_chars": agg["output_chars"],
             "chars_present": agg["chars_present"],
-            "chapters": _draft_chapters(items, index, llms),
         }
     result = bucket(full, full_wall)
     result["abnormal"] = bucket(abnormal, max(0.0, full_wall - normal_wall))
@@ -690,17 +672,15 @@ def _phase_aggregate(observations, index, raw_llms, groups, phase):
 
 def _doc_stats_for(doc_stats):
     """从 document_stats JSON 提取 write_document 字数指标。"""
-    result = {"gen_chars": None, "rev_chars": None, "draft_sections": None}
+    result = {"gen_chars": None, "modified_chars": None}
     if not doc_stats:
         return result
     final = doc_stats.get("final") or {}
     if final.get("visible_characters") is not None:
         result["gen_chars"] = int(final["visible_characters"])
     revision = doc_stats.get("revision") or {}
-    if revision.get("present") and revision.get("changed_final_characters") is not None:
-        result["rev_chars"] = int(revision["changed_final_characters"])
-    if doc_stats.get("draft_sections") is not None:
-        result["draft_sections"] = int(doc_stats["draft_sections"])
+    if revision.get("present") and revision.get("changed_characters") is not None:
+        result["modified_chars"] = int(revision["changed_characters"])
     return result
 
 
@@ -731,20 +711,40 @@ def extract(trace_data, doc_stats=None):
         doc = _doc_stats_for(doc_stats)
         for bucket in (phases["write_document"], phases["write_document"].get("normal")):
             if bucket is not None:
-                bucket.update(gen_chars=doc["gen_chars"], rev_chars=doc["rev_chars"])
-                if doc["draft_sections"] is not None:
-                    bucket["chapters"] = doc["draft_sections"]
+                bucket.update(doc)
     first_step = min(_interval(g["root"])[0] for g in groups.values())
     pre_workflow = _pre_workflow_bucket(observations, first_step, index, valid_llms)
     terminal_end = max(_interval(g["root"])[1] for g in groups.values())
     # Full link includes errors/retries; clean_full contains only successful final attempts.
     full_link = _agg_llms(raw_llms)
     clean_full = _clean_full_flow(observations, index, raw_llms, groups, phases)
+    # Report totals and retry components use exactly the clean_full terminal boundary.
+    # Post-terminal normal tail is not a failed retry.
+    bounded = [o for o in observations if _interval(o)[0] <= terminal_end]
+    total_full = _agg_llms([o for o in raw_llms if _interval(o)[0] <= terminal_end])
+    tc, tt = _tool_agg(_tool_calls(bounded), raw_llms, index)
+    total_full.update(wall=round(terminal_end - min(_interval(o)[0] for o in observations), 3),
+                      tool_count=tc, tool_time=round(tt, 3))
+    unknown_token_usage = []
+    for llm in raw_llms:
+        for side, legacy in (("input", "promptTokens"), ("output", "completionTokens")):
+            # Cumulative usage is authoritative only in usageDetails. Langfuse
+            # may populate legacy fields with zero when transport usage is absent.
+            if ((llm.get("usageDetails") or {}).get(side) is not None
+                    or (semantics == "per_call" and llm.get(legacy) is not None)):
+                continue
+            unknown_token_usage.append({"observation_id": llm["id"], "metric": side})
+            if _interval(llm)[0] <= terminal_end:
+                total_full[side] = None
+            step = _nearest_step(llm, index)
+            if step is not None:
+                phases[groups[step["id"]]["phase"]].setdefault("unknown_token_fields", []).append(side)
     retained_llm_ids = set(clean_full.pop("retained_llm_ids"))
     return {
         "wall": max(_interval(o)[1] for o in observations) - min(_interval(o)[0] for o in observations),
         "full_link": full_link, "pre_workflow": pre_workflow,
-        "clean_full": clean_full, "phases": phases,
+        "clean_full": clean_full, "total_full": total_full, "phases": phases,
+        "unknown_token_usage": unknown_token_usage,
         "usage_semantics": semantics, "usage_corrections": usage_corrections,
         "attribution": "workspace_step_tree" if links else "workspace_parent_tree",
         "step_links": links, "model_info": _model_info(valid_llms),
@@ -764,8 +764,8 @@ def _blank_phase():
         "wall": 0.0, "llm_count": 0.0, "llm_latency": 0.0,
         "tool_count": 0.0, "tool_time": 0.0,
         "input": 0, "output": 0, "input_chars": 0, "output_chars": 0,
-        "chars_present": 0, "chapters": 0.0,
-        "gen_chars": None, "rev_chars": None, "present": 0,
+        "chars_present": 0,
+        "gen_chars": None, "present": 0,
     }
 
 
@@ -847,6 +847,26 @@ def _clean_full_flow(observations, index, raw_llms, groups, phases):
     return result
 
 
+_REPORT_FIELDS = ("wall", "count", "latency", "tool_count", "tool_time",
+                  "input", "input_chars", "output", "output_chars")
+_PHASE_REPORT_FIELDS = ("wall", "llm_count", "llm_latency", "tool_count", "tool_time",
+                        "input", "output", "input_chars", "output_chars")
+
+
+def _report_average(rows, fields):
+    result = {key: (round(sum(row[key] for row in rows) / len(rows), 3)
+                    if rows and all(row.get(key) is not None for row in rows) else None)
+              for key in fields}
+    result["present"] = len(rows)
+    return result
+
+
+def _retry_component(total, normal, fields):
+    return {key: (round(max(0, total[key] - normal[key]), 3)
+                  if total.get(key) is not None and normal.get(key) is not None else None)
+            for key in fields}
+
+
 def avg_traces(traces_data, scenario, *, doc_stats=None):
     """Aggregate traces with document metrics aligned by case index."""
     n = len(traces_data)
@@ -886,7 +906,7 @@ def avg_traces(traces_data, scenario, *, doc_stats=None):
             return None
         out = _blank_phase()
         for key in ("wall", "llm_count", "llm_latency", "tool_count", "tool_time",
-                    "input", "output", "input_chars", "output_chars", "chapters"):
+                    "input", "output", "input_chars", "output_chars"):
             out[key] = round(sum(row.get(key, 0) or 0 for row in rows) / n, 3)
         for field in ("input_chars", "output_chars"):
             if any(row.get(field) is None for row in rows):
@@ -894,9 +914,7 @@ def avg_traces(traces_data, scenario, *, doc_stats=None):
         out["chars_present"] = sum(row.get("chars_present", 0) for row in rows)
         out["present"] = len(rows)
         gen_rows = [row.get("gen_chars") for row in rows if row.get("gen_chars") is not None]
-        rev_rows = [row.get("rev_chars") for row in rows if row.get("rev_chars") is not None]
         out["gen_chars"] = r1(sum(gen_rows) / len(gen_rows)) if gen_rows else None
-        out["rev_chars"] = r1(sum(rev_rows) / len(rev_rows)) if rev_rows else None
 
         def sub_bucket(key):
             candidates = ([t["phases"][phase] for t in successful if phase in t["phases"]]
@@ -906,7 +924,7 @@ def avg_traces(traces_data, scenario, *, doc_stats=None):
                 return None
             sub = _blank_phase()
             for k in ("wall", "llm_count", "llm_latency", "tool_count", "tool_time",
-                      "input", "output", "input_chars", "output_chars", "chapters"):
+                      "input", "output", "input_chars", "output_chars"):
                 sub[k] = round(
                     sum((r.get(k) or 0) for r in sub_rows) / len(sub_rows), 3,
                 )
@@ -916,9 +934,7 @@ def avg_traces(traces_data, scenario, *, doc_stats=None):
             sub["chars_present"] = sum(r.get("chars_present", 0) for r in sub_rows)
             sub["present"] = len(sub_rows)
             gen = [r.get("gen_chars") for r in sub_rows if r.get("gen_chars") is not None]
-            rev = [r.get("rev_chars") for r in sub_rows if r.get("rev_chars") is not None]
             sub["gen_chars"] = r1(sum(gen) / len(gen)) if gen else None
-            sub["rev_chars"] = r1(sum(rev) / len(rev)) if rev else None
             return sub
 
         abnormal = sub_bucket("abnormal")
@@ -969,6 +985,25 @@ def avg_traces(traces_data, scenario, *, doc_stats=None):
     clean_full["wall"] = round(
         sum(t["clean_full"]["wall"] for t in successful) / (len(successful) or 1), 3,
     )
+    reported_full = _report_average([t["total_full"] for t in successful], _REPORT_FIELDS)
+    reported_full["failed_retry"] = _report_average(
+        [_retry_component(t["total_full"], t["clean_full"], _REPORT_FIELDS)
+         for t in successful], _REPORT_FIELDS)
+    for phase, row in phases.items():
+        samples = [t["phases"][phase] for t in successful if phase in t["phases"]]
+        reported = _report_average(samples, _PHASE_REPORT_FIELDS)
+        reported["failed_retry"] = _report_average(
+            [p["abnormal"] for p in samples], _PHASE_REPORT_FIELDS)
+        for field in {f for p in samples for f in p.get("unknown_token_fields", [])}:
+            reported[field] = None
+            reported["failed_retry"][field] = None
+        chars = [p["gen_chars"] for p in samples if p.get("gen_chars") is not None]
+        reported["gen_chars"] = r1(sum(chars) / len(chars)) if chars else None
+        modified = [p.get("modified_chars") for p in samples]
+        reported["modified_chars"] = (r1(sum(modified) / len(modified))
+                                      if modified and all(v is not None for v in modified) else None)
+        row["reported"] = reported
+    reported_full["modified_chars"] = ((phases.get("write_document") or {}).get("reported") or {}).get("modified_chars")
     attribution = Counter(t["attribution"] for t in per_trace).most_common(1)[0][0]
     suppliers = sorted({s for t in per_trace for s in t["model_info"]["suppliers"]})
     request_models = sorted({
@@ -983,6 +1018,11 @@ def avg_traces(traces_data, scenario, *, doc_stats=None):
                            for i, t in enumerate(per_trace, 1) if t not in successful],
         "full_link": full_link,
         "clean_full": clean_full,
+        "reported_full": reported_full,
+        "unknown_token_usage": [{"case_index": i, **item}
+                                for i, t in enumerate(per_trace, 1)
+                                for item in t["unknown_token_usage"]],
+        "report_semantics": "total_with_failed_retry_component_v1",
         "phases": phases,
         "exceptions": exception_cases,
         "abnormal_cases": abnormal_cases,
@@ -1014,148 +1054,79 @@ def _fmt(value, unit="", blank="—"):
     return f"{value:,.3f} {unit}".strip()
 
 
-def _render_metric_table(phases, full_link, phase_key, title, note):
-    """按统一维度渲染一张三阶段统计表；phase_key 为 None 表示完整过程（full）。"""
-    def getp(p):
-        row = phases.get(p) or {}
-        return row if phase_key is None else (row.get(phase_key) or {})
+def _report_value(row, key):
+    """Numbers stay numeric unless an abnormal component needs parentheses."""
+    value = row.get(key)
+    if value is None:
+        return "—"
+    failure = (row.get("failed_retry") or {}).get(key)
+    if failure is not None and failure > 0:
+        return f"{_fmt(value)}({_fmt(failure)})"
+    return value
 
-    lines = [f"## {title}", "", f"> {note}", "",
+
+def _render_metric_table(phases, full):
+    lines = ["## 性能统计（总值包含失败重试）", "",
+             "> 数值格式：总值(失败重试部分)。括号内已包含在总值中；无失败重试部分时只显示总值。",
+             "> 时间单位为秒。墙钟括号内为失败独占时间，不重复扣算与正常工作重叠的时间。", "",
              "| 指标 | 全链路 | prepare | outline | write_document |",
              "|---|---:|---:|---:|---:|"]
-    full_value = (lambda v: v) if full_link is not None else (lambda v: "—")
-    rows = [
-        ("总耗时", full_value(f"{full_link['wall']:.3f} s（墙钟）" if full_link else "—"),
-         *(f"{_fmt(getp(p).get('wall'))} s" if getp(p) else "—" for p in PHASES)),
-        ("LLM 推理轮数", full_value(f"{full_link['count']:.1f}" if full_link else "—"),
-         *(f"{_fmt(getp(p).get('llm_count'))}" if getp(p) else "—" for p in PHASES)),
-        ("LLM 累计耗时", full_value(f"{full_link['latency']:.3f} s" if full_link else "—"),
-         *(f"{_fmt(getp(p).get('llm_latency'))} s" if getp(p) else "—" for p in PHASES)),
-        ("Agent 工具调用次数", _fmt((full_link or {}).get("tool_count")),
-         *(f"{_fmt(getp(p).get('tool_count'))}" if getp(p) else "—" for p in PHASES)),
-        ("工具实际执行时间", _fmt((full_link or {}).get("tool_time"), "s"),
-         *(f"{_fmt(getp(p).get('tool_time'))} s" if getp(p) else "—" for p in PHASES)),
-        ("LLM 累计输入 token", full_value(f"{full_link['input']:,}" if full_link else "—"),
-         *(f"{_fmt(getp(p).get('input'))}" if getp(p) else "—" for p in PHASES)),
-        ("LLM 累计输入字符", full_value(
-            f"{full_link.get('input_chars', 0):,}" if full_link and full_link.get("input_chars") else "—"),
-         *(f"{_fmt(getp(p).get('input_chars'))}" if getp(p) else "—" for p in PHASES)),
-        ("LLM 累计输出 token", full_value(f"{full_link['output']:,}" if full_link else "—"),
-         *(f"{_fmt(getp(p).get('output'))}" if getp(p) else "—" for p in PHASES)),
-        ("LLM 累计输出字符", full_value(
-            f"{full_link.get('output_chars', 0):,}" if full_link and full_link.get("output_chars") else "—"),
-         *(f"{_fmt(getp(p).get('output_chars'))}" if getp(p) else "—" for p in PHASES)),
-    ]
-    for label, fv, p1, p2, p3 in rows:
-        lines.append(f"| {label} | {fv} | {p1} | {p2} | {p3} |")
-    write = getp("write_document")
-    if write:
-        lines.append(f"| draft 章节数 | — | — | — | {_fmt(write.get('chapters'))} |")
-        lines.append(
-            f"| 生成/修改文章字数 | — | — | — | 生成 {_fmt(write.get('gen_chars'))} / "
-            f"修改 {_fmt(write.get('rev_chars'))} |"
-        )
+    metrics = [("总耗时", "wall", "wall"), ("LLM 推理轮数", "count", "llm_count"),
+               ("LLM 累计耗时", "latency", "llm_latency"),
+               ("Agent 工具调用次数", "tool_count", "tool_count"),
+               ("工具实际执行时间", "tool_time", "tool_time"),
+               ("LLM 累计输入 token", "input", "input"),
+               ("LLM 累计输入字符", "input_chars", "input_chars"),
+               ("LLM 累计输出 token", "output", "output"),
+               ("LLM 累计输出字符", "output_chars", "output_chars")]
+    def cell(row, key):
+        value = _report_value(row, key)
+        return value if isinstance(value, str) else _fmt(value)
+    for label, fk, pk in metrics:
+        values = [cell(full, fk)] + [cell((phases.get(p) or {}).get("reported") or {}, pk) for p in PHASES]
+        lines.append(f"| {label} | " + " | ".join(values) + " |")
+    write = (phases.get("write_document") or {}).get("reported") or {}
+    lines.append(f"| 全文字符数 | — | — | — | {_fmt(write.get('gen_chars'))} |")
+    lines.append(f"| 修改文章字数 | {_fmt(write.get('modified_chars'))} | — | — | {_fmt(write.get('modified_chars'))} |")
     return lines
 
 
 def render_table(stats):
     n = stats["n_traces"]
     phases = stats.get("phases") or {}
-    full = stats["full_link"]
     lines = [
         "## 性能统计（prepare / outline / write_document）",
         "",
         f"> 阶段归属口径：{stats.get('attribution')}。",
         f"> 业务口径：{stats.get('phase_semantics', 'unspecified')}；"
         f"未确认的发起决策：{len(stats.get('unresolved_dispatches') or [])}。",
-        f"> 样本：完整过程 {n}；正常链路 {stats.get('n_successful_traces', 0)}。",
-        "> 字符数按 trace IO 载荷计；载荷缺失或截断记为 —，不记 0，也不影响其他指标。",
+        f"> 样本：采集 {n}；可用成功样本 {stats.get('n_successful_traces', 0)}，总值保留其全部尝试。",
+        "> 字符数累计已采集 IO 载荷；完整诊断正文不重复累加。全文字符数只取最终成稿。修改文字数为同次原文与最终稿的可见字符新增＋删除（搬移计两侧），不累计失败草稿；原文缺失时不推算。",
         "",
     ]
     if stats.get("unresolved_dispatches"):
         lines += ["> 阶段调用归属不完整：以下为已确认部分，禁止导出正式阶段数据。"
                   "正常未归属调用仍保留在全流程；详见 stats.json 的 unresolved_dispatches。", ""]
-    lines += _render_metric_table(
-        phases, stats.get("clean_full") if stats.get("n_successful_traces") else None, "normal",
-        "正常链路统计（导出使用）",
-        "仅聚合成功样本，保留最后成功尝试及其发起决策。全流程还包含其他正常协调调用；"
-        "阶段之和不要求等于全流程。完整过程和排除的异常另列如下。",
-    )
-    lines += _render_metric_table(
-        phases, full, None,
-        "一、完整过程统计主表（真实数据）",
-        "全链路包含所有尝试、路由、阶段间决策和尾迹；阶段仅统计 advance_step 完整执行子树，包含内部 Agent 决策和重试；步骤外发起决策只计全流程。"
-        "LLM 耗时为调用累计，阶段墙钟为业务尝试区间并集。工具实际执行时间为"
-        "工具 span 墙钟扣除其中 LLM 时间区间并集。",
-    )
-    lines += _render_metric_table(
-        phases, None, "abnormal",
-        "二、异常/尾迹时间统计（同维度）",
-        "阶段异常包含先前尝试及其发起决策和错误；未能关联阶段的正常调用保留在全流程。"
-        "正常链路（每个阶段/工具调用的"
-        "最后一次、且成功）见 stats.json 的 phases.*.normal，供导出数据表使用。",
-    )
+    if stats.get("report_semantics") != "total_with_failed_retry_component_v1":
+        raise ValueError("recompute raw traces for total-with-retry reporting")
+    if stats.get("unknown_token_usage"):
+        lines += ["> 部分失败调用缺失 token usage；受影响的总 token 与失败 token 标为缺失，不按 0 推算。", ""]
+    lines += _render_metric_table(phases, stats.get("reported_full") or {})
 
-    lines.extend(["", "## 三、异常来源说明", ""])
+    lines.extend(["", "## 异常来源说明", ""])
     exceptions = stats.get("exceptions") or []
     if not exceptions:
         lines.append("未观测到 ERROR span、关键 Writer 步骤重复或失败的 artifact patch。")
     else:
-        lines.extend([
-            "| 案例序号 | 异常类型 | span | 时间窗口 | 墙钟 | 阶段内 LLM | 明细 |",
-            "|---:|---|---|---|---:|---|---|",
-        ])
         for case in exceptions:
             for item in case["items"]:
                 if item["type"] == "error_observation":
-                    window = f"{item.get('start_time', '')} → {item.get('end_time', '')}"
-                    llm = (
-                        f"{item['llm_count']} 次 / {item['llm_input']:,} in / "
-                        f"{item['llm_output']:,} out / {item['llm_latency']:.3f}s"
-                    )
-                    detail = (
-                        f"共 {item.get('attempts', 1)} 次尝试（重试 "
-                        f"{max(0, int(item.get('attempts', 1)) - 1)} 次）"
-                        if item.get("retried") else "未观察到重试"
-                    )
-                    lines.append(
-                        f"| {case['case_index']} | error_observation | {item['name']} | "
-                        f"{window} | {item['latency']:.3f} s | {llm} | {detail} |"
-                    )
+                    detail = "随后重试" if item.get("retried") else "未观察到重试"
+                    lines.append(f"- 案例 {case['case_index']}：{item['name']} 出错，{detail}。")
                 else:
-                    lines.append(
-                        f"| {case['case_index']} | {item['type']} | {item.get('name', '')} | "
-                        f"— | — | — | ×{item.get('count', 1)} |"
-                    )
+                    lines.append(f"- 案例 {case['case_index']}：{item.get('name', '')} "
+                                 f"出现 {item.get('count', 1)} 次调用。")
 
-    abnormal_cases = stats.get("abnormal_cases") or []
-    if abnormal_cases:
-        lines.extend([
-            "",
-            "| 案例序号 | 阶段 | 工具 | 调用次数 | 重试次数 | 末次是否成功 | "
-            "终态后尾迹 | 异常/尾迹墙钟 | 异常/尾迹 LLM |",
-            "|---:|---|---|---:|---:|---|---:|---:|---:|",
-        ])
-        for item in abnormal_cases:
-            tail = item.get("tail") or {}
-            tail_txt = (
-                f"{str(tail.get('start_time', ''))[11:19]} → "
-                f"{str(tail.get('end_time', ''))[11:19]}（{tail.get('wall', 0):.1f}s）"
-                if tail.get("present") else "无"
-            )
-            ab = item.get("abnormal") or {}
-            attempts = int(item.get("attempts") or 0)
-            lines.append(
-                f"| {item['case_index']} | "
-                f"{PHASE_LABELS.get(item['phase'], item['phase'])} | "
-                f"{item['tool']} | {attempts} | {max(0, attempts - 1)} | "
-                f"{'成功' if item.get('normal_succeeded') else '失败'} | {tail_txt} | "
-                f"{ab.get('wall', 0):.3f} s | {ab.get('llm_count', 0)} |"
-            )
-        lines.append(
-            "> 末次成功与否决定用例是否可导出正常链路（normal）：末次仍失败则本用例判失败，"
-            "不导出，记录到最终分析报告。"
-        )
     return "\n".join(lines) + "\n"
 
 
@@ -1163,45 +1134,22 @@ FULL_FLOW_PHASE = "全流程"
 
 
 def _full_flow_row(stats, batch_id, scenario, phases):
-    """构造“全流程”阶段行（键 `批次ID|场景|全流程`）。
-
-    口径：墙钟 / LLM / token 取 clean_full，保留触发前和阶段之间的正常调用，
-    剔除阶段先前尝试、失败前缀与 ERROR 子树；工具统计同样保留正常调用。
-    章节数与生成/修改字数取
-    write_document 阶段；修订场景
-    （有 rev_chars）无 draft 章节数，章节数输出 “—”。
-    """
-    fl = stats.get("clean_full") or {}
-    tool_count = round(float(fl.get("tool_count") or 0), 1)
-    tool_time = round(float(fl.get("tool_time") or 0), 3)
-    wd = phases.get("write_document") or {}
-    wd_n = wd.get("normal") or {}
-    is_revise = (wd_n.get("rev_chars") is not None) or (wd.get("rev_chars") is not None)
-    chapters = wd_n.get("chapters")
-    if is_revise or chapters is None:
-        chapters = "—"
-    return [
-        batch_id, scenario, FULL_FLOW_PHASE,
-        round(float(fl.get("wall") or 0), 3),
-        float(fl.get("count") or 0),
-        round(float(fl.get("latency") or 0), 3),
-        tool_count, tool_time,
-        int(fl.get("input") or 0), (int(fl["input_chars"]) if fl.get("input_chars") is not None else "—"),
-        int(fl.get("output") or 0), (int(fl["output_chars"]) if fl.get("output_chars") is not None else "—"),
-        chapters,
-        wd_n.get("gen_chars") if wd_n.get("gen_chars") is not None else wd.get("gen_chars"),
-        wd_n.get("rev_chars") if wd_n.get("rev_chars") is not None else wd.get("rev_chars"),
-        f"{batch_id}|{scenario}|{FULL_FLOW_PHASE}",
-    ]
+    fl = stats["reported_full"]
+    wd = (phases.get("write_document") or {}).get("reported") or {}
+    return [batch_id, scenario, FULL_FLOW_PHASE,
+            *[_report_value(fl, k) for k in _REPORT_FIELDS],
+            wd.get("gen_chars") if wd.get("gen_chars") is not None else "—",
+            wd.get("modified_chars") if wd.get("modified_chars") is not None else "—",
+            f"{batch_id}|{scenario}|{FULL_FLOW_PHASE}"]
 
 
 def sheet_rows(stats, batch_id, *, with_full_flow=True):
-    """按飞书“全数据”表维度生成导出行；正常链路取最后一次成功尝试（normal）。
+    """按 15 列生成总值(失败重试部分)；底层数值保存在 reported 字段。
 
     返回 ``(rows, failed)``：
     - rows：每阶段一行
       ``[批次ID, 场景, 阶段, 总耗时, LLM 轮数, LLM 耗时, 工具次数, 工具时间,
-      in/out token, in/out 字符, 章节数, 生成字数, 修改字数, 键]``；失败用例
+      in/out token, in/out 字符, 全文字符数, 修改文章字数, 键]``；失败用例
       （末次尝试失败）行保留，但指标列全部填 ``—``，由最终报告记录失败原因；
       另附一行阶段=“全流程”（``with_full_flow=True``），键
       ``批次ID|场景|全流程``，失败场景不生成全流程行；
@@ -1210,6 +1158,8 @@ def sheet_rows(stats, batch_id, *, with_full_flow=True):
     if stats.get("unresolved_dispatches"):
         raise ValueError("incomplete phase attribution: unresolved dispatch decisions; "
                          "inspect unresolved_dispatches before exporting")
+    if stats.get("report_semantics") != "total_with_failed_retry_component_v1":
+        raise ValueError("recompute raw traces for total-with-retry reporting")
     rows, failed = [], []
     scenario = str(stats.get("scenario") or "")
     phases = stats.get("phases") or {}
@@ -1231,29 +1181,18 @@ def sheet_rows(stats, batch_id, *, with_full_flow=True):
         if scenario in failed_cases:
             rows.append([
                 batch_id, scenario, phase, "—", "—", "—", "—", "—",
-                "—", "—", "—", "—", "—", "—", "—",
+                "—", "—", "—", "—", "—", "—",
                 f"{batch_id}|{scenario}|{phase}",
             ])
             continue
-        n = row["normal"]
-        chapters = n.get("chapters") if phase == "write_document" else "—"
-        if phase == "write_document" and (
-            n.get("rev_chars") is not None or row.get("rev_chars") is not None
-        ):
-            # 修订场景无 draft 章节数上报：章节数按 “—” 计
-            chapters = "—"
-        gen = n.get("gen_chars") if phase == "write_document" else "—"
-        rev = n.get("rev_chars") if phase == "write_document" else "—"
-        rows.append([
-            batch_id, scenario, phase,
-            round(n.get("wall") or 0, 3), n.get("llm_count"),
-            round(n.get("llm_latency") or 0, 3), n.get("tool_count"),
-            round(n.get("tool_time") or 0, 3),
-            int(n.get("input") or 0), (int(n["input_chars"]) if n.get("input_chars") is not None else "—"),
-            int(n.get("output") or 0), (int(n["output_chars"]) if n.get("output_chars") is not None else "—"),
-            chapters, gen, rev,
-            f"{batch_id}|{scenario}|{phase}",
-        ])
+        reported = row["reported"]
+        gen = reported.get("gen_chars") if phase == "write_document" else "—"
+        keys = ("wall", "llm_count", "llm_latency", "tool_count", "tool_time",
+                "input", "input_chars", "output", "output_chars")
+        rows.append([batch_id, scenario, phase,
+                     *[_report_value(reported, k) for k in keys], gen,
+                     reported.get("modified_chars") if phase == "write_document" and reported.get("modified_chars") is not None else "—",
+                     f"{batch_id}|{scenario}|{phase}"])
     if with_full_flow and scenario not in failed_cases and phases:
         rows.append(_full_flow_row(stats, batch_id, scenario, phases))
     return rows, failed
@@ -1262,8 +1201,8 @@ def sheet_rows(stats, batch_id, *, with_full_flow=True):
 def render_analysis(stats):
     """初步分析：长耗时/高 Token 阶段及原因，异常情况。"""
     n = stats["n_traces"]
-    full = stats["full_link"]
-    phases = stats.get("phases") or {}
+    full = stats["reported_full"]
+    phases = {k: v["reported"] for k, v in (stats.get("phases") or {}).items() if v["reported"]["present"]}
     lines = ["## 分析结论（初步）", ""]
 
     def shares(metric):
@@ -1286,10 +1225,6 @@ def render_analysis(stats):
             reasons.append(f"LLM 推理累计占该阶段 {llm_share:.0%}，以推理为主")
         if tool_share > 0.3:
             reasons.append(f"工具实际执行占该阶段 {tool_share:.0%}，工具往返/执行为主")
-        if top_wall[0] == "write_document" and top.get("chapters", 0) > 1:
-            reasons.append(
-                f"章节数 {top.get('chapters')}，逐章生成且上下文累计时耗时随章节递增"
-            )
         if top_wall[0] == "prepare":
             reasons.append("资源分析及准备步骤内的 Agent 决策集中在准备阶段")
         lines.append(
@@ -1302,7 +1237,7 @@ def render_analysis(stats):
             lines.append(
                 f"- 阶段墙钟合计 {wall_total:.1f}s，与全链路墙钟 {full['wall']:.1f}s "
                 f"相差 {gap:.1f}s（阶段间空隙、异常/尾迹、审批/轮询或未观测开销；"
-                "异常/尾迹见异常/尾迹统计表）。"
+                "失败重试部分见主表括号及异常来源说明）。"
             )
 
     # 高 Token
@@ -1319,8 +1254,6 @@ def render_analysis(stats):
                 if phases[top[0]].get("llm_count") else 0
             )
             notes.append(f"该阶段单次 LLM 平均输入约 {avg_per_llm:,.0f} token")
-            if top[0] == "write_document" and phases[top[0]].get("chapters", 0) > 1:
-                notes.append("逐章携带前文/上下文累计通常是主要来源")
             if top[0] == "prepare":
                 notes.append("准备步骤内的决策与资源/上下文读取通常是主要来源")
         value_text = f"{round(top[1], 1):,}"
@@ -1354,7 +1287,7 @@ def render_analysis(stats):
     elif abnormal_wall > 1 or tail_cases:
         lines.append(
             f"- 异常：未观测到 ERROR span，但异常/尾迹墙钟合计约 {abnormal_wall:.1f}s"
-            f"（{len(tail_cases)} 个案例含终态后尾迹），见异常/尾迹统计表。"
+            f"（{len(tail_cases)} 个案例含终态后尾迹），见主表括号及异常来源说明。"
         )
     else:
         lines.append("- 异常：未观测到异常阶段。")
@@ -1372,18 +1305,19 @@ def render_analysis(stats):
         f"- 口径说明：n={n}，{stats.get('attribution')} 归属；"
         "分项指标互斥，阶段合计可与全链路墙钟不一致（嵌套/并发/空隙）。"
     )
+    sample_count = stats.get("n_successful_traces", 0)
     missing = [
         (phase, row.get("present", 0))
         for phase, row in phases.items()
-        if row.get("present", 0) < n
+        if row.get("present", 0) < sample_count
     ]
     if missing:
         details = "、".join(
-            f"{PHASE_LABELS.get(p, p)} 仅出现在 {present}/{n} 案例"
+            f"{PHASE_LABELS.get(p, p)} 仅出现在 {present}/{sample_count} 成功案例"
             for p, present in missing
         )
         lines.append(
-            f"- 覆盖提示：{details}，缺失案例按 0 计入平均（JSON 保留 present 供排查）。"
+            f"- 覆盖提示：{details}，仅在该阶段存在的成功案例间计算平均（JSON 保留 present 供排查）。"
         )
     return "\n".join(lines) + "\n"
 

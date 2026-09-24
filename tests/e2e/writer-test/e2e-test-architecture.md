@@ -77,7 +77,7 @@
 
 ### 3.1 两套 YAML 用例
 
-- `writer_func_cases.yaml`：C01–C07 / I01–I02 / X01–X03，每条场景含
+- `writer_func_cases.yaml`：C01–C08 / I01–I02 / X01–X03，每条场景含
   `request`（提示词 + 附件 fixture + 飞书文档）与 `expected`（路由、步骤、
   工具、槽位、写回、媒体、交叉引用等断言）。
 - `writer_perf_cases.yaml`：P01–P05，每场景 5 个 case（共 25 个）。
@@ -275,8 +275,7 @@ no-UI 模式在首次观察到 workflow session 后并行订阅 workflow event s
 - IR（blocks 结构）↔ Markdown 双向转换（`writer_document_to_markdown` /
   `inline_artifact_to_markdown`）；
 - `visible_text` 剥离 Markdown 语法得到“可见字符”口径；
-- `document_stats` 用 `difflib.SequenceMatcher` 计算相对原文的增删字符与
-  覆盖率，对应数据表的“生成/修改文章字数”列；
+- 性能 Runner 仅保存最终全文的可见字符数，对应导出的“全文字符数”列；
 - `selected_final_slots` 按优先级选择最终展示槽位
   （`delivered_markdown` > `final_document_md` > … > `draft_document`）。
 
@@ -324,6 +323,10 @@ IR 的 envelope 解包、block 递归、可见文本、标题和图片统一由
 
 **唯一口径说明**见 [README 当前性能统计口径](README.md#当前性能统计口径)。
 
+主报表及导出保持原有指标，使用 `总值(失败重试部分)`，不增加异常行列。
+`reported_full` / `phases.*.reported` 保留成功样本的全部尝试，`failed_retry` 为其中
+可靠识别的异常部分；`clean_full` / `normal` 保留用于审计。显示文本不能直接用于数值公式。
+
 阶段是 advance_step 完整执行子树：以 workspace 父链识别步骤，包含步骤内部 Agent 决策。
 步骤外发起决策只计全流程；不使用前端生命周期、workspace 区间或旧时间窗兜底。
 跨 trace 子 Agent 关联、决策关联分别保留 `step_links`、`decision_links` 审计。
@@ -341,8 +344,7 @@ clean_full；它与 runner 总墙钟是两个指标，不能互相替换。
 不预计算分项字符。它用于离线归因，不替代现有 IO 字符累计、span 墙钟或业务重试口径；
 详见 [完整 LLM 诊断采集](README.md#完整-llm-诊断采集不改变统计口径)。
 
-原有 16 列和文档字数指标不变。章节数优先使用本次 session 的 draft_blocks
-索引；生成/修改字数来自 document_stats。失败样本不参与正常链路聚合。
+导出共 15 列，键前增加修改文章字数。全文字符数来自 document_stats 中最终文档的可见文本。P04/P05 在 trace 回收后，从当次完整 material-analysis 输入恢复原文（飞书含资源标题），保存原文与来源哈希；可见字符差异以新增＋删除计算，段落搬移计两侧，不累计失败草稿。原文缺失/冲突则修改量缺失，成功样本中任一缺失时聚合值也缺失。失败样本不参与正常链路聚合。
 
 ### 7.4 判决模型
 
@@ -398,7 +400,7 @@ FAIL 但存在 WARN/必要证据缺失时为 `INCONCLUSIVE`；真实工作流步
 
 ```bash
 bash tests/e2e/writer-test/scripts/full_run.sh                    # 默认 perf：P01–P05
-bash tests/e2e/writer-test/scripts/full_run.sh --mode func        # 功能 C01–C07/I01–I02/X01–X03
+bash tests/e2e/writer-test/scripts/full_run.sh --mode func        # 功能 C01–C08/I01–I02/X01–X03
 bash tests/e2e/writer-test/scripts/full_run.sh --mode both        # perf + func 共用时间戳
 bash tests/e2e/writer-test/scripts/full_run.sh P03 --cases 1,2    # 指定场景/case
 ```
@@ -474,32 +476,12 @@ _ui_bridge/       录屏（webm，成功或失败均保留）
 case_N/run_N.json     单 case 摘要
 case_N/trace.json     归一化 trace
 case_N/final.md       最终文档
-case_N/document_stats.json  文档度量（生成/修改字数）
+case_N/document_stats.json  文档度量（最终全文可见字符数）
 traces/case_N.json    trace 拷贝（供聚合）
 stats.json / stats.md 场景级聚合与报告
 ```
 
-## 13. 测试自身的单元测试
-
-`tests/e2e/writer-test/tests/` 下 5 个精简契约测试文件覆盖；同一接口的
-成功/失败边界用 `subTest` 合并，避免按场景复制测试：
-
-- `test_analyze_common.py`：合成 trace 的 workspace、工具、写回与模型事实；
-- `test_analyze_func.py`：交叉引用、编号、媒体、飞书 revision 等检查；
-- `test_analyze_perf.py`：advance_step 边界、三桶聚合、sheet_rows 导出；
-- `test_func_run.py` / `test_perf_run.py`：CLI 参数、case 加载（约束注入、
-  飞书占位符解析、附件解析）。
-
-统一自检入口：
-
-```bash
-bash tests/e2e/writer-test/scripts/self_check.sh
-```
-
-入口仅运行 Python 分析器/Runner 单测、Node UI 桥接单测和 TypeScript 编译；
-Node 单测已实际启动 Chromium，因此不再保留重复的 Playwright 用例列举检查。
-
-## 14. 设计要点与注意事项
+## 13. 设计要点与注意事项
 
 1. **混合判定**：机械检查只做“证据比对”，不替产品下结论；FAIL/WARN 需要
    Agent 结合 `evidence.json` 判断是真实缺陷还是可恢复偶发异常，证据不足标
@@ -527,5 +509,5 @@ Node 单测已实际启动 Chromium，因此不再保留重复的 Playwright 用
    `feishu_docs` 的 revision/history；执行约束只改
    `exec_constraints.yaml`；脚本改动必须跑通 unittest。
 10. **契约分层**：多数功能场景只断言 route、session steps、slot 和用户结果；
-    精确 workspace/tool 链只保留在 C01（创建链路）与 C04（直接重写链路）两条
+    精确 workspace/tool 链保留在 C01/C08（创建链路）与 C04（直接重写链路）三条
     架构契约用例中，避免内部 span 重命名击穿全部功能场景。

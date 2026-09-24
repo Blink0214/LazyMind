@@ -183,6 +183,7 @@ def document_stats(final_markdown: str, original_markdown: str | None = None) ->
                 added += j2 - j1
         result["original"] = {"visible_characters": len(original_visible)}
         result["revision"].update({
+            "changed_characters": added + deleted,
             "changed_original_characters": deleted,
             "changed_final_characters": added,
             "original_coverage": round(deleted / len(original_visible), 6) if original_visible else 0,
@@ -196,3 +197,57 @@ def original_from_prompt(text: str) -> str | None:
     tail = text[marker:] if marker >= 0 else text
     blocks = re.findall(r"```(?:markdown|md|text)?\s*\n(.*?)```", tail, flags=re.S | re.I)
     return blocks[-1].strip() + "\n" if blocks else None
+
+
+def revision_source_from_trace(trace: dict | None, *, provider_title: bool = False) -> tuple[str | None, dict]:
+    """Recover the complete material actually consumed by this run, never live docs.
+
+    Several resources or differing retry inputs are ambiguous: return missing
+    rather than silently choosing an attachment/current provider baseline.
+    """
+    candidates = []
+    start = 'Material content to analyze:\n---\n'
+    end = '\n---\n\nAnalyze the content above'
+    for obs in (trace or {}).get('observations', []):
+        attrs = (obs.get('metadata') or {}).get('attributes') or {}
+        payloads = []
+        try:
+            io = attrs.get('lazyllm.io.input')
+            io = json.loads(io) if isinstance(io, str) else io
+            if isinstance(io, dict):
+                payloads.append(io.get('resolved_prompt') or {})
+        except (ValueError, TypeError):
+            pass
+        try:
+            diag = attrs.get('lazyllm.diagnostics.llm')
+            diag = json.loads(diag) if isinstance(diag, str) else diag
+            for attempt in (diag or {}).get('attempts', []):
+                req = (attempt.get('request') or {}).get('json')
+                payloads.append(json.loads(req) if isinstance(req, str) else req or {})
+        except (ValueError, TypeError, AttributeError):
+            pass
+        for payload in payloads:
+            if not isinstance(payload, dict):
+                continue
+            for message in payload.get('messages', []):
+                content = message.get('content')
+                if not isinstance(content, str) or not content.startswith('Analyze the following material for a writing task.') or start not in content:
+                    continue
+                tail = content.split(start, 1)[1]
+                if end not in tail:
+                    continue
+                source = tail.split(end, 1)[0].strip() + '\n'
+                if '<truncated>' in source:
+                    continue
+                if provider_title:
+                    title = re.search(r'^- Resource title: (.+)$', content, re.M)
+                    if not title:
+                        continue
+                    source = '# ' + title.group(1).strip() + '\n\n' + source
+                candidates.append((source, obs.get('id')))
+    distinct = {visible_text(s) for s, _ in candidates}
+    if len(distinct) != 1:
+        return None, {'status': 'unavailable', 'reason': 'ambiguous_source' if candidates else 'complete_source_missing'}
+    return candidates[0][0], {'status': 'verified', 'source': 'same_run_trace_material',
+                             'observation_ids': sorted({i for _, i in candidates if i}),
+                             'provider_title_included': provider_title}

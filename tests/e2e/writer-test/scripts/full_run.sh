@@ -4,7 +4,7 @@
 # 两套用例：
 #   perf：cases/writer_perf_cases.yaml 的 P01..P05（每场景 5 个 case），
 #         API-only + 三阶段性能统计；
-#   func：cases/writer_func_cases.yaml 的 C01..C07 / I01..I02（默认 Playwright
+#   func：cases/writer_func_cases.yaml 的 C01..C08 / I01..I02（默认 Playwright
 #         UI 或 --no-ui），机械检查 + LLM 判定。
 #   both：先 perf 场景，再功能场景。
 #
@@ -67,11 +67,11 @@ fi
 # 按模式选择默认场景集；命令行显式传入的场景优先保留。
 if [[ ${#SCENARIOS[@]} -eq 0 ]]; then
     if [[ "$MODE" == "func" ]]; then
-        SCENARIOS=("C01" "C02" "C03" "C04" "C05" "C06" "C07"
+        SCENARIOS=("C01" "C02" "C03" "C04" "C05" "C06" "C07" "C08"
                    "I01" "I02" "X01" "X02" "X03")
     elif [[ "$MODE" == "both" ]]; then
         SCENARIOS=("P01" "P02" "P03" "P04" "P05"
-                   "C01" "C02" "C03" "C04" "C05" "C06" "C07"
+                   "C01" "C02" "C03" "C04" "C05" "C06" "C07" "C08"
                    "I01" "I02" "X01" "X02" "X03")
     else
         SCENARIOS=("P01" "P02" "P03" "P04" "P05")
