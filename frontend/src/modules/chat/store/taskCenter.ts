@@ -139,6 +139,7 @@ export interface SubAgentTask {
   status: TaskStatus;
   progress_pct: number;
   current_phase?: string;
+  plan_steps?: string[];
   estimated_sec?: number;
   summary?: string;
   input_slots?: string[];
@@ -197,6 +198,12 @@ interface TaskCenterStore {
 }
 
 // Convert persisted sub_agent_steps rows back to TaskLogEntry[] for display.
+function normalizePlanSteps(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length < 3 || value.length > 5) return undefined;
+  if (value.some((step) => typeof step !== "string" || !step.trim() || step.trim().length > 100)) return undefined;
+  return value.map((step: string) => step.trim());
+}
+
 function stepsToExecutionLog(steps: any[]): TaskLogEntry[] {
   if (!steps || steps.length === 0) return [];
   const entries = steps.flatMap((s): TaskLogEntry[] => {
@@ -278,7 +285,7 @@ export const useTaskCenterStore = create<TaskCenterStore>()((set, get) => ({
       if (idx >= 0) {
         next = list.slice();
         const current = next[idx];
-        const incoming = { ...current, ...task };
+        const incoming = { ...current, ...task, plan_steps: task.plan_steps ?? current.plan_steps };
         // Prefer the longer execution_log: DB snapshots only have completed steps,
         // while the live SSE stream may have buffered more content in memory.
         if (
@@ -314,6 +321,7 @@ export const useTaskCenterStore = create<TaskCenterStore>()((set, get) => ({
             status: (task.status as TaskStatus) ?? "pending",
             progress_pct: task.progress_pct ?? 0,
             current_phase: task.current_phase,
+            plan_steps: task.plan_steps,
             estimated_sec: task.estimated_sec,
             summary: task.summary,
             output_slots: task.output_slots,
@@ -353,6 +361,9 @@ export const useTaskCenterStore = create<TaskCenterStore>()((set, get) => ({
       switch (event.type) {
         case "task_start":
           task.status = "running";
+          break;
+        case "plan":
+          task.plan_steps = normalizePlanSteps(event.steps) ?? task.plan_steps;
           break;
         case "progress":
           task.status = "running";
@@ -769,6 +780,7 @@ export const useTaskCenterStore = create<TaskCenterStore>()((set, get) => ({
             status: t.status ?? "pending",
             progress_pct: t.progress_pct ?? 0,
             current_phase: t.current_phase,
+            plan_steps: normalizePlanSteps([...(t.steps ?? [])].reverse().find((step: any) => step.role === "plan")?.content?.steps),
             estimated_sec: t.estimated_sec,
             summary: t.summary,
             input_slots: t.input_slots,
@@ -791,7 +803,11 @@ export const useTaskCenterStore = create<TaskCenterStore>()((set, get) => ({
             return {
               tasksByConversation: {
                 ...state.tasksByConversation,
-                [conversationId]: [...normalized, ...liveAdditions],
+                [conversationId]: [...normalized.map((task) => ({
+                  ...task,
+                  plan_steps: task.plan_steps ?? state.tasksByConversation[conversationId]
+                    ?.find((live) => live.task_id === task.task_id)?.plan_steps,
+                })), ...liveAdditions],
               },
             };
           });

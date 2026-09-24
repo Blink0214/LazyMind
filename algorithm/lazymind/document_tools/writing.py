@@ -521,14 +521,11 @@ def generate_outline(
     )
     if on_outline_generated is not None:
         on_outline_generated()
-    prepared = toolkit.prepare_outline(
-        source_document_json=generated,
-        writing_task_json=task_json,
-        writing_context_json=context_json,
-    )
+    # The stream finalizer already normalizes IDs, budgets and outline fields.
+    # Supplied outlines retain their separate completion path.
     if on_outline_prepared is not None:
         on_outline_prepared()
-    return _document_value(prepared)
+    return _document_value(generated)
 
 
 def generate_short_visual_plan(
@@ -580,9 +577,8 @@ def stream_short_document(
     drafting = WriterDraftingTools(
         llm=AutoModel(model='llm'), artifact_store=artifact_store
     )
-    with drafting.stream_short_document(
+    with drafting.stream_whole_document(
         task=writing_task_path,
-        short_writing_plan=short_writing_plan_path,
         context=writing_context_path,
         visual_plan=visual_plan_path or None,
         media_assets=media_assets_path or None,
@@ -596,7 +592,33 @@ def stream_short_document(
                         '[Writer] Short document delta callback failed: %s', exc
                     )
         result = stream.result()
-    return _primary_data(result)
+    document = _primary_data(result)
+    task = _read_artifact_data(writing_task_path)
+    if (task.get('output') or {}).get('representation') == 'ir':
+        from lazyllm.tools.writer.utils import parse_document_markdown
+        # Resolve placeholders before parsing Markdown images into IR.
+        document = finalize_short_document(
+            document, _read_artifact_data(media_assets_path) if media_assets_path else None,
+        )
+        return parse_document_markdown(document, document_id=task['task_id'], stage='draft')
+    return document
+
+
+def stream_whole_document(
+    writing_task_path: str, writing_context_path: str, section_instructions_path: str = '',
+    *, artifact_store: str, visual_plan_path: str = '', media_assets_path: str = '',
+    on_delta: Callable[[str], None] | None = None,
+) -> Any:
+    drafting = WriterDraftingTools(llm=AutoModel(model='llm'), artifact_store=artifact_store)
+    with drafting.stream_whole_document(
+        task=writing_task_path, context=writing_context_path,
+        instructions=section_instructions_path or None,
+        visual_plan=visual_plan_path or None, media_assets=media_assets_path or None,
+    ) as stream:
+        for delta in stream:
+            if on_delta is not None:
+                on_delta(str(delta))
+        return _primary_data(stream.result())
 
 
 def finalize_short_document(document: Any, resolved_media_assets: Any = None) -> Any:
@@ -1445,29 +1467,12 @@ class WriterWritingCapabilities:
     ) -> str:
         """Create context from a task, profiles, and an optional document."""
         root = _temp_root()
-        task_path = _write_input_artifact(
-            root,
-            'writing_task.json',
-            _json_loads(writing_task_json, {}),
-            writer_schema('task.WritingTask'),
-        )
-        profiles_path = _write_input_artifact(
-            root,
-            'resource_profiles.json',
-            _json_loads(resource_profiles_json, []),
-            writer_schema('resource.ResourceProfile'),
-        )
-        document_path = None
-        if writer_document_json:
-            document_path = _write_document_input(
-                root, 'writer_document', writer_document_json
-            )
         result = WriterContextTools(
             llm=None, artifact_store=str(root)
         ).create_writing_context(
-            task=task_path,
-            resource_profiles=profiles_path,
-            document=document_path,
+            task=_json_loads(writing_task_json, {}),
+            resource_profiles=_json_loads(resource_profiles_json, []),
+            document=_document_value(writer_document_json) if writer_document_json else None,
         )
         return _json_dumps(_primary_data(result))
 
@@ -1526,16 +1531,39 @@ class WriterWritingCapabilities:
             writing_task_json,
             writing_context_json,
         )
-        with planning.stream_outline(task=task_path, context=context_path) as stream:
-            for delta in stream:
-                try:
-                    on_delta(delta)
-                except (
-                    Exception
-                ) as exc:  # noqa: BLE001 - preview forwarding is best effort.
-                    LOG.warning('[Writer] Outline delta callback failed: %s', exc)
-            result = stream.result()
-        return self._outline_result(result)
+        from lazyllm.tracing import (
+            finish_span, get_trace_context, set_span_attributes, set_span_error, start_span,
+        )
+
+        span = start_span(span_kind='callable', target=self.stream_outline, args=(), kwargs={})
+        trace_context = get_trace_context()
+        stream = None
+        status = 'error'
+        try:
+            with planning.stream_outline(task=task_path, context=context_path) as stream:
+                for delta in stream:
+                    try:
+                        on_delta(delta)
+                    except Exception as exc:  # Preview forwarding is best effort.
+                        LOG.warning('[Writer] Outline delta callback failed: %s', exc)
+                result = stream.result()
+            status = 'completed'
+            return self._outline_result(result)
+        except Exception as exc:
+            set_span_error(span, exc)
+            raise
+        finally:
+            timings = stream.timings if stream is not None else {}
+            record = {
+                'phase': 'outline', 'status': status,
+                'trace_id': trace_context.trace_id,
+                **timings,
+            }
+            set_span_attributes(span, {
+                f'writer.outline.{key}': value for key, value in record.items() if value is not None
+            })
+            LOG.info('[WriterTiming] ' + json.dumps(record, ensure_ascii=False))
+            finish_span(span)
 
     def generate_rewrite_outline(
         self,
@@ -1794,19 +1822,9 @@ class WriterWritingCapabilities:
         root = _temp_root()
         writing_task = _json_loads(writing_task_json, {})
         require_input_image_reuse = _requires_input_image_reuse(writing_task)
-        task_path = _write_input_artifact(
-            root,
-            'writing_task.json',
-            writing_task,
-            writer_schema('task.WritingTask'),
-        )
-        outline_path = _write_document_input(root, 'outline', outline_json)
-        context_path = _write_input_artifact(
-            root,
-            'writing_context.json',
-            _json_loads(writing_context_json, {}),
-            writer_schema('context.WritingContext'),
-        )
+        task_path = writing_task
+        outline_path = _document_value(outline_json)
+        context_path = _json_loads(writing_context_json, {})
         planning = WriterPlanningTools(
             llm=AutoModel(model='llm'),
             artifact_store=str(root),
@@ -1839,16 +1857,10 @@ class WriterWritingCapabilities:
             visual_plan,
             required=require_input_image_reuse,
         )
-        visual_plan_path = _write_input_artifact(
-            root,
-            'visual_plan.json',
-            visual_plan,
-            writer_schema('multimodal.VisualPlan'),
-        )
         result = planning.generate_section_instructions(
             outline=outline_path,
             context=context_path,
-            visual_plan=visual_plan_path,
+            visual_plan=visual_plan,
             task=task_path,
         )
         return _json_dumps(

@@ -232,7 +232,7 @@ def preview_selection_rewrite(
         raise ValueError('instruction must not be empty.')
     from .selection import preview_ir, preview_markdown
     if isinstance(document, str):
-        return preview_markdown(document, instruction, selection_ranges, artifact_store=artifact_store)
+        return preview_markdown(document, instruction, selection_ranges, artifact_store=artifact_store, context=context)
     return preview_ir(document, instruction, selection_ranges, context, artifact_store=artifact_store)
 
 

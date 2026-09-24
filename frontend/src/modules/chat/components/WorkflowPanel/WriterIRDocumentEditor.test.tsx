@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const warning = vi.hoisted(() => vi.fn());
+
 vi.mock('@ant-design/icons', () => ({
   BoldOutlined: () => null,
   CodeOutlined: () => null,
@@ -67,7 +69,7 @@ vi.mock('antd', async () => {
     );
   }
 
-  return { Dropdown };
+  return { Dropdown, message: { warning } };
 });
 
 vi.mock('react-i18next', async (importOriginal) => {
@@ -330,6 +332,7 @@ function ControlledWriter({
 }
 
 beforeEach(() => {
+  warning.mockClear();
   Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
     configurable: true,
     value: selectionRect,
@@ -758,6 +761,24 @@ describe('WriterIRDocumentEditor multi-block toolbar', () => {
 });
 
 describe('WriterIRDocumentEditor cross-reference menu', () => {
+  it('warns when a generated reference points to a missing target', () => {
+    const brokenDocument: WriterDocument = {
+      ...referencedDocument,
+      blocks: referencedDocument.blocks.filter((block) => block.node_id !== 'sec-1'),
+    };
+    const { container } = render(
+      <WriterIRDocumentEditor
+        document={brokenDocument}
+        ariaLabel='Writer document'
+        onChange={vi.fn()}
+        onFocus={vi.fn()}
+        onBlur={vi.fn()}
+      />,
+    );
+    fireEvent.click(container.querySelector('[data-writer-internal-ref]')!);
+    expect(warning).toHaveBeenCalledWith('chat.writerIR.referenceTargetMissing');
+  });
+
   it('keeps the selected text highlighted and applies the reference without rewriting it', async () => {
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,

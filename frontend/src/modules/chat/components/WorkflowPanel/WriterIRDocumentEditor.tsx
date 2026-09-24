@@ -16,7 +16,7 @@ import {
   TableOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons';
-import { Dropdown } from 'antd';
+import { Dropdown, message } from 'antd';
 import {
   useCallback,
   useEffect,
@@ -1477,7 +1477,10 @@ export function WriterIRDocumentEditor({
   const navigateToReferenceTarget = useCallback((nodeId: string) => {
     const editor = editorRef.current;
     const target = editor ? findRenderedBlock(editor, nodeId) : undefined;
-    if (!target) return;
+    if (!target) {
+      void message.warning(t('chat.writerIR.referenceTargetMissing'));
+      return;
+    }
     if (target.closest('[hidden]') && collapsedNodeIdsRef.current.size > 0) {
       pendingReferenceTargetRef.current = nodeId;
       collapsedNodeIdsRef.current = new Set();
@@ -1485,7 +1488,7 @@ export function WriterIRDocumentEditor({
       return;
     }
     scrollToReferenceTarget(nodeId);
-  }, [scrollToReferenceTarget]);
+  }, [scrollToReferenceTarget, t]);
 
   useLayoutEffect(() => {
     const nodeId = pendingReferenceTargetRef.current;
