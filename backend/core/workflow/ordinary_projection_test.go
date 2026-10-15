@@ -245,7 +245,7 @@ func TestOrdinaryWorkflowHidesInternalSlotsFromPinnedPackage(t *testing.T) {
 	for _, hosted := range []bool{false, true} {
 		t.Run(fmt.Sprintf("hosted=%v", hosted), func(t *testing.T) {
 			db, session, now := ordinaryFixture(t)
-			manifest := []byte("slots:\n  - {id: report}\n  - {id: public, exposed: true}\n  - {id: internal, exposed: false}\n  - {id: internal_unbound, exposed: false}\n")
+			manifest := []byte("slots:\n  - {id: report, label: 文献综述}\n  - {id: public, exposed: true}\n  - {id: internal, exposed: false}\n  - {id: internal_unbound, exposed: false}\nui:\n  slots:\n    report: {widgetType: text-markdown}\n")
 			hash := "visibility-manifest"
 			if err := db.Create(&orm.WorkflowBlob{Hash: hash, Content: manifest, Size: int64(len(manifest)), CreatedAt: now}).Error; err != nil {
 				t.Fatal(err)
@@ -314,8 +314,8 @@ func TestOrdinaryWorkflowHidesInternalSlotsFromPinnedPackage(t *testing.T) {
 				t.Fatalf("visible output counts: stage=%d final=%d", len(view.Tasks[0].StageArtifacts), len(view.Runs[0].FinalArtifacts))
 			}
 			for _, artifact := range view.Tasks[0].StageArtifacts {
-				if artifact.Name == "report" && artifact.InlineContent != "edited" {
-					t.Fatalf("stale scalar artifact displayed: %+v", artifact)
+				if artifact.ArtifactID == "edited-report" && (artifact.InlineContent != "edited" || artifact.Name != "文献综述.md") {
+					t.Fatalf("edited document lost its contents or filename: %+v", artifact)
 				}
 			}
 			encoded, _ := json.Marshal(view)

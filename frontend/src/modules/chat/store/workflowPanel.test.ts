@@ -8,6 +8,51 @@ import {
   hydrateWorkflowUI,
   workflowTabAllowsDownload,
 } from './workflowPanel';
+import type { WorkflowRuntimeProjection } from './workflowPanel';
+
+describe('runtime skipped tab visibility', () => {
+  const tabs = ['topic', 'review', 'analysis'].map(id => ({ id, label: id, slots: [] }));
+  const projection: WorkflowRuntimeProjection = { pruned: ['topic'], bypassed: ['analysis'] };
+
+  it('is opt-in and hides only explicitly skipped steps', () => {
+    expect(filterWorkflowTabs(tabs, [], undefined, projection)).toEqual(tabs);
+    expect(filterWorkflowTabs(tabs, [], undefined, projection, true).map(t => t.id)).toEqual(['review']);
+    expect(filterWorkflowTabs(tabs, [], undefined, undefined, true)).toEqual(tabs);
+  });
+
+  it('restores tabs after rewind changes the authoritative projection', () => {
+    expect(filterWorkflowTabs(tabs, [], undefined, projection, true)).toHaveLength(1);
+    expect(filterWorkflowTabs(tabs, [], undefined, { pruned: [], bypassed: [] }, true)).toEqual(tabs);
+  });
+
+  it.each(['running', 'waiting', 'failed', 'succeeded'])('keeps effective %s work visible', execution => {
+    const node = { branch: 'pruned', execution, validity: 'effective', readiness: 'not_applicable',
+      reachability: 'unreachable', requires_approval: false };
+    expect(filterWorkflowTabs(tabs, [], undefined, { nodes: { topic: node } }, true)).toEqual(tabs);
+  });
+
+  it('keeps future and material-blocked steps visible', () => {
+    const node = { branch: 'active', execution: 'none', validity: 'effective', readiness: 'blocked',
+      reachability: 'unreachable', requires_approval: false };
+    expect(filterWorkflowTabs(tabs, [], undefined, { nodes: { topic: node } }, true)).toEqual(tabs);
+  });
+
+  it('hides a composite only when every represented step is skipped', () => {
+    const composite = [{ id: 'result', label: 'result', slots: [], status_step_ids: ['a', 'b'] }];
+    expect(filterWorkflowTabs(composite, [], undefined, { pruned: ['a'] }, true)).toEqual(composite);
+    expect(filterWorkflowTabs(composite, [], undefined, { pruned: ['a'], bypassed: ['b'] }, true)).toEqual([]);
+  });
+
+  it('reads the paper opt-in without changing PPT material-based rules', () => {
+    const paper = hydrateWorkflowUI(load(readFileSync(resolve(process.cwd(), '../workflows/paper-writing/workflow.yaml'), 'utf8')));
+    expect(paper.hide_skipped_steps).toBe(true);
+    expect(filterWorkflowTabs(paper.tabs, [], undefined, { pruned: ['research_topic'] }, paper.hide_skipped_steps)
+      .some(tab => tab.id === 'research_topic')).toBe(false);
+    const ppt = hydrateWorkflowUI(load(readFileSync(resolve(process.cwd(), '../workflows/ppt-workflow/workflow.yaml'), 'utf8')));
+    expect(ppt.hide_skipped_steps).toBeUndefined();
+    expect(ppt.tabs?.some(tab => tab.hide_when_material)).toBe(true);
+  });
+});
 
 describe('hydrateWorkflowUI', () => {
   it('loads the academic workflow process-material rule from its package configuration', () => {

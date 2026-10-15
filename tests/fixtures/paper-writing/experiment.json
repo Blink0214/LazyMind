@@ -1,0 +1,48 @@
+{
+  "input": {
+    "topic": "检索增强生成的证据可追溯性",
+    "request": "先给方案，不执行",
+    "question": "# 研究选题\n比较主张与证据对齐的方法。",
+    "evidence": "# 文献综述\nP1 关注组织，P2 关注核验。[P1] [P2]",
+    "data": {
+      "columns": [
+        "method",
+        "score"
+      ],
+      "rows": [
+        [
+          "baseline",
+          60
+        ],
+        [
+          "evidence",
+          75
+        ]
+      ]
+    }
+  },
+  "output": {
+    "experiment": {
+      "executed": false,
+      "plan": "比较两种证据组织方式",
+      "results": {
+        "columns": [
+          "method",
+          "score"
+        ],
+        "rows": [
+          [
+            "baseline",
+            60
+          ],
+          [
+            "evidence",
+            75
+          ]
+        ]
+      },
+      "report": "# 实验研究 · 检索增强生成的证据可追溯性\n\n未执行实验；60、75 仅用于下游接线。"
+    },
+    "is_demo": true
+  }
+}

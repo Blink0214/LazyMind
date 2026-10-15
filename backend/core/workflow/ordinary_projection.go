@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,7 +42,7 @@ func projectOrdinarySession(ctx context.Context, db *gorm.DB, session *orm.Workf
 	if err != nil {
 		return out, err
 	}
-	hiddenSlots, err := ordinaryHiddenSlots(ctx, db, session.WorkflowRevisionID)
+	hiddenSlots, documentNames, err := ordinarySlotPresentation(ctx, db, session.WorkflowRevisionID)
 	if err != nil {
 		return out, err
 	}
@@ -199,6 +200,10 @@ func projectOrdinarySession(ctx context.Context, db *gorm.DB, session *orm.Workf
 			}
 			view.StageArtifacts = unbound
 			for _, artifact := range artifacts {
+				// Human edits can become inline Markdown; keep a user-facing filename.
+				if name := documentNames[artifact.slot]; name != "" && artifact.item.Name == artifact.slot {
+					artifact.item.Name = name
+				}
 				view.StageArtifacts = append(view.StageArtifacts, artifact.item)
 				if artifact.selected && row.Validity != "stale" && ((row.Status == "succeeded" && finalSlots[artifact.slot]) || published[artifact.revisionID]) {
 					run.FinalOutputRefs = append(run.FinalOutputRefs, artifact.item.ArtifactID)
@@ -551,33 +556,44 @@ func getOrdinarySessionProjection(w http.ResponseWriter, r *http.Request) {
 	common.ReplyOK(w, result)
 }
 
-// ordinaryHiddenSlots honors explicit visibility declarations from the Session's
+// ordinarySlotPresentation honors explicit declarations from the Session's
 // immutable package. Omitted exposed fields retain the existing visible default.
-func ordinaryHiddenSlots(ctx context.Context, db *gorm.DB, revisionID string) (map[string]bool, error) {
+func ordinarySlotPresentation(ctx context.Context, db *gorm.DB, revisionID string) (map[string]bool, map[string]string, error) {
 	var row struct{ Content []byte }
 	result := db.WithContext(ctx).Table(orm.WorkflowRevisionEntry{}.TableName()+" AS entries").
 		Select("blobs.content").Joins("JOIN "+orm.WorkflowBlob{}.TableName()+" AS blobs ON blobs.hash = entries.blob_hash").
 		Where("entries.revision_id = ? AND entries.path = ?", revisionID, "workflow.yaml").Take(&row)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if result.Error != nil {
-		return nil, result.Error
+		return nil, nil, result.Error
 	}
 	var manifest struct {
 		Slots []struct {
 			ID      string `yaml:"id"`
+			Label   string `yaml:"label"`
 			Exposed *bool  `yaml:"exposed"`
 		} `yaml:"slots"`
+		UI struct {
+			Slots map[string]struct {
+				WidgetType string `yaml:"widgetType"`
+			} `yaml:"slots"`
+		} `yaml:"ui"`
 	}
 	if err := yaml.Unmarshal(row.Content, &manifest); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	hidden := map[string]bool{}
+	names := map[string]string{}
 	for _, slot := range manifest.Slots {
 		if slot.Exposed != nil && !*slot.Exposed {
 			hidden[slot.ID] = true
 		}
+		if slot.Label != "" && manifest.UI.Slots[slot.ID].WidgetType == "text-markdown" {
+			name := filepath.Base(strings.ReplaceAll(slot.Label, "\\", "/"))
+			names[slot.ID] = taskdisplay.Text(strings.TrimSuffix(name, ".md"), 90) + ".md"
+		}
 	}
-	return hidden, nil
+	return hidden, names, nil
 }

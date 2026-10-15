@@ -1,0 +1,348 @@
+import copy
+import json
+import re
+import sys
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
+
+import pytest
+import yaml
+
+ROOT = Path(__file__).resolve().parents[4]
+PACKAGE = ROOT / 'workflows/paper-writing'
+from lazymind.document_tools.paper import api
+from lazymind.document_tools.paper import workflow as tools
+
+
+@pytest.mark.parametrize('path', [
+    ['F1', 'F2', 'F1', 'F2'],
+    ['F2', 'F5', 'F6', 'F5', 'F6'],
+    ['F4', 'F5'], ['F7'], ['F2', 'F7'],
+    ['F2', 'F3', 'F4'], *[[f'F{i}'] for i in range(1, 8)],
+])
+def test_scenarios_preserve_sources_versions_and_inputs(path):
+    pool = tools.seed_pool()
+    original = copy.deepcopy(pool)
+    for node in path:
+        before = copy.deepcopy(pool)
+        result = tools.execute_mock(node, pool, '给导师汇报')
+        assert pool == before
+        pool = result['pool']
+        assert result['document'].startswith('# ')
+        assert '演示数据' in result['document']
+        assert 'MOCK' not in result['document']
+        assert pool['materials'][:len(before['materials'])] == before['materials']
+        assert result['next'] == tools.ROUTES[node] + ['END']
+    assert pool['sequence'] == len(path)
+    assert original['materials'] == pool['materials'][:len(original['materials'])]
+
+
+@pytest.mark.parametrize('start,feedback', [('F2', 'F1'), ('F6', 'F5')])
+def test_ten_feedback_rounds_from_direct_entry(start, feedback):
+    pool = tools.execute_mock(start, tools.seed_pool())['pool']
+    for _ in range(10):
+        pool = tools.execute_mock(feedback, pool)['pool']
+        before = copy.deepcopy(pool)
+        pool = tools.execute_mock(start, pool)['pool']
+        assert pool['materials'][:len(before['materials'])] == before['materials']
+        kind = 'question' if start == 'F2' else 'manuscript'
+        assert before['current'][kind] in pool['history'][-1]['inputs']
+        assert tools.material(pool, 'evidence' if start == 'F2' else 'review')['content']
+
+
+@pytest.mark.parametrize('count', [1, 2])
+def test_single_multiple_paper_reflection(count):
+    pool = tools.seed_pool()
+    tools.material(pool, 'papers')['content'] = tools.material(pool, 'papers')['content'][:count]
+    result = tools.execute_mock('F7', pool)
+    assert f'{count} 篇' in result['document']
+
+
+def test_edited_artifact_is_imported_as_new_version_and_used_for_review():
+    pool = tools.execute_mock('F5', tools.seed_pool())['pool']
+    before = copy.deepcopy(pool)
+    edited = '# 用户确认的修订稿\n保留该句'
+    selected = tools.pool_from_inputs({'write_document_pool': pool, 'write_document_document': edited})
+    assert pool == before
+    assert tools.material(selected, 'manuscript')['content'] == edited
+    assert selected['current']['manuscript']['version'] == pool['current']['manuscript']['version'] + 1
+    result = tools.execute_mock('F6', selected)
+    assert selected['current']['manuscript'] in result['pool']['history'][-1]['inputs']
+
+
+def test_feedback_snapshot_wins_over_old_upstream_pool():
+    seed = tools.seed_pool()
+    revised = tools.execute_mock('F5', tools.execute_mock('F6', seed)['pool'])['pool']
+    selected = tools.pool_from_inputs({'seed_pool': seed, 'recovery_review_pool': revised,
+                                      'recovery_review_document': '# 修改后的正文'})
+    assert selected['sequence'] == 2
+    assert tools.material(selected, 'manuscript')['content'] == '# 修改后的正文'
+    assert tools.execute_mock('F6', selected)['pool']['sequence'] == 3
+
+
+@pytest.mark.parametrize('node,kind', [('F4', 'data'), ('F6', 'manuscript'), ('F7', 'papers')])
+def test_missing_input_fails_without_mutation_then_can_resume(node, kind):
+    pool = tools.seed_pool()
+    ref = pool['current'].pop(kind)
+    before = copy.deepcopy(pool)
+    with pytest.raises(tools.MissingMaterials, match='缺少材料'):
+        tools.execute_mock(node, pool)
+    assert pool == before
+    pool['current'][kind] = ref
+    assert tools.execute_mock(node, pool)['status'] == 'completed'
+
+
+@pytest.mark.parametrize('corrupt', [
+    lambda p: p.update(schema='invalid'),
+    lambda p: p.update(sequence=True),
+    lambda p: p.update(sequence=5),
+    lambda p: p['current']['data'].update(version=999),
+    lambda p: p['materials'].append(copy.deepcopy(p['materials'][0])),
+    lambda p: p['materials'][0].update(mock='false'),
+    lambda p: p['materials'][0].update(content='not papers'),
+    lambda p: p['history'].append({'node': 'F2', 'inputs': 'bad', 'outputs': []}),
+])
+def test_invalid_input_rejected(corrupt):
+    pool = tools.seed_pool()
+    corrupt(pool)
+    with pytest.raises(ValueError):
+        tools.execute_mock('F2', pool)
+
+
+@pytest.mark.parametrize('a,b', [('F1','F3'), ('F1','F5'), ('F3','F5'), ('F4','F3'), ('F6','F2')])
+def test_forbidden_execution_edges(a, b):
+    pool = tools.execute_mock(a, tools.seed_pool())['pool']
+    with pytest.raises(ValueError, match='不允许'):
+        tools.execute_mock(b, pool)
+
+
+def test_failed_or_invalid_algorithm_does_not_publish_or_change_input(monkeypatch):
+    pool = tools.seed_pool()
+    before = copy.deepcopy(pool)
+    with pytest.raises(RuntimeError, match='模拟执行失败'):
+        tools.execute_mock('F5', pool, fail=True)
+    assert pool == before
+    assert tools.execute_mock('F5', pool)['status'] == 'completed'
+    monkeypatch.setattr(api.ALGORITHMS['write_document'], 'run', lambda inputs: {'manuscript': 'x'})
+    with pytest.raises(ValueError, match='输出'):
+        tools.execute_mock('F5', pool)
+    assert pool == before
+
+
+def test_algorithm_cannot_publish_wrong_material_kind(monkeypatch):
+    monkeypatch.setattr(api.ALGORITHMS['write_document'], 'run', lambda inputs: {'review': 'wrong output', 'is_demo': False})
+    with pytest.raises(ValueError, match='输出'):
+        tools.execute_mock('F5', tools.seed_pool())
+
+
+def test_edited_experiment_report_keeps_simulated_result_and_history():
+    pool = tools.execute_mock('F3', tools.seed_pool())['pool']
+    selected = tools.pool_from_inputs({'experiment_pool': pool, 'experiment_document': '# 用户修改的实验方案'})
+    experiment = tools.material(selected, 'experiment')
+    assert experiment['content']['report'] == '# 用户修改的实验方案'
+    assert experiment['content']['executed'] is False
+    assert experiment['version'] == 2
+    assert tools.execute_mock('F4', selected)['status'] == 'completed'
+
+
+@pytest.fixture
+def runtime(monkeypatch, tmp_path):
+    ctx = SimpleNamespace(params={}, workspace_path=str(tmp_path))
+    batches = []
+    context_module = ModuleType('lazymind.chat.engine.subagent.context')
+    context_module.require_context = lambda: ctx
+    artifact_module = ModuleType('lazymind.chat.engine.subagent.tools')
+    artifact_module.save_artifacts = lambda items: batches.append(copy.deepcopy(items)) or {'status': 'ok'}
+    monkeypatch.setitem(sys.modules, context_module.__name__, context_module)
+    monkeypatch.setitem(sys.modules, artifact_module.__name__, artifact_module)
+    return ctx, batches
+
+
+def test_runtime_wrapper_uses_host_inputs_and_saves_all_declared_outputs(runtime, tmp_path):
+    ctx, batches = runtime
+    workflow = yaml.safe_load((PACKAGE / 'workflow.yaml').read_text())
+    state = yaml.safe_load((PACKAGE / 'scenario/state.yml').read_text())
+    assert workflow['runtime']['transactional_outputs']
+    ctx.params = {'step_id': 'prepare', 'user_input': '[paper:demo]'}
+    tools.run_paper_step()
+    seed = tools._read_bound(batches[-1][0]['value'])
+    path = tmp_path / 'seed.json'
+    path.write_text(json.dumps({'data': seed}))
+    for step in ['research_topic', 'literature_review', 'experiment', 'data_analysis', 'write_document', 'peer_review', 'reading_reflection']:
+        ctx.params = {'step_id': step, 'remote_inputs': {'seed_pool': str(path)}}
+        tools.run_paper_step()
+        assert {item['key'] for item in batches[-1]} == {
+            item['material'] for item in state['steps'][step]['outputs']}
+        document = next(item for item in batches[-1] if item['key'].endswith('_document'))
+        assert document['content_type'] == 'file'
+        assert Path(document['value']).name == tools.STEP_LABELS[step] + '.md'
+        assert '演示数据' in tools._read_bound(document['value'])
+    ctx.params = {'step_id': 'finish'}
+    tools.run_paper_step()
+    assert batches[-1][0]['key'] == 'finish_document'
+
+
+def test_runtime_failure_retry_and_bad_external_input_never_fallback(runtime, tmp_path):
+    ctx, batches = runtime
+    path = tmp_path / 'pool.json'
+    path.write_text(json.dumps(tools.seed_pool()))
+    ctx.params = {'step_id': 'write_document', 'remote_inputs': {'seed_pool': str(path)}, 'user_input': '[mock:fail]'}
+    with pytest.raises(RuntimeError):
+        tools.run_paper_step()
+    assert not batches
+    ctx.params['runtime_instruction'] = '[mock:retry]'
+    tools.run_paper_step()
+    assert len(batches) == 1
+    path.write_text('{}')
+    ctx.params = {'step_id': 'prepare', 'remote_inputs': {'paper_input': str(path)}}
+    with pytest.raises(ValueError):
+        tools.run_paper_step()
+    assert len(batches) == 1
+
+
+def test_prepare_without_input_does_not_invent_materials(runtime):
+    ctx, batches = runtime
+    ctx.params = {'step_id': 'prepare', 'user_input': '帮我审稿'}
+    with pytest.raises(tools.MissingMaterials, match='请提供'):
+        tools.run_paper_step()
+    assert not batches
+
+
+def test_business_manuscript_entry_publishes_visible_preparation_then_review(runtime, tmp_path):
+    ctx, batches = runtime
+    path = tmp_path / 'business.json'
+    path.write_text(json.dumps({'topic': '我的研究', 'manuscript': '# 已有稿件\n检查方法'}))
+    ctx.params = {'step_id': 'prepare', 'remote_inputs': {'paper_input': str(path)}}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    summary = Path(outputs['prepare_document']).read_text()
+    assert '我的研究' in summary and '稿件' in summary
+    assert '演示数据' not in summary and 'pool' not in summary
+    pool = tools._read_bound(outputs['seed_pool'])
+    assert set(pool['current']) == {'manuscript'}
+    ctx.params = {'step_id': 'peer_review', 'remote_inputs': {'seed_pool': outputs['seed_pool']}}
+    tools.run_paper_step()
+    assert {item['key'] for item in batches[-1]} == {'peer_review_pool', 'peer_review_document'}
+
+
+def test_config_logical_edges_and_no_real_external_calls():
+    state = yaml.safe_load((PACKAGE / 'scenario/state.yml').read_text())
+    for step in state['steps'].values():
+        # The wrapper owns runtime parameters. Do not let a focused UI tab or
+        # old launch request redefine a deterministic Mock tool invocation.
+        assert '{{runtime_instruction}}' not in step['prompt']
+        assert '{{user_input}}' not in step['prompt']
+        assert '不得用聊天文本代替调用' in step['prompt']
+        assert '当前浏览的页签不是执行节点' in step['prompt']
+    for step, node in tools.STEP_NODE.items():
+        actual = {tools.STEP_NODE[e['to']] for e in state['transitions'][step] if e['to'] != 'finish'}
+        if step == 'refine_topic':
+            actual.add('F2')  # Native rewind, not a cyclic control edge.
+        if step == 'revise_document':
+            actual.add('F6')
+        assert actual == set(tools.ROUTES[node])
+        assert state['steps'][step]['mode'] == 'human'
+        assert state['steps'][step]['tools'] == ['run_paper_step']
+
+
+@pytest.mark.parametrize('content', [
+    'x' * 490 + '<a id="block-user-long-id"></a>\\n## Edited',
+    '\u0060\u0060\u0060text\\nE2E-EDIT\\n\u0060\u0060\u0060\\n<a id="anchor"></a>' * 20,
+])
+def test_feedback_text_reaches_algorithm_unchanged(content, monkeypatch):
+    pool = tools.execute_mock('F2', tools.seed_pool())['pool']
+    pool = tools.pool_from_inputs({'literature_review_pool': pool, 'literature_review_document': content})
+    seen = []
+    module = api.ALGORITHMS['research_topic']
+    original = module.run
+    def capture(inputs):
+        seen.append(copy.deepcopy(inputs))
+        return original(inputs)
+    monkeypatch.setattr(module, 'run', capture)
+    tools.execute_step('refine_topic', pool)
+    assert seen[0]['evidence'] == content
+    assert seen[0]['mode'] == 'refine'
+
+
+@pytest.mark.parametrize('update', [
+    {'current_user_input': '只检查引用和局限'},
+    {'current_user_input': '', 'retry_hint': "User is currently viewing Workflow tab 'data_analysis'. "
+     'Recovery request for this rerun only: 只检查引用和局限'},
+])
+def test_real_core_request_fields_override_launch_intent(runtime, tmp_path, update):
+    ctx, batches = runtime
+    pool = tools.execute_mock('F5', tools.seed_pool())['pool']
+    path = tmp_path / 'pool.json'
+    path.write_text(json.dumps(pool))
+    ctx.params = {'step_id': 'peer_review', 'remote_inputs': {'write_document_pool': str(path)},
+                  'user_input': '旧要求：检查全文', 'launch_user_input': '旧要求：检查全文', **update}
+    tools.run_paper_step()
+    assert tools._read_bound(batches[-1][0]['value'])['history'][-1]['request'] == '只检查引用和局限'
+    assert '旧要求' not in tools._read_bound(batches[-1][1]['value'])
+
+
+def test_public_workflow_presentation_and_named_outputs():
+    workflow = yaml.safe_load((PACKAGE / 'workflow.yaml').read_text())
+    assert workflow['id'] == 'paper-writing'
+    assert workflow['name'] == '论文写作'
+    assert {step['id'] for step in workflow['steps']} == {
+        'prepare', 'research_topic', 'literature_review', 'refine_topic', 'experiment',
+        'data_analysis', 'write_document', 'peer_review', 'revise_document',
+        'reading_reflection', 'finish',
+    }
+    assert not any(re.match(r'f\d(?:_|$)', slot['id']) for slot in workflow['slots'])
+    ui = workflow['ui']
+    assert not ui['task_presentation'].get('grouped')
+    assert set(ui['task_presentation']['hidden_steps']) == {'finish'}
+    assert len(ui['tabs']) == 10
+    assert ui['tabs'][0]['step_id'] == 'prepare'
+    assert ui['slots']['prepare_document'] == {'widgetType': 'text-markdown', 'readOnly': True}
+    for tab in ui['tabs']:
+        assert tab['id'] not in ui['task_presentation']['hidden_steps']
+        assert len(tab['label']) <= 6
+        assert not re.search(r'F\d|mock', tab['label'], re.I)
+        assert tab['allow_download'] is True
+    for slot in workflow['slots']:
+        if slot['id'].endswith('_pool'):
+            assert slot['exposed'] is False
+            assert slot['type'] == 'file'
+        if slot['id'].endswith('_document') and not slot.get('external'):
+            assert slot['type'] == 'file'
+    for step in tools.STEP_NODE:
+        assert ui['slots'][step + '_document'] == {'widgetType': 'text-markdown', 'readOnly': False}
+
+
+def test_no_ppt_node_artifact_or_prompt_in_paper_package():
+    for relative in ('workflow.yaml', 'scenario/state.yml', 'scenario/scenario.md', 'scripts/tools.py'):
+        assert 'ppt' not in (PACKAGE / relative).read_text().lower(), relative
+    assert 'presentation' not in tools.KINDS
+    pool = tools.seed_pool()
+    before = copy.deepcopy(pool)
+    with pytest.raises(ValueError, match='未知节点'):
+        tools.execute_mock('PPT', pool)
+    assert pool == before
+
+
+def test_removed_ppt_step_cannot_publish_artifacts(runtime):
+    ctx, batches = runtime
+    ctx.params = {'step_id': 'ppt'}
+    with pytest.raises(ValueError, match='未知 Workflow 步骤'):
+        tools.run_paper_step()
+    assert not batches
+
+
+def test_recovery_failure_and_retry_use_core_retry_hint(runtime, tmp_path):
+    ctx, batches = runtime
+    path = tmp_path / 'pool.json'
+    path.write_text(json.dumps(tools.seed_pool()))
+    ctx.params = {'step_id': 'experiment', 'remote_inputs': {'seed_pool': str(path)},
+                  'user_input': '旧的启动请求', 'current_user_input': '',
+                  'retry_hint': 'Recovery request for this rerun only: 重跑 experiment [mock:fail]'}
+    with pytest.raises(RuntimeError, match='模拟执行失败'):
+        tools.run_paper_step()
+    assert not batches
+    ctx.params['user_input'] = '[mock:fail]'
+    ctx.params['retry_hint'] = 'Recovery request for this rerun only: 重试 experiment [mock:retry]'
+    tools.run_paper_step()
+    assert len(batches) == 1
+    assert tools._read_bound(batches[0][0]['value'])['history'][-1]['request'] == '重试 experiment [mock:retry]'

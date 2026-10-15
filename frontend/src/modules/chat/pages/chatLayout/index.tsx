@@ -334,9 +334,11 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
       workflowUI.tabs,
       workflowSession?.slots ?? [],
       workflowUI.tab_visibility_ready_material,
+      workflowSession?.projection,
+      workflowUI.hide_skipped_steps,
     ).length;
     return count > 0 ? count : undefined;
-  }, [workflowSession?.slots, workflowSession?.status, workflowUI]);
+  }, [workflowSession?.slots, workflowSession?.status, workflowSession?.projection, workflowUI]);
   const hasWorkflowSession = workflowSession !== null;
   const workflowDefinitionChanged = useWorkflowStore((s) =>
     sessionId

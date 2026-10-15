@@ -1861,11 +1861,13 @@ export function WorkflowPanel({
       ui.tabs ?? [],
       session?.slots ?? [],
       ui.tab_visibility_ready_material,
+      session?.projection,
+      ui.hide_skipped_steps,
     );
     if (!tabs.length || !persistedFocusedTab) return;
     const idx = tabs.findIndex((t) => t.id === persistedFocusedTab);
     if (idx !== -1) setActiveTabIdx(idx);
-  }, [ui.tabs, ui.tab_visibility_ready_material, persistedFocusedTab, session?.slots]);
+  }, [ui.tabs, ui.tab_visibility_ready_material, ui.hide_skipped_steps, persistedFocusedTab, session?.slots, session?.projection]);
 
   // Until the user explicitly chooses a visible tab, follow the runtime
   // frontier. This also moves focus immediately when a skip material removes
@@ -1875,6 +1877,8 @@ export function WorkflowPanel({
       ui.tabs ?? [],
       session?.slots ?? [],
       ui.tab_visibility_ready_material,
+      session?.projection,
+      ui.hide_skipped_steps,
     );
     const focusedTabVisible = Boolean(
       persistedFocusedTab && tabs.some((tab) => tab.id === persistedFocusedTab),
@@ -1888,6 +1892,8 @@ export function WorkflowPanel({
   }, [
     ui.tabs,
     ui.tab_visibility_ready_material,
+    ui.hide_skipped_steps,
+    session?.projection,
     persistedFocusedTab,
     session?.current_step_id,
     session?.session_id,
@@ -1922,6 +1928,8 @@ export function WorkflowPanel({
     ui.tabs ?? [],
     session.slots ?? [],
     ui.tab_visibility_ready_material,
+    session.projection,
+    ui.hide_skipped_steps,
   );
   const hasTabs = tabs.length > 0;
   const visibleActiveTabIdx = hasTabs
@@ -1991,6 +1999,7 @@ export function WorkflowPanel({
       : undefined);
   const effectivePast = new Set(session.projection?.past ?? []);
   const rollbackSteps = showStepRollback ? session.steps!.filter((step, index, all) => effectivePast.has(step.step_id)
+    && !ui.task_presentation?.hidden_steps?.includes(step.step_id)
     && step.validity !== 'stale'
     && all.findIndex((candidate) => candidate.step_id === step.step_id && candidate.validity !== 'stale') === index) : [];
   const stepLabel = (stepId: string) => tabs.find(tab => getTabStepId(tab) === stepId)?.label

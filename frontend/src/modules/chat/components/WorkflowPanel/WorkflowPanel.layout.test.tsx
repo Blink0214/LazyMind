@@ -96,6 +96,30 @@ beforeEach(async () => {
 afterEach(cleanup);
 
 describe('shared workflow compact layout', () => {
+  it('hides skipped stages, follows the current step, and restores them on rewind', async () => {
+    fixture.ui.hide_skipped_steps = true;
+    fixture.focusedTab = 'prepare';
+    fixture.session = { ...fixture.session, status: 'active', current_step_id: 'write_document',
+      projection: { current: ['write_document'], pruned: ['prepare'] } };
+    const view = render(<WorkflowPanel conversationId='layout-test' />);
+    await screen.findByRole('tab', { name: '成稿', selected: true });
+    expect(screen.queryByRole('tab', { name: '写作准备' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '成稿' }).querySelector('.workflow-panel__tab-badge')).toHaveTextContent('1');
+    fixture.session = { ...fixture.session, current_step_id: 'prepare',
+      projection: { current: ['prepare'], pruned: [] } };
+    view.rerender(<WorkflowPanel conversationId='layout-test' />);
+    await screen.findByRole('tab', { name: '写作准备', selected: true });
+    expect(screen.getByRole('tab', { name: '成稿' }).querySelector('.workflow-panel__tab-badge')).toHaveTextContent('2');
+  });
+
+  it('excludes internal control steps from rewind without hiding business stages', async () => {
+    fixture.ui.task_presentation = { hidden_steps: ['prepare'] };
+    render(<WorkflowPanel conversationId='layout-test' />);
+    await screen.findByRole('tab', { name: '成稿' });
+    expect(screen.queryByRole('button', { name: '写作准备' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '成稿' })).toBeVisible();
+  });
+
   it('keeps a replacement document action when the previous registration cleans up', async () => {
     render(<WorkflowPanel conversationId='layout-test' />);
     await screen.findByRole('tab', { name: '成稿', selected: true });
@@ -309,6 +333,14 @@ describe('shared workflow compact layout', () => {
     expect(screen.getByRole('listitem', { name: '第 2 行' })).toHaveAttribute('aria-current', 'true');
     expect(screen.getByText('正文 preview')).toBeVisible();
     expect(screen.getByText('正文 notes')).toBeVisible();
+  });
+
+  it('numbers ordinary workflow stages even with hidden control steps', async () => {
+    fixture.ui.task_presentation = { hidden_steps: ['route'] };
+    render(<WorkflowPanel conversationId='layout-test' />);
+    const tabs = await screen.findByRole('tablist');
+    expect(Array.from(tabs.querySelectorAll('.workflow-panel__tab-badge'), el => el.textContent)).toEqual(['1', '2']);
+    expect(within(tabs).queryByText('产物')).not.toBeInTheDocument();
   });
 
   it('labels grouped artifact tabs without suggesting they count execution tasks', async () => {
