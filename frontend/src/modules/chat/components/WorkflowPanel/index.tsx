@@ -1699,7 +1699,7 @@ export function WorkflowPanel({
   const activeTabId = view.tabId;
   const followingEnabled = Boolean(ui.follow_mode?.default);
   const tabs = useMemo(() => filterWorkflowTabs(ui.tabs ?? [], session?.slots ?? [], ui.tab_visibility_ready_material,
-    { steps: session?.steps, projection: session?.projection }), [ui, session?.slots, session?.steps, session?.projection]);
+    { steps: session?.steps, projection: session?.projection }, ui.hide_skipped_steps), [ui, session?.slots, session?.steps, session?.projection]);
   const visibleActiveTabIdx = resolveWorkflowActiveTabIndex(tabs, activeTabId);
   const runtimeTabIdx = session ? resolveWorkflowRealTabIndex(session, tabs, activeTabId) : -1;
   const runtimeTabId = tabs[runtimeTabIdx]?.id;
@@ -2028,6 +2028,7 @@ export function WorkflowPanel({
       : undefined);
   const effectivePast = new Set(session.projection?.past ?? []);
   const rollbackSteps = showStepRollback ? session.steps!.filter((step, index, all) => effectivePast.has(step.step_id)
+    && !ui.task_presentation?.hidden_steps?.includes(step.step_id)
     && step.validity !== 'stale'
     && all.findIndex((candidate) => candidate.step_id === step.step_id && candidate.validity !== 'stale') === index) : [];
   const stepLabel = (stepId: string) => tabs.find(tab => getTabStepId(tab) === stepId)?.label

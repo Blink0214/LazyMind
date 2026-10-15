@@ -1,0 +1,28 @@
+{
+  "input": {
+    "topic": "检索增强生成的证据可追溯性",
+    "request": "比较两组指标",
+    "data": {
+      "columns": [
+        "method",
+        "score"
+      ],
+      "rows": [
+        [
+          "baseline",
+          60
+        ],
+        [
+          "evidence",
+          75
+        ]
+      ]
+    },
+    "experiment": null
+  },
+  "output": {
+    "analysis": "# 数据分析 · 检索增强生成的证据可追溯性\n\n固定示例，未对用户数据执行统计计算。",
+    "chart": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"360\" height=\"160\"><text x=\"10\" y=\"20\">DEMO DATA</text><rect x=\"30\" y=\"50\" width=\"60\" height=\"60\" fill=\"#64748b\"/><rect x=\"140\" y=\"35\" width=\"60\" height=\"75\" fill=\"#2563eb\"/></svg>",
+    "is_demo": true
+  }
+}

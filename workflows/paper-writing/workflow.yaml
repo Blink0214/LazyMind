@@ -1,0 +1,145 @@
+id: paper-writing
+name: 论文写作
+description: 支持选题、综述、实验、分析、写作、审稿与阅读心得；当前算法使用演示数据，不产生真实研究结果。
+when_to_use: 用户明确要求使用“论文写作”工作流或 paper-writing 时使用；通用基础写作仍使用原有 Writer 流程。
+runtime:
+  transactional_outputs: true
+  recovery_inputs:
+    literature_review:
+      recovery_research_pool: refine_topic_pool
+      recovery_research_document: refine_topic_document
+    peer_review:
+      recovery_review_pool: revise_document_pool
+      recovery_review_document: revise_document_document
+tool_scripts:
+  - path: scripts/tools.py
+    functions: [run_paper_step]
+steps:
+  - {id: prepare, label: "材料准备"}
+  - {id: research_topic, label: "研究选题"}
+  - {id: literature_review, label: "文献综述"}
+  - {id: refine_topic, label: "调整选题"}
+  - {id: experiment, label: "实验研究"}
+  - {id: data_analysis, label: "数据分析"}
+  - {id: write_document, label: "论文写作"}
+  - {id: peer_review, label: "模拟审稿"}
+  - {id: revise_document, label: "论文修订"}
+  - {id: reading_reflection, label: "阅读心得"}
+  - {id: finish, label: "结束"}
+slots:
+  - {id: paper_input, type: json, cardinality: single, external: true, exposed: false}
+  - {id: recovery_research_pool, type: file, cardinality: single, external: true, exposed: false}
+  - {id: recovery_research_document, type: file, cardinality: single, external: true, exposed: false}
+  - {id: recovery_review_pool, type: file, cardinality: single, external: true, exposed: false}
+  - {id: recovery_review_document, type: file, cardinality: single, external: true, exposed: false}
+  - {id: seed_pool, label: 输入材料池, type: file, cardinality: single, exposed: false}
+  - {id: prepare_document, label: "材料准备", type: file, cardinality: single}
+  - {id: research_topic_pool, label: "研究选题材料池", type: file, cardinality: single, exposed: false}
+  - {id: research_topic_document, label: "研究选题", type: file, cardinality: single}
+  - {id: literature_review_pool, label: "文献综述材料池", type: file, cardinality: single, exposed: false}
+  - {id: literature_review_document, label: "文献综述", type: file, cardinality: single}
+  - {id: refine_topic_pool, label: "调整选题材料池", type: file, cardinality: single, exposed: false}
+  - {id: refine_topic_document, label: "调整选题", type: file, cardinality: single}
+  - {id: experiment_pool, label: "实验研究材料池", type: file, cardinality: single, exposed: false}
+  - {id: experiment_document, label: "实验研究", type: file, cardinality: single}
+  - {id: data_analysis_pool, label: "数据分析材料池", type: file, cardinality: single, exposed: false}
+  - {id: data_analysis_document, label: "数据分析", type: file, cardinality: single}
+  - {id: write_document_pool, label: "论文写作材料池", type: file, cardinality: single, exposed: false}
+  - {id: write_document_document, label: "论文写作", type: file, cardinality: single}
+  - {id: peer_review_pool, label: "模拟审稿材料池", type: file, cardinality: single, exposed: false}
+  - {id: peer_review_document, label: "模拟审稿", type: file, cardinality: single}
+  - {id: revise_document_pool, label: "论文修订材料池", type: file, cardinality: single, exposed: false}
+  - {id: revise_document_document, label: "论文修订", type: file, cardinality: single}
+  - {id: reading_reflection_pool, label: "阅读心得材料池", type: file, cardinality: single, exposed: false}
+  - {id: reading_reflection_document, label: "阅读心得", type: file, cardinality: single}
+  - {id: analysis_chart, label: 分析图表, type: file, cardinality: single}
+  - {id: finish_document, label: 结束说明, type: file, cardinality: single, exposed: false}
+ui:
+  hide_skipped_steps: true
+  task_presentation:
+    hidden_steps: [finish]
+  slots:
+    prepare_document: {widgetType: text-markdown, readOnly: true}
+    seed_pool: {widgetType: json-block, readOnly: false, collapsed: false}
+    research_topic_document: {widgetType: text-markdown, readOnly: false}
+    literature_review_document: {widgetType: text-markdown, readOnly: false}
+    refine_topic_document: {widgetType: text-markdown, readOnly: false}
+    experiment_document: {widgetType: text-markdown, readOnly: false}
+    data_analysis_document: {widgetType: text-markdown, readOnly: false}
+    write_document_document: {widgetType: text-markdown, readOnly: false}
+    peer_review_document: {widgetType: text-markdown, readOnly: false}
+    revise_document_document: {widgetType: text-markdown, readOnly: false}
+    reading_reflection_document: {widgetType: text-markdown, readOnly: false}
+    finish_document: {widgetType: text-markdown, readOnly: true}
+  tabs:
+    - id: prepare
+      step_id: prepare
+      label: "材料准备"
+      layout: list
+      allow_download: true
+      slots:
+        - {id: prepare_document}
+    - id: research_topic
+      step_id: research_topic
+      label: "研究选题"
+      layout: list
+      allow_download: true
+      slots:
+        - {id: research_topic_document}
+    - id: literature_review
+      step_id: literature_review
+      label: "文献综述"
+      layout: list
+      allow_download: true
+      slots:
+        - {id: literature_review_document}
+    - id: refine_topic
+      step_id: refine_topic
+      label: "调整选题"
+      layout: list
+      allow_download: true
+      slots:
+        - {id: refine_topic_document}
+    - id: experiment
+      step_id: experiment
+      label: "实验研究"
+      layout: list
+      allow_download: true
+      slots:
+        - {id: experiment_document}
+    - id: data_analysis
+      step_id: data_analysis
+      label: "数据分析"
+      layout: list
+      allow_download: true
+      slots:
+        - {id: data_analysis_document}
+        - {id: analysis_chart}
+    - id: write_document
+      step_id: write_document
+      label: "论文写作"
+      layout: list
+      allow_download: true
+      slots:
+        - {id: write_document_document}
+    - id: peer_review
+      step_id: peer_review
+      label: "模拟审稿"
+      layout: list
+      allow_download: true
+      slots:
+        - {id: peer_review_document}
+    - id: revise_document
+      step_id: revise_document
+      label: "论文修订"
+      layout: list
+      allow_download: true
+      slots:
+        - {id: revise_document_document}
+    - id: reading_reflection
+      step_id: reading_reflection
+      label: "阅读心得"
+      layout: list
+      allow_download: true
+      slots:
+        - {id: reading_reflection_document}

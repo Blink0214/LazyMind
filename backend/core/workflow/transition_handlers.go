@@ -695,6 +695,11 @@ func applyWorkflowTransition(ctx context.Context, tx *gorm.DB, sessionID string,
 			return rejectTransition(req.CommandID, &session, projection, http.StatusConflict, "SESSION_TERMINAL", "plugin session is already completed", false, nil)
 		}
 		if req.Operation == "retry" || req.Operation == "rewind" {
+			if req.Operation == "rewind" {
+				if err := snapshotRecoveryInputs(ctx, tx, &session, graph, req.CommandID, targets[0].TargetStepID); err != nil {
+					return err
+				}
+			}
 			if invalidErr := invalidateForOperation(ctx, tx, &session, graph, req.CommandID, req.Operation, targets[0].TargetStepID); invalidErr != nil {
 				return invalidErr
 			}

@@ -520,12 +520,27 @@ export function filterWorkflowTabs(
   slots: SlotRevision[] = [],
   readyMaterial?: string,
   runtime?: Pick<WorkflowSession, 'steps' | 'projection'>,
+  hideSkippedSteps = false,
 ): TabDef[] {
   const present = new Set(
     slots.filter((slot) => slot.selected).map((slot) => slot.slot),
   );
   const visibilityReady = !readyMaterial || present.has(readyMaterial);
+  const projection = runtime?.projection;
+  const skipped = new Set([...(projection?.pruned ?? []), ...(projection?.bypassed ?? [])]);
+  const retained = new Set([...(projection?.past ?? []), ...(projection?.current ?? [])]);
   return tabs.filter((tab) => {
+    if (hideSkippedSteps) {
+      const steps = tab.status_step_ids?.length ? tab.status_step_ids : [tab.step_id || tab.id];
+      const allSkipped = steps.every((id) => {
+        const node = projection?.nodes?.[id];
+        // Never hide effective results, in-flight work or errors merely because
+        // another branch was pruned. Missing/blocked/future is not skipped.
+        if (retained.has(id) || (node?.validity !== 'stale' && node?.execution && node.execution !== 'none')) return false;
+        return node ? ['pruned', 'bypassed'].includes(node.branch) : skipped.has(id);
+      });
+      if (allSkipped) return false;
+    }
     if (!tab.hide_when_material) return true;
     const stepIds = new Set([tab.step_id ?? tab.id, ...(tab.status_step_ids ?? [])]);
     const effective = (id: string) => runtime?.projection?.nodes?.[id]?.validity !== 'stale'
@@ -572,6 +587,8 @@ export interface WorkflowUI {
   tabs?: TabDef[];
   /** Defer tabs with hide_when_material until this planning material exists. */
   tab_visibility_ready_material?: string;
+  /** Opt in to hiding tabs whose runtime steps were explicitly skipped. */
+  hide_skipped_steps?: boolean;
   /** Global widget config keyed by slot id. */
   slots?: Record<string, Record<string, unknown>>;
 }

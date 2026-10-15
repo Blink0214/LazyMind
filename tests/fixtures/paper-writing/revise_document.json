@@ -1,0 +1,20 @@
+{
+  "input": {
+    "topic": "检索增强生成的证据可追溯性",
+    "request": "按意见修订",
+    "mode": "revise",
+    "papers": [],
+    "question": null,
+    "evidence": null,
+    "analysis": null,
+    "chart": null,
+    "outline": null,
+    "manuscript": "# 论文\n## 方法\n比较两种证据组织方法。\n## 局限\n样本较少。",
+    "review": "# 审稿意见\n请补充样本规模及适用范围。"
+  },
+  "output": {
+    "outline": "# 大纲\n## 摘要\n## 方法\n## 局限",
+    "manuscript": "# 论文\n## 方法\n比较两种证据组织方法。\n## 局限\n样本较少。\n\n## 本轮修订\n仅演示接收审稿意见，尚未执行真实修改。",
+    "is_demo": true
+  }
+}
