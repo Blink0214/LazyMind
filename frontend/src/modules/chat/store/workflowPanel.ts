@@ -484,6 +484,8 @@ export interface TabDef {
   composite_behavior?: CompositeBehavior;
   /** Hide this tab once the named material has a selected revision. */
   hide_when_material?: string;
+  /** Hide an unexecuted dependent tab when its prerequisite branch was skipped. */
+  hide_when_step_skipped?: string;
   /** Explicitly enable or disable artifact downloads for this tab. */
   allow_download?: boolean;
   /** Actions are rendered through provider modules; the composite stays domain-neutral. */
@@ -522,15 +524,24 @@ export function filterWorkflowTabs(
   const visibilityReady = !readyMaterial || present.has(readyMaterial);
   const skipped = new Set([...(projection?.pruned ?? []), ...(projection?.bypassed ?? [])]);
   const retained = new Set([...(projection?.past ?? []), ...(projection?.current ?? [])]);
+  const wasExecuted = (id: string) => {
+    const node = projection?.nodes?.[id];
+    return retained.has(id) || (node?.validity !== 'stale' && !!node?.execution && node.execution !== 'none');
+  };
+  const wasSkipped = (id: string) => {
+    const node = projection?.nodes?.[id];
+    return node ? ['pruned', 'bypassed'].includes(node.branch) : skipped.has(id);
+  };
   return tabs.filter((tab) => {
     if (hideSkippedSteps) {
       const steps = tab.status_step_ids?.length ? tab.status_step_ids : [tab.step_id || tab.id];
+      if (tab.hide_when_step_skipped && wasSkipped(tab.hide_when_step_skipped)
+          && !steps.some(wasExecuted)) return false;
       const allSkipped = steps.every((id) => {
-        const node = projection?.nodes?.[id];
         // Never hide effective results, in-flight work or errors merely because
         // another branch was pruned. Missing/blocked/future is not skipped.
-        if (retained.has(id) || (node?.validity !== 'stale' && node?.execution && node.execution !== 'none')) return false;
-        return node ? ['pruned', 'bypassed'].includes(node.branch) : skipped.has(id);
+        if (wasExecuted(id)) return false;
+        return wasSkipped(id);
       });
       if (allSkipped) return false;
     }

@@ -1,8 +1,20 @@
 id: paper-writing
 name: 论文写作
-description: 支持选题、综述、实验、分析、写作、审稿与阅读心得；当前算法使用演示数据，不产生真实研究结果。
-when_to_use: 用户明确要求使用“论文写作”工作流或 paper-writing 时使用；通用基础写作仍使用原有 Writer 流程。
+description: 支持选题、综述、实验、分析、写作、审稿与阅读心得；模拟审稿已接真实算法，其他能力仍在开发。
+when_to_use: >
+  用户要求使用论文写作工作流或审阅上传的学术论文时使用。上传论文审稿时，
+  将会话中的准确文件名绑定到 manuscript_file，直接选择 peer_review，不先让 Chat 摘要或复制全文。
+  粘贴正文可绑定 manuscript_text；paper_topic 和 review_request 可选。
+  不要求用户提供 JSON 或材料池，paper_input 仅供已有程序化接入。
+  多个附件且无法确定待审稿件时才询问；不得用文件名或摘要代替正文。
+  Chat 收尾规则：用户本轮要求的步骤执行成功且产物已发布后，仅用一句话告知完成并引导查看工作流，
+  例如“审稿完成，请在工作流中查看审稿意见。”不复述正文、审稿意见或 JSON，不罗列问题、结论或后续选项；
+  不为总结、复述或再次确认已成功发布的产物而调用 list_artifacts、read_artifact、read_file_resource 等读取工具。
+  用户明确要求解释结果时才按需读取回答；明确要求继续执行后续步骤时照常推进，完成本轮要求后再简短收尾。
+  只要求审稿时，审稿成功即到达本轮用户边界，不自动修订或结束整个工作流。
+  失败或缺少必要输入时说明实际原因并等待用户处理，不能套用成功短句；工具返回的必要 user_notice 仍须转告。
 runtime:
+  trigger_inputs: [manuscript_file, manuscript_text, paper_topic, review_request, paper_input]
   transactional_outputs: true
   recovery_inputs:
     literature_review:
@@ -15,7 +27,6 @@ tool_scripts:
   - path: scripts/tools.py
     functions: [run_paper_step]
 steps:
-  - {id: prepare, label: "材料准备"}
   - {id: research_topic, label: "研究选题"}
   - {id: literature_review, label: "文献综述"}
   - {id: refine_topic, label: "调整选题"}
@@ -27,13 +38,16 @@ steps:
   - {id: reading_reflection, label: "阅读心得"}
   - {id: finish, label: "结束"}
 slots:
+  - {id: manuscript_file, label: 待审论文, type: file, cardinality: single, external: true, exposed: false}
+  - {id: manuscript_text, label: 论文正文, type: text, cardinality: single, external: true, exposed: false}
+  - {id: paper_topic, label: 论文主题, type: text, cardinality: single, external: true, exposed: false}
+  - {id: review_request, label: 审稿要求, type: text, cardinality: single, external: true, exposed: false}
   - {id: paper_input, type: json, cardinality: single, external: true, exposed: false}
   - {id: recovery_research_pool, type: file, cardinality: single, external: true, exposed: false}
   - {id: recovery_research_document, type: file, cardinality: single, external: true, exposed: false}
   - {id: recovery_review_pool, type: file, cardinality: single, external: true, exposed: false}
   - {id: recovery_review_document, type: file, cardinality: single, external: true, exposed: false}
-  - {id: seed_pool, label: 输入材料池, type: file, cardinality: single, exposed: false}
-  - {id: prepare_document, label: "材料准备", type: file, cardinality: single}
+  - {id: seed_pool, label: 输入材料池, type: file, cardinality: single, external: true, exposed: false}
   - {id: research_topic_pool, label: "研究选题材料池", type: file, cardinality: single, exposed: false}
   - {id: research_topic_document, label: "研究选题", type: file, cardinality: single}
   - {id: literature_review_pool, label: "文献综述材料池", type: file, cardinality: single, exposed: false}
@@ -48,6 +62,7 @@ slots:
   - {id: write_document_document, label: "论文写作", type: file, cardinality: single}
   - {id: peer_review_pool, label: "模拟审稿材料池", type: file, cardinality: single, exposed: false}
   - {id: peer_review_document, label: "模拟审稿", type: file, cardinality: single}
+  - {id: peer_review_data, label: "结构化审稿意见", type: file, cardinality: single, exposed: false}
   - {id: revise_document_pool, label: "论文修订材料池", type: file, cardinality: single, exposed: false}
   - {id: revise_document_document, label: "论文修订", type: file, cardinality: single}
   - {id: reading_reflection_pool, label: "阅读心得材料池", type: file, cardinality: single, exposed: false}
@@ -59,7 +74,6 @@ ui:
   task_presentation:
     hidden_steps: [finish]
   slots:
-    prepare_document: {widgetType: text-markdown, readOnly: true}
     seed_pool: {widgetType: json-block, readOnly: false, collapsed: false}
     research_topic_document: {widgetType: text-markdown, readOnly: false}
     literature_review_document: {widgetType: text-markdown, readOnly: false}
@@ -72,13 +86,6 @@ ui:
     reading_reflection_document: {widgetType: text-markdown, readOnly: false}
     finish_document: {widgetType: text-markdown, readOnly: true}
   tabs:
-    - id: prepare
-      step_id: prepare
-      label: "材料准备"
-      layout: list
-      allow_download: true
-      slots:
-        - {id: prepare_document}
     - id: research_topic
       step_id: research_topic
       label: "研究选题"
@@ -94,6 +101,7 @@ ui:
       slots:
         - {id: literature_review_document}
     - id: refine_topic
+      hide_when_step_skipped: literature_review
       step_id: refine_topic
       label: "调整选题"
       layout: list

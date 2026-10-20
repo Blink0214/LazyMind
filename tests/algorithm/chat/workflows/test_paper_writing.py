@@ -286,7 +286,7 @@ def test_public_workflow_presentation_and_named_outputs():
     assert workflow['id'] == 'paper-writing'
     assert workflow['name'] == '论文写作'
     assert {step['id'] for step in workflow['steps']} == {
-        'prepare', 'research_topic', 'literature_review', 'refine_topic', 'experiment',
+        'research_topic', 'literature_review', 'refine_topic', 'experiment',
         'data_analysis', 'write_document', 'peer_review', 'revise_document',
         'reading_reflection', 'finish',
     }
@@ -294,9 +294,10 @@ def test_public_workflow_presentation_and_named_outputs():
     ui = workflow['ui']
     assert not ui['task_presentation'].get('grouped')
     assert set(ui['task_presentation']['hidden_steps']) == {'finish'}
-    assert len(ui['tabs']) == 10
-    assert ui['tabs'][0]['step_id'] == 'prepare'
-    assert ui['slots']['prepare_document'] == {'widgetType': 'text-markdown', 'readOnly': True}
+    assert len(ui['tabs']) == 9
+    assert ui['tabs'][0]['step_id'] == 'research_topic'
+    assert 'prepare_document' not in ui['slots']
+    assert 'prepare' not in yaml.safe_load((PACKAGE / 'scenario/state.yml').read_text())['steps']
     for tab in ui['tabs']:
         assert tab['id'] not in ui['task_presentation']['hidden_steps']
         assert len(tab['label']) <= 6
