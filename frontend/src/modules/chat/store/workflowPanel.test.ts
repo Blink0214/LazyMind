@@ -37,6 +37,26 @@ describe('runtime skipped tab visibility', () => {
     expect(filterWorkflowTabs(tabs, [], undefined, { nodes: { topic: node } }, true)).toEqual(tabs);
   });
 
+  it('shows only executed paper tabs after the workflow finishes', () => {
+    const paper = hydrateWorkflowUI(load(readFileSync(resolve(process.cwd(), '../workflows/paper-writing/workflow.yaml'), 'utf8')));
+    const visible = (projection: WorkflowRuntimeProjection) =>
+      filterWorkflowTabs(paper.tabs, [], undefined, projection, true).map(tab => tab.id);
+
+    expect(visible({ completed: true, past: ['research_topic', 'finish'] })).toEqual(['research_topic']);
+    expect(visible({ completed: true, past: ['peer_review', 'finish'] })).toEqual(['peer_review']);
+    expect(visible({ completed: false, past: ['research_topic'] })).toContain('revise_document');
+    expect(visible({ completed: false, past: ['research_topic', 'finish'] })).toContain('revise_document');
+    expect(visible({ completed: true, past: ['research_topic', 'revise_document', 'finish'] }))
+      .toEqual(['research_topic', 'revise_document']);
+  });
+
+  it('keeps a completed unexecuted tab when it has a selected artifact', () => {
+    const tab = { id: 'future', label: 'Future', slots: [{ id: 'result', label: 'Result', type: 'file' as const }] };
+    const slots = [{ slot_id: 'result-id', revision: 1, selected: true, slot: 'result', created_at: '2026-10-20T00:00:00Z' }];
+    expect(filterWorkflowTabs([tab], slots, undefined, { completed: true, past: ['finish'] }, true)).toEqual([tab]);
+    expect(filterWorkflowTabs([tab], [], undefined, { completed: true, past: ['finish'] }, false)).toEqual([tab]);
+  });
+
   it('hides a composite only when every represented step is skipped', () => {
     const composite = [{ id: 'result', label: 'result', slots: [], status_step_ids: ['a', 'b'] }];
     expect(filterWorkflowTabs(composite, [], undefined, { pruned: ['a'] }, true)).toEqual(composite);
