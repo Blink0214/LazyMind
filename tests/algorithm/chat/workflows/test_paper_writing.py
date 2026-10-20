@@ -14,6 +14,17 @@ from lazymind.document_tools.paper import api
 from lazymind.document_tools.paper import workflow as tools
 
 
+@pytest.fixture(autouse=True)
+def mock_f1_model(monkeypatch):
+    def model(prompt):
+        if '"paper_clues"' in prompt:
+            return '{"topic": "证据可追溯性"}'
+        suffix = '\n\n## 文献反馈与调整依据\n根据综述调整验证路线。' if '"mode": "refine"' in prompt else ''
+        return '# 研究选题\n\n## 研究问题\n现有方法能否改善效果？' + suffix
+
+    monkeypatch.setattr(api.ALGORITHMS['research_topic'], 'AutoModel', lambda **_kwargs: model)
+
+
 @pytest.mark.parametrize('path', [
     ['F1', 'F2', 'F1', 'F2'],
     ['F2', 'F5', 'F6', 'F5', 'F6'],
@@ -198,6 +209,154 @@ def test_runtime_failure_retry_and_bad_external_input_never_fallback(runtime, tm
     with pytest.raises(ValueError):
         tools.run_paper_step()
     assert len(batches) == 1
+
+
+def test_f1_direct_entry_uses_conversation_pdfs_and_publishes_pool(runtime, monkeypatch):
+    ctx, batches = runtime
+    papers = [{'id': 'P1', 'title': '论文一', 'text': '<!-- page:1 -->\n证据一'},
+              {'id': 'P2', 'title': '论文二', 'text': '<!-- page:1 -->\n证据二'}]
+    monkeypatch.setattr(tools, '_conversation_papers', lambda history: papers if history else [])
+    ctx.params = {'step_id': 'research_topic', 'user_input': '根据两篇论文研究证据追溯',
+                  'history_files_per_turn': {'1': ['/uploads/论文一.pdf'], '2': ['/uploads/论文二.pdf']}}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    pool = tools._read_bound(outputs['research_topic_pool'])
+    assert pool['topic'] == '证据可追溯性'
+    assert tools.material(pool, 'papers')['content'] == papers
+    assert pool['history'][0]['node'] == 'F1'
+    assert '## 研究问题' in tools._read_bound(outputs['research_topic_document'])
+
+
+def test_f1_direct_entry_without_pdfs_creates_unverified_question(runtime):
+    ctx, batches = runtime
+    ctx.params = {'step_id': 'research_topic', 'user_input': '研究生成答案的证据可追溯性'}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    pool = tools._read_bound(outputs['research_topic_pool'])
+    assert pool['topic'] == '证据可追溯性'
+    assert tools.material(pool, 'papers') is None
+    assert '## 研究问题' in tools._read_bound(outputs['research_topic_document'])
+
+
+def test_f1_direct_demo_without_pdfs_keeps_upstream_demo(runtime, monkeypatch):
+    ctx, batches = runtime
+    monkeypatch.setattr(tools.research_topic, 'infer_topic', lambda *_args: pytest.fail('demo topic was inferred'))
+    ctx.params = {'step_id': 'research_topic', 'user_input': '[paper:demo]'}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    pool = tools._read_bound(outputs['research_topic_pool'])
+    assert tools.material(pool, 'papers')['mock'] is True
+    assert '演示数据' in tools._read_bound(outputs['research_topic_document'])
+
+
+def test_f1_real_pdf_overrides_demo_marker(runtime, monkeypatch):
+    ctx, batches = runtime
+    monkeypatch.setattr(tools, '_conversation_papers', lambda _history: [
+        {'id': 'P1', 'title': '论文一', 'text': '真实论文正文'},
+    ])
+    ctx.params = {'step_id': 'research_topic', 'user_input': '[paper:demo] 根据上传论文选题',
+                  'history_files_per_turn': {'1': ['/uploads/论文一.pdf']}}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    pool = tools._read_bound(outputs['research_topic_pool'])
+    assert tools.material(pool, 'papers')['mock'] is False
+    assert tools.material(pool, 'papers')['content'][0]['id'] == 'P1'
+    assert '演示数据' not in tools._read_bound(outputs['research_topic_document'])
+
+
+def test_f1_pdf_resources_are_scoped_deduplicated_and_parsed(tmp_path, monkeypatch):
+    from lazymind.chat.engine.tools.file_resources import ingest, resolver, store
+
+    monkeypatch.setattr(store, 'workspace_for_request', lambda: str(tmp_path))
+    resolved = {}
+    for file_id, filename, body in [('P1', '论文一.pdf', '证据一'), ('P2', '论文二.pdf', '证据二')]:
+        path = tmp_path / (file_id + '.md')
+        path.write_text(body)
+        resolved[file_id] = SimpleNamespace(kind='file_resource', file_id=file_id,
+                                            display_name=filename, path=str(path))
+    calls = []
+
+    def cached_pdf(path, *, turn_seq, store):
+        calls.append((Path(path).name, turn_seq))
+        return {'file_id': Path(path).stem.replace('论文一', 'P1').replace('论文二', 'P2'),
+                'parse_status': 'ready'}
+
+    monkeypatch.setattr(ingest, 'ingest_pdf_file', cached_pdf)
+    monkeypatch.setattr(resolver, 'resolve_text_target', lambda file_id, **_kwargs: resolved[file_id])
+    papers = tools._conversation_papers({
+        '2': ['/uploads/论文二.pdf', '/uploads/说明.txt'],
+        '1': ['/uploads/论文一.pdf'],
+        '3': ['/uploads/论文一.pdf'],
+    })
+    assert [(paper['id'], paper['title'], paper['text']) for paper in papers] == [
+        ('P1', '论文一', '证据一'), ('P2', '论文二', '证据二'),
+    ]
+    assert calls == [('论文一.pdf', 1), ('论文二.pdf', 2), ('论文一.pdf', 3)]
+    assert '/uploads/' not in json.dumps(papers, ensure_ascii=False)
+
+
+def test_f1_explicit_and_saved_inputs_do_not_rescan_conversation(runtime, tmp_path, monkeypatch):
+    ctx, batches = runtime
+    monkeypatch.setattr(tools, '_conversation_papers', lambda _history: pytest.fail('PDF history was rescanned'))
+    paper_input = tmp_path / 'paper-input.json'
+    paper_input.write_text(json.dumps({'topic': '显式主题', 'papers': [
+        {'id': 'P1', 'title': '指定论文', 'text': '指定正文'},
+    ]}, ensure_ascii=False))
+    ctx.params = {'step_id': 'research_topic', 'user_input': '研究选题',
+                  'remote_inputs': {'paper_input': str(paper_input)},
+                  'history_files_per_turn': {'1': ['/uploads/其他论文.pdf']}}
+    tools.run_paper_step()
+    first = {item['key']: item['value'] for item in batches[-1]}
+    assert tools.material(tools._read_bound(first['research_topic_pool']), 'papers')['content'][0]['id'] == 'P1'
+
+    seed = tmp_path / 'seed.json'
+    seed.write_text(json.dumps(tools.pool_from_business({'topic': '已确认主题'}), ensure_ascii=False))
+    ctx.params['remote_inputs'] = {'seed_pool': str(seed)}
+    tools.run_paper_step()
+    second = {item['key']: item['value'] for item in batches[-1]}
+    assert tools._read_bound(second['research_topic_pool'])['topic'] == '已确认主题'
+
+
+def test_f1_explicit_topic_wins_while_using_conversation_pdfs(runtime, tmp_path, monkeypatch):
+    ctx, batches = runtime
+    topic = tmp_path / 'topic.txt'
+    topic.write_text('用户指定的研究主题')
+    monkeypatch.setattr(tools, '_conversation_papers', lambda _history: [
+        {'id': 'P1', 'title': '论文一', 'text': '论文正文'},
+    ])
+    monkeypatch.setattr(tools.research_topic, 'infer_topic', lambda *_args: pytest.fail('主题不应重新推断'))
+    ctx.params = {'step_id': 'research_topic', 'user_input': '根据附件选题',
+                  'remote_inputs': {'paper_topic': str(topic)},
+                  'history_files_per_turn': {'1': ['/uploads/论文一.pdf']}}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    pool = tools._read_bound(outputs['research_topic_pool'])
+    assert pool['topic'] == '用户指定的研究主题'
+    assert tools.material(pool, 'papers')['content'][0]['id'] == 'P1'
+
+
+def test_f1_pdf_scan_does_not_change_direct_f2_entry(runtime, tmp_path, monkeypatch):
+    ctx, batches = runtime
+    monkeypatch.setattr(tools, '_conversation_papers', lambda _history: pytest.fail('F2 scanned PDFs'))
+    paper_input = tmp_path / 'paper-input.json'
+    paper_input.write_text(json.dumps({'topic': '文献主题'}, ensure_ascii=False))
+    ctx.params = {'step_id': 'literature_review', 'user_input': '先做综述',
+                  'remote_inputs': {'paper_input': str(paper_input)},
+                  'history_files_per_turn': {'1': ['/uploads/研究论文.pdf']}}
+    tools.run_paper_step()
+    assert {item['key'] for item in batches[-1]} == {'literature_review_pool', 'literature_review_document'}
+
+
+def test_f1_unreadable_pdf_stops_before_publication(runtime, monkeypatch):
+    ctx, batches = runtime
+    def unreadable(_history):
+        raise tools.MissingMaterials('论文附件无法解析')
+    monkeypatch.setattr(tools, '_conversation_papers', unreadable)
+    ctx.params = {'step_id': 'research_topic', 'user_input': '研究证据追溯',
+                  'history_files_per_turn': {'1': ['/uploads/坏论文.pdf']}}
+    with pytest.raises(tools.MissingMaterials, match='论文附件无法解析'):
+        tools.run_paper_step()
+    assert not batches
 
 
 def test_prepare_without_input_does_not_invent_materials(runtime):

@@ -17,7 +17,10 @@ from lazymind.document_tools.paper import workflow as tools
     ('literature_review', 'refine_topic', 'recovery_research'),
     ('peer_review', 'revise_document', 'recovery_review'),
 ])
-def test_real_artifact_publisher_across_ten_feedback_rounds(tmp_path, start, feedback, recovery):
+def test_real_artifact_publisher_across_ten_feedback_rounds(tmp_path, start, feedback, recovery, monkeypatch):
+    monkeypatch.setattr(api.ALGORITHMS['research_topic'], 'AutoModel', lambda **_kwargs: lambda _prompt:
+                        '# 研究选题\n\n## 研究问题\n如何改善效果？\n\n'
+                        '## 文献反馈与调整依据\n根据综述调整路线。')
     state = yaml.safe_load((PACKAGE / 'scenario/state.yml').read_text())
     workflow = yaml.safe_load((PACKAGE / 'workflow.yaml').read_text())
     types = {slot['id']: slot['type'] for slot in workflow['slots']}

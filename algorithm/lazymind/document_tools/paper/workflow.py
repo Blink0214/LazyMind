@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..artifacts import markdown_filename, persist_artifact_json
-from . import contracts
+from . import contracts, research_topic
 from .api import run_algorithm
 from .contracts import MissingMaterials
 from .entry import MAX_MANUSCRIPT_CHARS, read_manuscript
@@ -172,6 +172,45 @@ def pool_from_business(value: dict) -> dict:
             contracts.validate_value(kind, value[kind])
             add_material(pool, kind, value[kind], [], paper_ids)
     return validate_pool(pool)
+
+
+def _conversation_papers(files_by_turn: dict | None) -> list[dict]:
+    """Resolve this conversation's PDFs through the existing file-resource store."""
+    pdf_paths = []
+    for turn in sorted(files_by_turn or {}, key=int):
+        for raw_path in files_by_turn[turn] or []:
+            path = str(raw_path).split('?', 1)[0]
+            if Path(path).suffix.lower() == '.pdf':
+                pdf_paths.append((int(turn), path))
+    if not pdf_paths:
+        return []
+
+    from lazymind.chat.engine.tools.file_resources.ingest import ingest_pdf_file
+    from lazymind.chat.engine.tools.file_resources.resolver import resolve_text_target
+    from lazymind.chat.engine.tools.file_resources.store import FileResourceStore, workspace_for_request
+
+    store = FileResourceStore(workspace_for_request())
+    papers = []
+    known_ids = set()
+    for turn, path in pdf_paths:
+        try:
+            manifest = ingest_pdf_file(path, turn_seq=turn, store=store)
+            if manifest.get('parse_status') != 'ready':
+                raise ValueError('PDF is not ready')
+            file_id = manifest['file_id']
+            if file_id in known_ids:
+                continue
+            resolved = resolve_text_target(file_id, resources_only=True)
+            if resolved.kind != 'file_resource' or resolved.file_id != file_id:
+                raise ValueError('not a parsed PDF')
+            text = Path(resolved.path).read_text(encoding='utf-8').strip()
+        except (OSError, ValueError):
+            raise MissingMaterials(f'论文附件 {Path(path).name} 无法读取或尚未解析完成，请检查后重试。') from None
+        if not text:
+            raise MissingMaterials(f'论文附件 {Path(path).name} 没有可用的解析正文，请重新上传。')
+        known_ids.add(file_id)
+        papers.append({'id': file_id, 'title': Path(resolved.display_name).stem or file_id, 'text': text})
+    return papers
 
 
 def preparation_document(pool: dict) -> str:
@@ -373,6 +412,19 @@ def run_paper_step() -> dict:
         if step not in STEP_NODE:
             raise ValueError(f'未知 Workflow 步骤: {step}')
         pool = initialize_pool(bound, request)
+        if step == 'research_topic' and 'paper_input' not in bound and not any(
+            key.endswith('_pool') for key in bound
+        ):
+            papers = _conversation_papers(context.params.get('history_files_per_turn'))
+            if papers and any(item['mock'] for item in pool['materials']):
+                # Real uploaded papers take precedence over a demo marker in the request.
+                pool = pool_from_business({'topic': research_topic.infer_topic(request, papers),
+                                           'request': request, 'papers': papers})
+            elif not any(item['mock'] for item in pool['materials']):
+                if papers:
+                    add_material(pool, 'papers', papers, [], [paper['id'] for paper in papers])
+                if 'paper_topic' not in bound:
+                    pool['topic'] = research_topic.infer_topic(pool.get('request') or request, papers)
         if not context.params.get('current_user_input') and 'Recovery request for this rerun only:' not in instruction:
             request = pool.get('request') or request
         fail = '[mock:fail]' in request + instruction and '[mock:retry]' not in request + instruction

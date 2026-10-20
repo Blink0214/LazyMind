@@ -542,6 +542,8 @@ export function filterWorkflowTabs(
   return tabs.filter((tab) => {
     if (hideSkippedSteps) {
       const steps = tab.status_step_ids?.length ? tab.status_step_ids : [tab.step_id || tab.id];
+      if (projection?.completed && !steps.some(wasExecuted)
+          && !tab.slots.some((slot) => present.has(slot.id))) return false;
       if (tab.hide_when_step_skipped && wasSkipped(tab.hide_when_step_skipped)
           && !steps.some(wasExecuted)) return false;
       const allSkipped = steps.every((id) => {

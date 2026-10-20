@@ -10,9 +10,21 @@ ROOT = Path(__file__).resolve().parents[4]
 PACKAGE = ROOT / 'workflows/paper-writing'
 EXAMPLES = ROOT / 'tests/fixtures/paper-writing'
 from lazymind.document_tools.paper import api
+from lazymind.document_tools.paper import research_topic
 from lazymind.document_tools.paper import workflow as tools
 
+TOPIC_MARKDOWN = '# 研究选题\n\n## 研究问题\n现有方法能否改善效果？\n\n## 证据状态\n尚待核验。'
+REFINED_TOPIC_MARKDOWN = TOPIC_MARKDOWN + '\n\n## 文献反馈与调整依据\n根据综述调整验证路线。'
 
+
+@pytest.fixture
+def mock_topic_model(monkeypatch):
+    monkeypatch.setattr(research_topic, 'AutoModel', lambda **_kwargs: lambda prompt: (
+        REFINED_TOPIC_MARKDOWN if '"mode": "refine"' in prompt else TOPIC_MARKDOWN
+    ))
+
+
+@pytest.mark.usefixtures('mock_topic_model')
 @pytest.mark.parametrize('step', list(tools.STEP_NODE))
 def test_independent_algorithm_contract(step):
     example = json.loads((EXAMPLES / (step + '.json')).read_text())
@@ -26,6 +38,7 @@ def test_independent_algorithm_contract(step):
     assert not {'pool', 'current', 'history', 'schema', 'remote_inputs'} & example['input'].keys()
 
 
+@pytest.mark.usefixtures('mock_topic_model')
 @pytest.mark.parametrize('step,fields', [
     ('research_topic', {}), ('literature_review', {}),
     ('data_analysis', {'data': {'columns': ['score'], 'rows': [[1]]}}),
@@ -53,6 +66,82 @@ def test_missing_business_materials_stop_before_algorithm(step, inputs, monkeypa
     monkeypatch.setattr(api.ALGORITHMS[module], 'run', must_not_run)
     with pytest.raises(tools.MissingMaterials, match='缺少材料'):
         tools.run_algorithm(step, inputs)
+
+
+def test_f1_without_papers_uses_unverified_evidence_prompt(monkeypatch):
+    prompts = []
+    monkeypatch.setattr(research_topic, 'AutoModel',
+                        lambda **_kwargs: lambda prompt: prompts.append(prompt) or TOPIC_MARKDOWN)
+    result = tools.run_algorithm('research_topic', {'topic': '研究主题'})
+    assert result == {'question': TOPIC_MARKDOWN, 'is_demo': False}
+    assert 'No parsed papers are currently available' in prompts[0]
+    assert 'Do not claim to have read papers' in prompts[0]
+    assert 'Return only one Markdown document written in Chinese' in prompts[0]
+
+
+def test_f1_topic_inference_reads_paper_opening_not_filename(monkeypatch):
+    prompts = []
+    monkeypatch.setattr(research_topic, 'AutoModel',
+                        lambda **_kwargs: lambda prompt: prompts.append(prompt) or '{"topic": "证据可追溯性"}')
+    papers = [{'id': 'P1', 'title': '无关文件名', 'text': '<!-- page:1 -->\n摘要：讨论证据可追溯性。'}]
+    assert research_topic.infer_topic('根据论文确定选题', papers) == '证据可追溯性'
+    assert 'Use Chinese for a non-null topic value' in prompts[0]
+    assert '讨论证据可追溯性' in prompts[0]
+    assert '无关文件名' not in prompts[0]
+
+
+def test_f1_long_paper_condenses_without_mutating_source_pool(monkeypatch):
+    paper = {'id': 'P1', 'title': '长论文', 'text': ''.join(
+        f'<!-- page:{page} -->\n第{page}页证据。' + '研究方法与结果。' * 190 + '\n'
+        for page in range(1, 5)
+    )}
+    pool = tools.pool_from_business({'topic': '研究主题', 'papers': [paper]})
+    before = copy.deepcopy(pool)
+    prompts = []
+
+    def model(prompt):
+        prompts.append(prompt)
+        return TOPIC_MARKDOWN if 'Input materials (JSON):\n' in prompt else '[P1] 方法与结果仍需核验。'
+
+    monkeypatch.setattr(research_topic, 'AutoModel', lambda **_kwargs: model)
+    result = tools.execute_step('research_topic', pool)
+    final_input = json.loads(prompts[-1].split('Input materials (JSON):\n', 1)[1])
+    assert 'Page-by-page notes' in final_input['papers'][0]['text']
+    assert pool == before
+    assert tools.material(result['pool'], 'papers')['content'] == [paper]
+
+
+@pytest.mark.parametrize('invalid', ['', '## 其他章节\n内容',
+                                     TOPIC_MARKDOWN + '\n\n## 研究问题\n另一个问题'])
+def test_f1_rejects_invalid_model_output_without_publishing(invalid, monkeypatch):
+    monkeypatch.setattr(research_topic, 'AutoModel', lambda **_kwargs: lambda _prompt: invalid)
+    pool = tools.pool_from_business({'topic': 'T'})
+    before = copy.deepcopy(pool)
+    with pytest.raises(ValueError, match='研究选题输出'):
+        tools.execute_step('research_topic', pool)
+    assert pool == before
+
+
+def test_f2_feedback_refines_f1_question_without_overwriting_evidence(monkeypatch):
+    old_question = '# 旧选题\n\n## 研究问题\n原方法能否改善效果？'
+    pool = tools.pool_from_business({'topic': 'T', 'question': old_question})
+    monkeypatch.setattr(api.ALGORITHMS['literature_review'], 'run', lambda inputs: {
+        'evidence': '# 初始综述\n尚待人工核对。', 'papers': inputs['papers'], 'is_demo': False,
+    })
+    reviewed = tools.execute_step('literature_review', pool)
+    edited = '# 人工确认的综述\n需要缩小研究范围。'
+    selected = tools.pool_from_inputs({
+        'literature_review_pool': reviewed['pool'], 'literature_review_document': edited,
+    })
+    prompts = []
+    monkeypatch.setattr(research_topic, 'AutoModel', lambda **_kwargs: lambda prompt: (
+        prompts.append(prompt) or REFINED_TOPIC_MARKDOWN
+    ))
+    result = tools.execute_step('refine_topic', selected, '缩小研究范围')
+    model_input = json.loads(prompts[0].split('Input materials (JSON):\n', 1)[1])
+    assert model_input['question'] == old_question
+    assert model_input['evidence'] == edited
+    assert result['document'] == REFINED_TOPIC_MARKDOWN
 
 
 def test_one_real_algorithm_replacement_preserves_storage_and_next_input(monkeypatch):
@@ -83,6 +172,7 @@ def test_one_real_algorithm_replacement_preserves_storage_and_next_input(monkeyp
     assert tools.material(result['pool'], 'evidence')['content'] == '# 新综述\n根据新选题完成'
 
 
+@pytest.mark.usefixtures('mock_topic_model')
 @pytest.mark.parametrize('path', [
     ['research_topic', 'literature_review', 'refine_topic', 'literature_review'],
     ['literature_review', 'write_document', 'peer_review', 'revise_document', 'peer_review'],
