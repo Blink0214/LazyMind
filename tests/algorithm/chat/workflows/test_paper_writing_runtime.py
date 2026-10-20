@@ -1,4 +1,4 @@
-"""Contract check against the real Runtime artifact publisher (no model calls)."""
+"""Contract check against the real Runtime publisher and configured algorithms."""
 import json
 from pathlib import Path
 
@@ -59,15 +59,21 @@ def test_real_artifact_publisher_across_ten_feedback_rounds(tmp_path, start, fee
                 tools.validate_pool(tools._read_bound(event['value']['path']))
             if 'path' in event['value']:
                 offloaded.append(event['slot'])
+        if step == 'peer_review':
+            structured = json.loads(Path(latest['peer_review_data']['path']).read_text())
+            pool = tools._read_bound(latest['peer_review_pool']['path'])
+            assert structured == tools.material(pool, 'review_data')['content']
+            inputs = tools.business_input('revise_document', pool)
+            api.contracts.validate_input('revise_document', inputs)
+            assert inputs['review_data'] == structured
         events.extend(artifacts)
 
     try:
-        run('prepare', {'paper_input': {'demo': True}})
-        run(start, {'seed_pool': latest['seed_pool']})
+        run(start, {'paper_input': {'demo': True}})
         for _ in range(10):
             run(feedback, {start+'_pool': latest[start+'_pool'], start+'_document': latest[start+'_document']})
             # Mimics the exact frozen pool/document pair supplied by Core rewind.
-            run(start, {'seed_pool': latest['seed_pool'], recovery+'_pool': latest[feedback+'_pool'],
+            run(start, {recovery+'_pool': latest[feedback+'_pool'],
                         recovery+'_document': latest[feedback+'_document']})
         value = latest[start+'_pool']
         pool = tools._read_bound(value['path']) if 'path' in value else value['data']

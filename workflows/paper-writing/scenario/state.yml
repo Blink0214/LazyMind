@@ -1,8 +1,7 @@
 initial: __start__
 start_route: choice
 transitions:
-  __start__: [{to: prepare}]
-  prepare:
+  __start__:
     - {to: research_topic, when: "用户明确选择研究选题"}
     - {to: literature_review, when: "用户明确选择文献综述"}
     - {to: experiment, when: "用户明确选择实验研究"}
@@ -41,27 +40,6 @@ transitions:
   finish:
     - {to: __end__, when: "结束"}
 steps:
-  prepare:
-    label: "材料准备"
-    mode: auto
-    route: choice
-    tools_only: true
-    terminal_tools_only: true
-    prompt: |
-      这是已经调度的算法节点执行任务，不是规划或澄清任务。
-      必须立即调用且只调用一次 run_paper_step，无参数；等待工具返回，不得用聊天文本代替调用。
-      真实节点、绑定材料、本轮要求与重试标记均由工具从 Runtime 读取。
-      当前浏览的页签不是执行节点；不要根据页签或旧启动请求选择节点、材料或生成内容。
-      算法实现由独立模块提供；全部产物必须由工具保存，不能自行补造材料或结果。
-      工具报错即报告错误并停止，不自行重试、补造或保存材料。
-      工具成功后结束本节点，等待用户确认或选择下一步，不擅自运行其他分支。
-    tools: [run_paper_step]
-    terminal_tools: [run_paper_step]
-    inputs: [{material: paper_input, required: false, transport: path}]
-    outputs:
-      - {material: seed_pool, required: true}
-      - {material: prepare_document, required: true}
-    acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
   research_topic:
     label: "研究选题"
     mode: human
@@ -79,7 +57,12 @@ steps:
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
-      - {material: seed_pool, required: true, transport: path}
+      - {material: seed_pool, required: false, transport: path}
+      - {material: paper_input, required: false, transport: path}
+      - {material: manuscript_file, required: false, transport: path}
+      - {material: manuscript_text, required: false, transport: path}
+      - {material: paper_topic, required: false, transport: path}
+      - {material: review_request, required: false, transport: path}
     outputs:
       - {material: research_topic_pool, required: true}
       - {material: research_topic_document, required: true}
@@ -101,7 +84,12 @@ steps:
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
-      - {material: seed_pool, required: true, transport: path}
+      - {material: seed_pool, required: false, transport: path}
+      - {material: paper_input, required: false, transport: path}
+      - {material: manuscript_file, required: false, transport: path}
+      - {material: manuscript_text, required: false, transport: path}
+      - {material: paper_topic, required: false, transport: path}
+      - {material: review_request, required: false, transport: path}
       - {material: research_topic_pool, required: false, transport: path}
       - {material: research_topic_document, required: false, transport: path}
       - {material: recovery_research_pool, required: false, transport: path}
@@ -128,7 +116,12 @@ steps:
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
-      - {material: seed_pool, required: true, transport: path}
+      - {material: seed_pool, required: false, transport: path}
+      - {material: paper_input, required: false, transport: path}
+      - {material: manuscript_file, required: false, transport: path}
+      - {material: manuscript_text, required: false, transport: path}
+      - {material: paper_topic, required: false, transport: path}
+      - {material: review_request, required: false, transport: path}
       - {material: research_topic_pool, required: false, transport: path}
       - {material: research_topic_document, required: false, transport: path}
       - {material: literature_review_pool, required: false, transport: path}
@@ -154,7 +147,12 @@ steps:
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
-      - {material: seed_pool, required: true, transport: path}
+      - {material: seed_pool, required: false, transport: path}
+      - {material: paper_input, required: false, transport: path}
+      - {material: manuscript_file, required: false, transport: path}
+      - {material: manuscript_text, required: false, transport: path}
+      - {material: paper_topic, required: false, transport: path}
+      - {material: review_request, required: false, transport: path}
       - {material: research_topic_pool, required: false, transport: path}
       - {material: research_topic_document, required: false, transport: path}
       - {material: literature_review_pool, required: false, transport: path}
@@ -180,7 +178,12 @@ steps:
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
-      - {material: seed_pool, required: true, transport: path}
+      - {material: seed_pool, required: false, transport: path}
+      - {material: paper_input, required: false, transport: path}
+      - {material: manuscript_file, required: false, transport: path}
+      - {material: manuscript_text, required: false, transport: path}
+      - {material: paper_topic, required: false, transport: path}
+      - {material: review_request, required: false, transport: path}
       - {material: research_topic_pool, required: false, transport: path}
       - {material: research_topic_document, required: false, transport: path}
       - {material: literature_review_pool, required: false, transport: path}
@@ -209,7 +212,12 @@ steps:
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
-      - {material: seed_pool, required: true, transport: path}
+      - {material: seed_pool, required: false, transport: path}
+      - {material: paper_input, required: false, transport: path}
+      - {material: manuscript_file, required: false, transport: path}
+      - {material: manuscript_text, required: false, transport: path}
+      - {material: paper_topic, required: false, transport: path}
+      - {material: review_request, required: false, transport: path}
       - {material: research_topic_pool, required: false, transport: path}
       - {material: research_topic_document, required: false, transport: path}
       - {material: literature_review_pool, required: false, transport: path}
@@ -239,7 +247,12 @@ steps:
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
-      - {material: seed_pool, required: true, transport: path}
+      - {material: seed_pool, required: false, transport: path}
+      - {material: paper_input, required: false, transport: path}
+      - {material: manuscript_file, required: false, transport: path}
+      - {material: manuscript_text, required: false, transport: path}
+      - {material: paper_topic, required: false, transport: path}
+      - {material: review_request, required: false, transport: path}
       - {material: research_topic_pool, required: false, transport: path}
       - {material: research_topic_document, required: false, transport: path}
       - {material: literature_review_pool, required: false, transport: path}
@@ -255,6 +268,7 @@ steps:
     outputs:
       - {material: peer_review_pool, required: true}
       - {material: peer_review_document, required: true}
+      - {material: peer_review_data, required: true}
     acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
   revise_document:
     label: "论文修订"
@@ -274,7 +288,12 @@ steps:
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
-      - {material: seed_pool, required: true, transport: path}
+      - {material: seed_pool, required: false, transport: path}
+      - {material: paper_input, required: false, transport: path}
+      - {material: manuscript_file, required: false, transport: path}
+      - {material: manuscript_text, required: false, transport: path}
+      - {material: paper_topic, required: false, transport: path}
+      - {material: review_request, required: false, transport: path}
       - {material: research_topic_pool, required: false, transport: path}
       - {material: research_topic_document, required: false, transport: path}
       - {material: literature_review_pool, required: false, transport: path}
@@ -308,7 +327,12 @@ steps:
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
-      - {material: seed_pool, required: true, transport: path}
+      - {material: seed_pool, required: false, transport: path}
+      - {material: paper_input, required: false, transport: path}
+      - {material: manuscript_file, required: false, transport: path}
+      - {material: manuscript_text, required: false, transport: path}
+      - {material: paper_topic, required: false, transport: path}
+      - {material: review_request, required: false, transport: path}
       - {material: research_topic_pool, required: false, transport: path}
       - {material: research_topic_document, required: false, transport: path}
       - {material: literature_review_pool, required: false, transport: path}

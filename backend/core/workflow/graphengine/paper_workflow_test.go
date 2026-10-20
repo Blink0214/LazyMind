@@ -43,7 +43,7 @@ func TestPaperGraphAllForwardScenarios(t *testing.T) {
 	for _, path := range paths {
 		t.Run(strings.Join(path, "-"), func(t *testing.T) {
 			snapshot := RuntimeSnapshot{}
-			steps := append([]string{"prepare"}, path...)
+			steps := append([]string{}, path...)
 			steps = append(steps, "finish")
 			previous := "__start__"
 			for _, step := range steps {

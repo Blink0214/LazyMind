@@ -4,9 +4,44 @@
 
 日期：2026-10-15。用途：给算法负责人独立设计、开发、自测，以及给骨架负责人实现统一适配和校验。
 
-**状态：这是待落地的 v2 开发规范，不是当前代码能力说明。** 当前 `document_tools/paper/contracts.py` 和仓库内 fixtures 仍为 v1；本目录只提供接口规范、复用清单和样例，没有修改算法或运行代码。实习生正式按 v2 接入前，骨架负责人须完成第十节的迁移。当前 v1 字段以 [contracts.py](../../../algorithm/lazymind/document_tools/paper/contracts.py) 为准。
+**状态：下文是目标 v2 规范，不是当前代码能力说明。** 当前公共入口和仓库内 fixtures 仍使用 v1。2026-10-19 已确认：各模块先基于代码和文档开发，联调时统一差异，不把全局 v2 迁移作为开工前置条件。当前字段以 [contracts.py](../../../algorithm/lazymind/document_tools/paper/contracts.py) 为准；返回结构变更必须同步调用方，不能直接把对象返回给仍要求字符串的骨架。
+
+**F6 当前实现（2026-10-19）：** 已接真实模型调用，一次生成 `ReviewResult`，返回 `review: str`（Markdown）、`review_data: dict`（结构化意见）、`is_demo: bool` 共三个字段。提示词在 `algorithm/lazymind/document_tools/paper/prompts/peer_review_prompt.py`，入口为 `paper/peer_review.py`，共享类型在 `paper/review_schema.py`。F6 调用测试使用真实模型，不用 monkeypatch；格式与排版测试直接调用函数。下文的完整 v2 Review / ContentRef 尚未接入。当前完整样例见 [F6 运行样例](../../../tests/fixtures/paper-writing/peer_review.json)，model_response/output 只是格式示例；不要直接传入 temp/examples 下的目标 v2 对象。
+
+### 当前审稿到修订的交接
+
+| 字段 | 类型 | 用途 |
+| --- | --- | --- |
+| review | string | 前端写作控件显示的 Markdown，仍可编辑 |
+| review_data.summary | string | 总体评价 |
+| review_data.issues | object[] | 按严重程度排序，和 Markdown 中 R1、R2 的编号对应；允许无问题 |
+| review_data.limitations | string[] | 本次审查限制，包含缺少证据或分析材料的说明 |
+| review_data.manuscript_sha256 | string | 被审稿正文的 SHA-256，64 位小写十六进制 |
+| review_data.review_sha256 | string | 对应 Markdown 的 SHA-256，用于识别编辑后的不一致 |
+
+每条 issue 固定字段：`id`（R1 等，唯一）、`severity`（major/minor/suggestion）、`category`（method/evidence/analysis/structure/language/citation）、`location`（非空章节说明）、`quote`（原文或 null）、`problem`、`suggestion`（非空文本）、`action_type`（text_revision/needs_material/needs_experiment）。拒绝未知字段和错误类型；quote 非空时必须出现在原稿。
+
+- 摘录仅允许连续空白/换行差异；匹配成功后保存稿件中的实际片段，不放宽字词、数字或拼接引用。找不到时与格式错误合并为一次局部修复，由模型选择原文起止行号、代码复制原文；不重新生成整份报告，修复失败不发布产物。模型摘录错误不应误报为缺少论文文件。
+
+- F6 保存 `模拟审稿.md` 和 `审稿意见.json`；结构化内容也随材料池保存。前端正文仍只展示 Markdown，不新增步骤或 JSON 页签。
+- F5 修订函数直接收到 `inputs['review_data']`，不用读文件、材料池或解析 Markdown。需要材料/实验的问题不能靠生成文字冒充完成。
+- 修订前同时检查稿件、报告摘要；任意一份已编辑则报“结构化意见已过期，请重新审稿后再修订”。本期不做 Markdown 反解析、自动同步或单条勾选。
+- 历史 Markdown-only 输入仍兼容，`review_data` 默认 null；新 F6 输出必须包含结构化意见。旧固定执行图仍将结构化内容保存在原有材料池里，不强行增加未声明的文件槽。
+- 目前 F5 仍为演示算法：本次只接通结构化交接，不代表已实现真实修改。
 
 ## 一 开发者先看这张表
+
+### 当前文件入口（2026-10-19）
+
+- 新执行图没有 prepare 节点。用户上传论文后，Chat 将准确附件名绑定到 manuscript_file，直接选择 peer_review；Runtime 在调用算法前执行 initialize_pool。不要让用户提供业务 JSON 或 pool.json。
+- 可选入口：manuscript_text（直接正文）、paper_topic（主题）、review_request（审查要求）。paper_input 只兼容现有程序化输入，不是材料池文件；文件与正文同时提供时拒绝冲突版本。
+- entry.read_manuscript 复用 LazyLLM PDFReader/DocxReader，支持文本型 PDF、DOCX、UTF-8 Markdown/TXT；20 MB 文件、20 万字符限制，绝不静默截断。PDF 有页面提取不到文字时要求补可解析稿件，不承诺扫描件 OCR、图像/公式理解。
+- 后续节点优先读取已经确认的材料池与编辑产物，不重新加载原附件覆盖新稿。算法仍只接收普通业务字段，不接触文件。
+- 新图里“调整选题”配置 hide_when_step_skipped: literature_review；综述分支跳过时隐藏该未执行页签。下游论文修订仍展示；已执行结果及回退后的恢复不受影响。
+- Core 在首次选择入口时补齐入口分支记录；直接选 peer_review 后，前六个步骤和阅读心得隐藏，只保留模拟审稿与下游论文修订。没有入口记录的旧失败会话在重试时也会补齐。
+- 旧固定版本会话的 prepare 调用仍兼容，但新配置没有该步骤、页签或清单产物。配置/前端修改需部署后验证。
+
+下文仍是 v2 目标设计，不要据此改变当前算法接口。
 
 算法函数统一为 `run(inputs: dict) -> dict`，只有 **1 个位置参数、1 个返回对象**，不增加 `*args`、`**kwargs`、路径或 pool 参数。表中的字段数是归一化后的对象键数，不是 Python 函数参数个数。
 
@@ -321,6 +356,17 @@ word_target 非空时复用旧流程 count_academic_units 的中文字符/英文
 
 ### F6 模拟审稿
 
+当前已实现：`run(inputs)` 接收 topic、request、manuscript、evidence、analysis；后两项为可空文本。
+内部 `ReviewResult` 固定包含非空 summary、issues 列表、limitations 字符串列表。
+每条 issue 固定包含 severity（major/minor/suggestion）、category（method/evidence/analysis/structure/language/citation）、location、quote（非空字符串或 null）、problem、suggestion、action_type（text_revision/needs_material/needs_experiment）。拒绝未知字段；按等级排序后由代码生成 R1、R2 等编号，渲染成单份 Markdown。quote 非空时检查它确实出现在本次稿件；章节归属和重复位置消歧尚待任务 3。
+模型使用现有 AutoModel 与 WriterToolBase 的结构化提示/解析，不操作 pool 或文件，不修改旧 workflow；缺辅助材料会在报告中明确未核验范围。
+F6 不使用 Writer 默认的全文重试：一次生成后汇总字段与摘录错误，只将错误字段/意见交给模型修复一次，有效意见原样保留。
+修复结果必须覆盖且仅覆盖指定路径，合并后重新执行完整格式与原文摘录校验；最多两次模型调用，不叠加重试。
+局部修复的 quote 使用起止行号，由代码复制原稿连续行；最终对外的 quote 仍为原文字符串，F5 接口不变。
+无法解析的 JSON、缺少意见列表或修复后仍不合法会明确失败，不静默补默认值、丢弃意见或自动重新审稿。长稿处理与端到端耗时仍需持续验收。
+
+以下为联调时对齐的目标 v2 契约，不是当前返回类型：
+
 | 输入字段 | 类型 | 条件 |
 | --- | --- | --- |
 | papers | Paper[] | 可空；引用核验依赖对应论文 |
@@ -360,7 +406,7 @@ Question/Evidence/Analysis/Review/Reflection 以结构化对象为传递依据�
 
 ## 七 中间入口与参数传递
 
-用户/上游提供标准业务材料，材料准备创建本次状态；不要求用户或算法负责人提交 pool.json。
+用户/上游提供文件或业务材料，由入口内部函数创建本次状态；不设置用户可见的材料准备步骤，不要求用户或算法负责人提交 pool.json。
 
 | 入口 | 最少业务材料 | 缺少时 |
 | --- | --- | --- |

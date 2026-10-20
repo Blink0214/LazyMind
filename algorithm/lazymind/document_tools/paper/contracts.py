@@ -2,20 +2,22 @@
 import copy
 import math
 import xml.etree.ElementTree as ET
+from .review_schema import SavedReview, text_digest
 
 FIELDS = {
     'research_topic': ('papers', 'question', 'evidence'),
     'literature_review': ('papers', 'question', 'evidence'),
     'experiment': ('question', 'evidence', 'data'),
     'data_analysis': ('data', 'experiment'),
-    'write_document': ('papers', 'question', 'evidence', 'analysis', 'chart', 'outline', 'manuscript', 'review'),
+    'write_document': ('papers', 'question', 'evidence', 'analysis', 'chart', 'outline', 'manuscript',
+                       'review', 'review_data'),
     'peer_review': ('manuscript', 'evidence', 'analysis'),
     'reading_reflection': ('papers', 'evidence'),
 }
 OUTPUTS = {
     'research_topic': ('question',), 'literature_review': ('evidence', 'papers'),
     'experiment': ('experiment',), 'data_analysis': ('analysis', 'chart'),
-    'write_document': ('outline', 'manuscript'), 'peer_review': ('review',),
+    'write_document': ('outline', 'manuscript'), 'peer_review': ('review', 'review_data'),
     'reading_reflection': ('reflection',),
 }
 ALIASES = {'refine_topic': 'research_topic', 'revise_document': 'write_document'}
@@ -34,7 +36,9 @@ def text(value, label):
 
 
 def validate_value(kind, value):
-    if kind == 'papers':
+    if kind == 'review_data':
+        SavedReview.model_validate(value)
+    elif kind == 'papers':
         if not isinstance(value, list):
             raise ValueError('papers 必须是论文列表')
         ids = set()
@@ -113,11 +117,17 @@ def validate_input(step, value):
         result['experiment'] and result['experiment']['results']
     ):
         missing.append('数据或实验结果')
-    if step == 'write_document' and not any(result[k] for k in
-        ('papers', 'question', 'evidence', 'analysis', 'outline', 'manuscript')):
+    if step == 'write_document' and not any(
+        result[k] for k in ('papers', 'question', 'evidence', 'analysis', 'outline', 'manuscript')
+    ):
         missing.append('研究材料、大纲或稿件')
     if missing:
         raise MissingMaterials('缺少材料: ' + '、'.join(missing))
+    if step == 'revise_document' and result['review_data'] is not None:
+        data = result['review_data']
+        if (data['manuscript_sha256'] != text_digest(result['manuscript'])
+                or data['review_sha256'] != text_digest(result['review'])):
+            raise ValueError('稿件或审稿意见已修改，结构化意见已过期，请重新审稿后再修订')
     return result
 
 
@@ -128,4 +138,6 @@ def validate_output(module, value):
         raise ValueError('输出 is_demo 必须是布尔值')
     for key in OUTPUTS[module]:
         validate_value(key, value[key])
+    if module == 'peer_review' and value['review_data']['review_sha256'] != text_digest(value['review']):
+        raise ValueError('结构化审稿意见与 Markdown 报告不匹配')
     return value

@@ -150,6 +150,29 @@ func selectLLMChoiceRoutes(ctx context.Context, tx *gorm.DB, sessionID string, g
 	if err := tx.WithContext(ctx).Where("session_id = ? AND validity = ?", sessionID, "effective").Find(&decisions).Error; err != nil {
 		return err
 	}
+	// Preparation-created sessions have no start attempt to freeze their entry choice.
+	hasStart := false
+	for _, decision := range decisions {
+		hasStart = hasStart || decision.FromStepID == "__start__"
+	}
+	if !hasStart && graph.StartRoute == "choice" {
+		snapshot, err := loadRuntimeSnapshot(ctx, tx, sessionID, graph)
+		if err != nil {
+			return err
+		}
+		var session orm.WorkflowSession
+		if err := tx.Select("state_version").First(&session, "id = ?", sessionID).Error; err != nil {
+			return err
+		}
+		start := graphengine.DecideRoute(graph, "__start__", snapshot.Materials)
+		if err := persistRouteDecision(ctx, tx, sessionID, "__start__", "", start.Activated, start.Pruned,
+			start.Bypassed, start.Witnesses, session.StateVersion); err != nil {
+			return err
+		}
+		if err := tx.Where("session_id = ? AND validity = ?", sessionID, "effective").Find(&decisions).Error; err != nil {
+			return err
+		}
+	}
 	for _, decision := range decisions {
 		route := graph.StartRoute
 		if node, ok := graph.Nodes[decision.FromStepID]; ok {

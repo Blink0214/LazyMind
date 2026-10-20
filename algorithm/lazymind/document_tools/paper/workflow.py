@@ -10,6 +10,8 @@ from ..artifacts import markdown_filename, persist_artifact_json
 from . import contracts
 from .api import run_algorithm
 from .contracts import MissingMaterials
+from .entry import MAX_MANUSCRIPT_CHARS, read_manuscript
+from .review_schema import text_digest
 
 SCHEMA = 'paper-material-pool.v1'
 ROUTES = {
@@ -25,8 +27,7 @@ STEP_LABELS = {
     'write_document': '论文写作', 'peer_review': '模拟审稿', 'reading_reflection': '阅读心得',
     'refine_topic': '调整选题', 'revise_document': '论文修订', 'prepare': '材料准备', 'finish': '结束说明',
 }
-KINDS = {'papers', 'data', 'question', 'evidence', 'experiment', 'analysis',
-         'chart', 'outline', 'manuscript', 'review', 'reflection'}
+KINDS = contracts.KINDS
 
 
 def validate_pool(pool: Any) -> dict:
@@ -174,9 +175,11 @@ def pool_from_business(value: dict) -> dict:
 
 
 def preparation_document(pool: dict) -> str:
+    # Compatibility for already pinned legacy sessions; new workflows have no prepare node.
     names = {'papers': '论文', 'data': '数据表', 'question': '研究选题', 'evidence': '文献综述',
              'experiment': '实验结果', 'analysis': '分析结论', 'chart': '图表',
-             'outline': '大纲', 'manuscript': '稿件', 'review': '审稿意见', 'reflection': '阅读心得'}
+             'outline': '大纲', 'manuscript': '稿件', 'review': '审稿意见', 'review_data': '结构化审稿意见',
+             'reflection': '阅读心得'}
     lines = ['# 材料准备', '', '## 研究主题', pool['topic'], '', '## 已接收材料']
     for kind in pool['current']:
         item = material(pool, kind)
@@ -216,6 +219,8 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False) -
         generated[main]['report'] = document
     else:
         generated[main] = document
+    if main == 'review':
+        generated['review_data']['review_sha256'] = text_digest(document)
     sources = {source for kind in relevant if material(pool, kind)
                for source in material(pool, kind)['source_refs']}
     sources.update(p['id'] for p in generated.get('papers', []))
@@ -296,6 +301,49 @@ def _runtime_request(params: dict) -> tuple[str, str]:
     return request, instruction
 
 
+def initialize_pool(bound: dict[str, str], request: str = '') -> dict:
+    """Resolve saved materials, or initialize business inputs before the first algorithm."""
+    # A later step must use the latest confirmed artifacts, not re-read the original upload.
+    saved = {key: _read_bound(path) for key, path in bound.items()
+             if key.endswith(('_pool', '_document'))}
+    if any(key.endswith('_pool') for key in saved):
+        return pool_from_inputs(saved)
+    value = _read_bound(bound['paper_input']) if 'paper_input' in bound else {}
+    if not isinstance(value, dict):
+        raise ValueError('程序化 paper_input 必须是业务对象；上传论文请绑定 manuscript_file')
+    value = copy.deepcopy(value)
+    for slot, field in (('manuscript_text', 'manuscript'), ('paper_topic', 'topic'), ('review_request', 'request')):
+        if slot in bound:
+            incoming = Path(bound[slot]).read_text(encoding='utf-8-sig')
+            contracts.text(incoming, field)
+            if field in value and value[field] != incoming:
+                raise ValueError(f'{field} 存在冲突输入，请只提供一个版本')
+            value[field] = incoming
+    if 'manuscript_file' in bound:
+        if 'manuscript' in value:
+            raise ValueError('同时提供了论文文件和正文，请选择一个待审稿版本')
+        value['manuscript'] = read_manuscript(bound['manuscript_file'])
+    if not value and ('[paper:demo]' in request or '默认演示材料' in request):
+        return seed_pool()
+    if value.get('demo'):
+        return pool_from_business(value)
+    manuscript = value.get('manuscript')
+    if manuscript is not None:
+        contracts.text(manuscript, 'manuscript')
+        if len(manuscript) > MAX_MANUSCRIPT_CHARS:
+            raise ValueError('论文正文超过当前 20 万字符限制，请缩小审查范围')
+    if not value.get('topic'):
+        if manuscript:
+            title = next(line.strip().lstrip('#').strip() for line in manuscript.splitlines() if line.strip())
+            value['topic'] = title[:120] or '论文审稿'
+        elif request.strip():
+            value['topic'] = request.strip()[:120]
+        else:
+            raise MissingMaterials('请提供论文文件、正文或研究主题')
+    value.setdefault('request', request)
+    return pool_from_business(value)
+
+
 def run_paper_step() -> dict:
     """Execute the authoritative current step and save its artifacts in one batch.
 
@@ -309,15 +357,12 @@ def run_paper_step() -> dict:
     bound = context.params.get('remote_inputs') or {}
     if not isinstance(bound, dict):
         raise ValueError('Runtime remote_inputs 格式错误')
-    inputs = {key: _read_bound(path) for key, path in bound.items()}
     request, instruction = _runtime_request(context.params)
     if step == 'prepare':
-        if 'paper_input' in inputs:
-            pool = pool_from_business(inputs['paper_input'])
-        elif '[paper:demo]' in request or '默认演示材料' in request:
-            pool = seed_pool()
-        else:
-            raise MissingMaterials('请提供研究主题及已有论文、数据或稿件；演示测试请明确使用默认演示材料。')
+        # Old sessions pin their graph; keep them runnable without exposing this node in new graphs.
+        if not bound and '[paper:demo]' not in request and '默认演示材料' not in request:
+            raise MissingMaterials('请提供论文文件、正文或研究主题')
+        pool = initialize_pool(bound, request)
         artifacts = [
             {'key': 'seed_pool', 'content_type': 'json', 'value': pool},
             {'key': 'prepare_document', 'content_type': 'text', 'value': preparation_document(pool)},
@@ -327,13 +372,21 @@ def run_paper_step() -> dict:
     else:
         if step not in STEP_NODE:
             raise ValueError(f'未知 Workflow 步骤: {step}')
-        pool = pool_from_inputs(inputs)
+        pool = initialize_pool(bound, request)
+        if not context.params.get('current_user_input') and 'Recovery request for this rerun only:' not in instruction:
+            request = pool.get('request') or request
         fail = '[mock:fail]' in request + instruction and '[mock:retry]' not in request + instruction
         result = execute_step(step, pool, request, fail=fail)
         artifacts = [
             {'key': f'{step}_pool', 'content_type': 'json', 'value': result['pool']},
             {'key': f'{step}_document', 'content_type': 'text', 'value': result['document']},
         ]
+        # Old pinned graphs still receive the structured result inside their existing pool artifact.
+        if step == 'peer_review' and 'peer_review_data' in getattr(context, 'output_slots', []):
+            path = Path(context.workspace_path) / '审稿意见.json'
+            path.write_text(json.dumps(material(result['pool'], 'review_data')['content'],
+                                       ensure_ascii=False, indent=2), encoding='utf-8')
+            artifacts.append({'key': 'peer_review_data', 'content_type': 'file', 'value': str(path)})
         if step == 'data_analysis':
             chart = Path(context.workspace_path) / '分析图表.svg'
             chart.write_text(material(result['pool'], 'chart')['content'], encoding='utf-8')

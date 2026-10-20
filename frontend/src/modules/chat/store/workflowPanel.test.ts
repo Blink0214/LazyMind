@@ -53,6 +53,20 @@ describe('runtime skipped tab visibility', () => {
     expect(ppt.hide_skipped_steps).toBeUndefined();
     expect(ppt.tabs?.some(tab => tab.hide_when_material)).toBe(true);
   });
+
+  it('hides skipped literature feedback while retaining future paper revision', () => {
+    const paper = hydrateWorkflowUI(load(readFileSync(resolve(process.cwd(), '../workflows/paper-writing/workflow.yaml'), 'utf8')));
+    const hidden = ['research_topic', 'literature_review', 'experiment', 'data_analysis', 'write_document', 'reading_reflection'];
+    const selected: WorkflowRuntimeProjection = { pruned: hidden, past: ['peer_review'] };
+    const visible = () => filterWorkflowTabs(paper.tabs, [], undefined, selected, true).map(t => t.id);
+    expect(visible()).toEqual(['peer_review', 'revise_document']);
+    selected.past = ['peer_review', 'refine_topic'];
+    expect(visible()).toContain('refine_topic');
+    selected.past = [];
+    selected.pruned = [];
+    expect(visible()).toContain('refine_topic');
+    expect(visible()).not.toContain('prepare');
+  });
 });
 
 describe('hydrateWorkflowUI', () => {

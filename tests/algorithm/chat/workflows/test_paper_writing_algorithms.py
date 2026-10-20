@@ -1,4 +1,4 @@
-"""Module-owner tests run without Docker, a model or a Runtime context."""
+"""Module-owner contracts; implemented algorithms use their configured real model."""
 import base64
 import copy
 import json
