@@ -19,6 +19,16 @@ import pytest
 import lazymind.chat.engine.subagent.runner as runner_mod
 
 
+def test_terminal_tool_failure_keeps_structured_error_message():
+    payload = {'ok': False, 'value': '论文已收到，但模型摘录在正文中找不到'}
+    for result in (payload, json.dumps(payload, ensure_ascii=False)):
+        event = {'tag': 'tool_results', 'tool_results': [{'name': 'run_paper_step', 'result': result}]}
+        assert '模型摘录在正文中找不到' in runner_mod._terminal_tool_failure(event, {'run_paper_step'})
+        assert runner_mod._terminal_tool_failure(event, {'unrelated_tool'}) == ''
+    event['tool_results'][0]['result'] = {'ok': True, 'value': {'status': 'completed'}}
+    assert runner_mod._terminal_tool_failure(event, {'run_paper_step'}) == ''
+
+
 def test_workflow_script_tool_is_loaded_from_pinned_revision():
     source = 'def create_list_fixtures():\n    return ["one", "two"]\n'
     response = MagicMock()
