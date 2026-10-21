@@ -1,14 +1,16 @@
 """Business-only contracts. Storage, versions and workflow routing stay outside."""
 import copy
 import math
-import xml.etree.ElementTree as ET
+
+from .analysis.validation import validate_charts, validate_svg
+
 from .review_schema import SavedReview, text_digest
 
 FIELDS = {
     'research_topic': ('papers', 'question', 'evidence'),
     'literature_review': ('papers', 'question', 'evidence'),
     'experiment': ('question', 'evidence', 'data'),
-    'data_analysis': ('data', 'experiment'),
+    'data_analysis': ('data', 'experiment', 'data_context', 'study_design'),
     'write_document': ('papers', 'question', 'evidence', 'analysis', 'chart', 'outline', 'manuscript',
                        'review', 'review_data'),
     'peer_review': ('manuscript', 'evidence', 'analysis'),
@@ -16,7 +18,7 @@ FIELDS = {
 }
 OUTPUTS = {
     'research_topic': ('question',), 'literature_review': ('evidence', 'papers'),
-    'experiment': ('experiment',), 'data_analysis': ('analysis', 'chart'),
+    'experiment': ('experiment',), 'data_analysis': ('analysis', 'charts'),
     'write_document': ('outline', 'manuscript'), 'peer_review': ('review', 'review_data'),
     'reading_reflection': ('reflection',),
 }
@@ -38,7 +40,16 @@ def text(value, label):
 def validate_value(kind, value):
     if kind == 'review_data':
         SavedReview.model_validate(value)
-    elif kind == 'papers':
+        return
+    if kind == 'analysis' and isinstance(value, dict):
+        from .analysis.schema import validate_analysis
+        validate_analysis(value)
+        return
+    if kind in ('data_context', 'study_design', 'constraints'):
+        from .analysis.schema import DataContext, StudyDesign, Constraints, parse
+        parse({'data_context': DataContext, 'study_design': StudyDesign, 'constraints': Constraints}[kind], value)
+        return
+    if kind == 'papers':
         if not isinstance(value, list):
             raise ValueError('papers 必须是论文列表')
         ids = set()
@@ -58,22 +69,42 @@ def validate_value(kind, value):
                 raise ValueError('论文 id 重复')
             ids.add(paper['id'])
     elif kind == 'data':
-        if not isinstance(value, dict) or set(value) != {'columns', 'rows'}:
-            raise ValueError('data 必须包含 columns/rows')
-        columns, rows = value['columns'], value['rows']
-        if not isinstance(columns, list) or not columns or any(not isinstance(c, str) or not c.strip() for c in columns):
-            raise ValueError('columns 必须是非空列名列表')
-        if len(set(columns)) != len(columns) or not isinstance(rows, list) or not rows:
-            raise ValueError('列名不能重复，rows 必须是非空列表')
-        for row in rows:
-            if not isinstance(row, list) or len(row) != len(columns):
-                raise ValueError('数据行长度必须与列数相同')
-            for cell in row:
-                if cell is not None and type(cell) not in (str, int, float, bool):
-                    raise ValueError('单元格必须是 JSON 标量')
-                if isinstance(cell, float) and not math.isfinite(cell):
-                    raise ValueError('数据不允许 NaN/Infinity')
+        if isinstance(value, dict) and ('column_types' in value or 'tables' in value):
+            from .analysis.schema import DataTable, DataBundle, parse
+            parse(DataBundle if 'tables' in value else DataTable, value)
+        else:
+            # Other paper stages keep their original table contract; F4 validates its own spec.
+            if not isinstance(value, dict) or set(value) != {'columns', 'rows'}:
+                raise ValueError('data 必须包含 columns/rows')
+            columns, rows = value['columns'], value['rows']
+            if (not isinstance(columns, list) or not columns
+                    or any(not isinstance(c, str) or not c.strip() for c in columns)):
+                raise ValueError('columns 必须是非空列名列表')
+            if len(set(columns)) != len(columns) or not isinstance(rows, list) or not rows:
+                raise ValueError('列名不能重复，rows 必须是非空列表')
+            for row in rows:
+                if not isinstance(row, list) or len(row) != len(columns):
+                    raise ValueError('数据行长度必须与列数相同')
+                for cell in row:
+                    if cell is not None and type(cell) not in (str, int, float, bool):
+                        raise ValueError('单元格必须是 JSON 标量')
+                    if isinstance(cell, float) and not math.isfinite(cell):
+                        raise ValueError('数据不允许 NaN/Infinity')
+    elif kind == 'charts':
+        if value == []:
+            return
+        if isinstance(value, list) and value and 'finding_ids' in value[0]:
+            from .analysis.schema import Chart, parse
+            for chart in value:
+                parse(Chart, chart)
+                validate_svg(chart['svg'])
+        else:
+            validate_charts(value)
     elif kind == 'experiment':
+        if isinstance(value, dict) and {'code', 'logs'} <= set(value):
+            from .analysis.schema import Experiment, parse
+            parse(Experiment, value)
+            return
         if not isinstance(value, dict) or set(value) != {'executed', 'plan', 'results', 'report'}:
             raise ValueError('experiment 必须包含 executed/plan/results/report')
         if type(value['executed']) is not bool:
@@ -87,18 +118,22 @@ def validate_value(kind, value):
     else:
         text(value, kind)
         if kind == 'chart':
-            try:
-                root = ET.fromstring(value)
-            except ET.ParseError as exc:
-                raise ValueError('chart 必须是有效 SVG 文本') from exc
-            if root.tag not in ('svg', '{http://www.w3.org/2000/svg}svg'):
-                raise ValueError('chart 必须是 SVG')
+            validate_svg(value)
 
 
 def validate_input(step, value):
+    if step == 'data_analysis':
+        from .analysis.schema import normalize_input, ContractError
+        try:
+            return normalize_input(value)
+        except ContractError as exc:
+            if exc.code == 'MISSING_MATERIAL':
+                raise MissingMaterials(str(exc)) from exc
+            raise
     module = ALIASES.get(step, step)
     fields = FIELDS[module]
-    if not isinstance(value, dict) or set(value) - {'topic', 'request', 'mode', *fields}:
+    allowed = {'topic', 'request', 'mode', *fields}
+    if not isinstance(value, dict) or set(value) - allowed:
         raise ValueError(f'{step} 输入含未知字段')
     text(value.get('topic'), 'topic')
     if not isinstance(value.get('request', ''), str):
@@ -113,19 +148,18 @@ def validate_input(step, value):
     for field in fields:
         item = value.get(field, [] if field == 'papers' else None)
         if item is not None:
-            validate_value(field, item)
+            if field == 'analysis' and module != 'data_analysis':
+                text(item, field)  # Preserve the existing downstream input contract.
+            else:
+                validate_value(field, item)
         result[field] = copy.deepcopy(item)
     required = {'refine_topic': ('evidence',), 'peer_review': ('manuscript',),
                 'revise_document': ('manuscript', 'review'), 'reading_reflection': ('papers',)}.get(step, ())
     missing = [name for name in required if not result[name]]
-    if step == 'data_analysis' and not result['data'] and not (
-        result['experiment'] and result['experiment']['results']
-    ):
-        missing.append('数据或实验结果')
-    if step == 'write_document' and not any(
-        result[k] for k in ('papers', 'question', 'evidence', 'analysis', 'outline', 'manuscript')
-    ):
-        missing.append('研究材料、大纲或稿件')
+    if step == 'write_document':
+        writing_materials = ('papers', 'question', 'evidence', 'analysis', 'outline', 'manuscript')
+        if not any(result[k] for k in writing_materials):
+            missing.append('研究材料、大纲或稿件')
     if missing:
         raise MissingMaterials('缺少材料: ' + '、'.join(missing))
     if step == 'revise_document' and result['review_data'] is not None:
@@ -136,11 +170,18 @@ def validate_input(step, value):
     return result
 
 
-def validate_output(module, value):
+def validate_output(module, value, inputs=None):
     if not isinstance(value, dict) or set(value) != {'is_demo', *OUTPUTS[module]}:
         raise ValueError(f'{module} 算法输出字段不符合约定')
     if type(value['is_demo']) is not bool:
         raise ValueError('输出 is_demo 必须是布尔值')
+    if module == 'data_analysis':
+        from .analysis.schema import AnalysisOutput, parse, validate_analysis
+        from .analysis.schema import validate_charts as validate_structured_charts
+        parse(AnalysisOutput, value, 'output')
+        validate_analysis(value['analysis'], inputs)
+        validate_structured_charts(value['charts'], value['analysis'])
+        return value
     for key in OUTPUTS[module]:
         validate_value(key, value[key])
     if module == 'peer_review' and value['review_data']['review_sha256'] != text_digest(value['review']):

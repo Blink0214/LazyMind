@@ -17,12 +17,12 @@ describe('runtime skipped tab visibility', () => {
 
   it('is opt-in and hides only explicitly skipped steps', () => {
     expect(filterWorkflowTabs(tabs, [], undefined, { projection })).toEqual(tabs);
-    expect(filterWorkflowTabs(tabs, [], undefined, { projection: { projection } }, true).map(t => t.id)).toEqual(['review']);
+    expect(filterWorkflowTabs(tabs, [], undefined, { projection }, true).map(t => t.id)).toEqual(['review']);
     expect(filterWorkflowTabs(tabs, [], undefined, undefined, true)).toEqual(tabs);
   });
 
   it('restores tabs after rewind changes the authoritative projection', () => {
-    expect(filterWorkflowTabs(tabs, [], undefined, { projection: { projection } }, true)).toHaveLength(1);
+    expect(filterWorkflowTabs(tabs, [], undefined, { projection }, true)).toHaveLength(1);
     expect(filterWorkflowTabs(tabs, [], undefined, { projection: { pruned: [], bypassed: [] } }, true)).toEqual(tabs);
   });
 

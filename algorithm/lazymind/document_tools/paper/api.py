@@ -18,4 +18,5 @@ def run_algorithm(step: str, inputs: dict) -> dict:
         raise ValueError(f'未知 Workflow 步骤: {step}')
     normalized = contracts.validate_input(step, inputs)
     result = ALGORITHMS[module].run(normalized)
-    return contracts.validate_output(module, result)
+    bound = normalized if module == 'data_analysis' and 'constraints' in normalized else None
+    return contracts.validate_output(module, result, bound)

@@ -175,7 +175,7 @@ def _handoff_tool(
                                 for value in (session, user_input)) else 'UNDECLARED')
 
     @_register_host_file(capability)
-    def advance_step_and_hand_off(step_id: str) -> str:
+    def advance_step_and_hand_off(step_id: str) -> Union[str, Dict[str, Any]]:
         """Execute one Ready Workflow step, then hand off for result approval."""
         selected_session_id = session() if callable(session) else session
         selected_session_id = str(selected_session_id or '').strip()
@@ -240,6 +240,17 @@ def _handoff_tool(
                     result.update(_state_refresh_notice())
                 if step_id in rewindable:
                     result = _compact_transition_result(result)
+                if result.get('accepted') is True:
+                    # Structured tool results are consumed by the executor before
+                    # another model call, including sessions created in this turn.
+                    return {
+                        **result,
+                        '_agent_control': {
+                            'stop': True,
+                            'reason': 'workflow_handoff',
+                            'final_text': '已交由工作流执行，请在工作流中查看进度和结果。',
+                        },
+                    }
                 return _result_text(result)
             except WorkflowClientError as exc:
                 if exc.code != 'STATE_VERSION_CONFLICT' or attempt > 0:
@@ -1314,6 +1325,9 @@ def _workflow_trigger_tools(
                     if _is_explicit_merged_request_context(supplied_context)
                     else bound_query or supplied_context
                 )
+                if bound_id == 'paper-writing':
+                    from lazymind.document_tools.paper.analysis.attachments import workflow_input_bindings
+                    input_bindings = workflow_input_bindings(input_bindings, effective_context)
                 existing_session_id = str(
                     (session_holder or {}).get('session_id') or '',
                 ).strip()
@@ -1549,6 +1563,15 @@ def _workflow_trigger_tools(
             ' No user attachments are available: do not bind file materials, but pass literal '
             'values for required text/json input_bindings.'
         )
+        if workflow_id == 'paper-writing':
+            from lazymind.document_tools.paper.analysis.attachments import standalone_f4_request
+            if standalone_f4_request(current_query) and attachments_available:
+                attachment_guidance = (
+                    ' For standalone F4, paper_input accepts the exact JSON attachment filename. '
+                    'The Host reads the complete original file. Never transcribe, summarize, repair, '
+                    'or embed the uploaded JSON in tool arguments; pass only its filename, or omit '
+                    'paper_input when the request unambiguously selects one JSON attachment.'
+                )
         trigger_workflow.__doc__ = (
             description + input_contract + attachment_guidance
             + ' Omit inputs whose values were not supplied; do not invent values or '
@@ -1897,9 +1920,9 @@ def resolve_workflow_injection(
         return WorkflowAgentContribution(
             # advance_step is synchronous: its terminal result and refreshed
             # Ready frontier must be returned to the same ChatAgent turn so a
-            # user-requested continuous run can keep advancing.  Only the
-            # explicit hand-off variant transfers ownership and ends the turn.
-            tools, ['advance_step_and_hand_off', *[action.tool.__name__ for action in completed_actions]],
+            # user-requested continuous run can keep advancing. Handoff stops
+            # through its accepted structured result, never merely by tool name.
+            tools, [action.tool.__name__ for action in completed_actions],
             patch, runtime_context, runtime_policy, bind_successor,
         )
 
