@@ -1,6 +1,8 @@
 """Read-only academic review; storage and workflow routing belong to the caller."""
 import json
+import logging
 import re
+import time
 from copy import deepcopy
 
 from lazyllm import AutoModel
@@ -16,6 +18,9 @@ CATEGORY_LABELS = {'method': '方法', 'evidence': '证据', 'analysis': '分析
                    'structure': '结构', 'language': '语言', 'citation': '引用'}
 ACTION_LABELS = {'text_revision': '可直接修改文字', 'needs_material': '需要作者补充材料',
                  'needs_experiment': '需要补充实验，不能用生成文字代替'}
+LOG = logging.getLogger(__name__)
+MAX_REPAIR_ISSUES = 5
+MAX_REPAIR_CHARS = 24000
 
 
 def review_scope(result: ReviewResult, inputs: dict) -> tuple[list[str], list[str]]:
@@ -123,6 +128,8 @@ def repair_targets(candidate: dict, manuscript: str) -> dict:
                                        limitations=[]), manuscript)
         except ReviewQuoteError as error:
             targets[path] = {'value': issue, 'errors': [str(error)]}
+    if sum(path.startswith('issues.') for path in targets) > MAX_REPAIR_ISSUES:
+        raise ValueError('审稿结果损坏范围过大，已停止修复；未扩写意见或自动重新审稿。')
     return targets
 
 
@@ -150,17 +157,59 @@ def repair_prompt(inputs: dict, targets: dict) -> str:
     context = {key: value for key, value in inputs.items() if key != 'manuscript'}
     context['manuscript_lines'] = [{'line': index, 'text': line}
                                    for index, line in enumerate(inputs['manuscript'].splitlines(), 1)]
-    return REPAIR_PROMPT + '\n\n输入 JSON：\n' + json.dumps({
+    prompt = REPAIR_PROMPT + '\n\nInput JSON:\n' + json.dumps({
         'inputs': context, 'targets': targets, 'issue_schema': RepairedIssue.model_json_schema(),
     }, ensure_ascii=False)
+    if len(prompt) > MAX_REPAIR_CHARS:
+        raise ValueError('审稿局部修复内容超过限制，已停止；请缩小审查范围后重试。')
+    return prompt
+
+
+def _unique_fields(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('审稿 JSON 含重复字段，不能确定应保留的内容。')
+        result[key] = value
+    return result
+
+
+def parse_response(response):
+    """Never use structural JSON guessing: one damaged issue must not become two."""
+    if not isinstance(response, str):
+        return response
+    text = response.strip()
+    if text.startswith('```') and text.endswith('```'):
+        text = re.sub(r'^```(?:json)?\s*\n', '', text, count=1).removesuffix('```').strip()
+    try:
+        return json.loads(text, object_pairs_hook=_unique_fields)
+    except json.JSONDecodeError:
+        # Repair only a repeated field tag: "category":"analysis","category":"location":...
+        # Tokenizing complete strings keeps quoted manuscript content untouched.
+        tokens = list(re.finditer(r'"(?:\\.|[^"\\])*"|[{}\[\]:,]|[^\s{}\[\]:,"]+', text))
+        values = [token.group() for token in tokens]
+        fields = {json.dumps(key) for key in ReviewIssue.model_fields}
+        removals = []
+        for i in range(4, len(tokens) - 3):
+            if (values[i] in fields and values[i] == values[i - 4]
+                    and values[i - 3] == ':' and values[i - 2].startswith('"') and values[i - 1] == ','
+                    and values[i + 1] == ':' and values[i + 2] in fields
+                    and values[i + 2] != values[i] and values[i + 3] == ':'):
+                removals.append((tokens[i].start(), tokens[i + 2].start()))
+        for start, end in reversed(removals):
+            text = text[:start] + text[end:]
+        return json.loads(text, object_pairs_hook=_unique_fields)
 
 
 def call_once(reviewer: WriterToolBase, prompt: str, schema):
     # Writer's convenience call retries the whole task; F6 owns one targeted repair instead.
     model = reviewer._build_structured_llm(reviewer._structured_output_prompt(schema), apply_formatter=False)
+    started = time.monotonic()
     response = model(prompt)
+    LOG.info('paper_review model_call schema=%s elapsed=%.3fs response_chars=%d',
+             schema.__name__, time.monotonic() - started, len(response) if isinstance(response, str) else 0)
     try:
-        return reviewer._parse_structured_response(response, schema)
+        return parse_response(response)
     except ValueError as error:
         raise ValueError('审稿返回无法解析的 JSON，已停止，未自动重新审稿。') from error
 
@@ -169,9 +218,10 @@ def run(inputs: dict) -> dict:
     """Business inputs -> Markdown review, structured review_data, is_demo."""
     inputs = validate_input('peer_review', inputs)
     reviewer = WriterToolBase(llm=AutoModel(model='llm'))
-    prompt = REVIEW_PROMPT + '\n\n输入 JSON：\n' + json.dumps(inputs, ensure_ascii=False)
+    prompt = REVIEW_PROMPT + '\n\nInput JSON:\n' + json.dumps(inputs, ensure_ascii=False)
     candidate = call_once(reviewer, prompt, ReviewResult)
     targets = repair_targets(candidate, inputs['manuscript'])
+    LOG.info('paper_review issues=%d repair_targets=%d', len(candidate['issues']), len(targets))
     if targets:
         repair = ReviewRepair.model_validate(call_once(reviewer, repair_prompt(inputs, targets), ReviewRepair))
         result = apply_repair(candidate, targets, repair, inputs['manuscript'])

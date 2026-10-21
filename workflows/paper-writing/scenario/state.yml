@@ -2,43 +2,43 @@ initial: __start__
 start_route: choice
 transitions:
   __start__:
-    - {to: research_topic, when: "用户明确选择研究选题"}
-    - {to: literature_review, when: "用户明确选择文献综述"}
-    - {to: experiment, when: "用户明确选择实验研究"}
-    - {to: data_analysis, when: "用户明确选择数据分析"}
-    - {to: write_document, when: "用户明确选择论文写作"}
-    - {to: peer_review, when: "用户明确选择模拟审稿"}
-    - {to: reading_reflection, when: "用户明确选择阅读心得"}
-    - {to: finish, when: "用户明确结束本次流程"}
+    - {to: research_topic, when: "The user explicitly selects research topic development"}
+    - {to: literature_review, when: "The user explicitly selects literature review"}
+    - {to: experiment, when: "The user explicitly selects experimental research"}
+    - {to: data_analysis, when: "The user explicitly selects data analysis"}
+    - {to: write_document, when: "The user explicitly selects manuscript writing"}
+    - {to: peer_review, when: "The user explicitly selects peer review"}
+    - {to: reading_reflection, when: "The user explicitly selects reading reflection"}
+    - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   research_topic:
-    - {to: literature_review, when: "用户明确选择文献综述"}
-    - {to: finish, when: "用户明确结束本次流程"}
+    - {to: literature_review, when: "The user explicitly selects literature review"}
+    - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   literature_review:
-    - {to: refine_topic, when: "用户明确选择调整选题"}
-    - {to: experiment, when: "用户明确选择实验研究"}
-    - {to: write_document, when: "用户明确选择论文写作"}
-    - {to: reading_reflection, when: "用户明确选择阅读心得"}
-    - {to: finish, when: "用户明确结束本次流程"}
+    - {to: refine_topic, when: "The user explicitly selects topic refinement"}
+    - {to: experiment, when: "The user explicitly selects experimental research"}
+    - {to: write_document, when: "The user explicitly selects manuscript writing"}
+    - {to: reading_reflection, when: "The user explicitly selects reading reflection"}
+    - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   refine_topic:
-    - {to: finish, when: "用户明确结束本次流程"}
+    - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   experiment:
-    - {to: data_analysis, when: "用户明确选择数据分析"}
-    - {to: finish, when: "用户明确结束本次流程"}
+    - {to: data_analysis, when: "The user explicitly selects data analysis"}
+    - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   data_analysis:
-    - {to: write_document, when: "用户明确选择论文写作"}
-    - {to: finish, when: "用户明确结束本次流程"}
+    - {to: write_document, when: "The user explicitly selects manuscript writing"}
+    - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   write_document:
-    - {to: peer_review, when: "用户明确选择模拟审稿"}
-    - {to: finish, when: "用户明确结束本次流程"}
+    - {to: peer_review, when: "The user explicitly selects peer review"}
+    - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   peer_review:
-    - {to: revise_document, when: "用户明确选择论文修订"}
-    - {to: finish, when: "用户明确结束本次流程"}
+    - {to: revise_document, when: "The user explicitly selects manuscript revision"}
+    - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   revise_document:
-    - {to: finish, when: "用户明确结束本次流程"}
+    - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   reading_reflection:
-    - {to: finish, when: "用户明确结束本次流程"}
+    - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   finish:
-    - {to: __end__, when: "结束"}
+    - {to: __end__, when: "Finish"}
 steps:
   research_topic:
     label: "研究选题"
@@ -47,13 +47,15 @@ steps:
     tools_only: true
     terminal_tools_only: true
     prompt: |
-      这是已经调度的算法节点执行任务，不是规划或澄清任务。
-      必须立即调用且只调用一次 run_paper_step，无参数；等待工具返回，不得用聊天文本代替调用。
-      真实节点、绑定材料、本轮要求与重试标记均由工具从 Runtime 读取。
-      当前浏览的页签不是执行节点；不要根据页签或旧启动请求选择节点、材料或生成内容。
-      算法实现由独立模块提供；全部产物必须由工具保存，不能自行补造材料或结果。
-      工具报错即报告错误并停止，不自行重试、补造或保存材料。
-      工具成功后结束本节点，等待用户确认或选择下一步，不擅自运行其他分支。
+      This is an already scheduled algorithm execution, not a planning or clarification task.
+      Immediately call run_paper_step exactly once with no arguments and wait for its result.
+      Do not substitute chat text for the tool call.
+      The tool reads the actual node, bound materials, current request, and retry flag from Runtime.
+      The currently viewed tab is not the execution node. Do not choose nodes, materials, or content
+      based on the viewed tab or an old launch request.
+      Independent modules implement the algorithms. The tool must save all artifacts; do not invent materials or results.
+      On tool failure, report the error and stop. Do not retry, fabricate, or save materials on your own.
+      On success, end this node and wait for user confirmation or selection; do not run other branches.
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
@@ -66,7 +68,7 @@ steps:
     outputs:
       - {material: research_topic_pool, required: true}
       - {material: research_topic_document, required: true}
-    acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
+    acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   literature_review:
     label: "文献综述"
     mode: human
@@ -74,13 +76,15 @@ steps:
     tools_only: true
     terminal_tools_only: true
     prompt: |
-      这是已经调度的算法节点执行任务，不是规划或澄清任务。
-      必须立即调用且只调用一次 run_paper_step，无参数；等待工具返回，不得用聊天文本代替调用。
-      真实节点、绑定材料、本轮要求与重试标记均由工具从 Runtime 读取。
-      当前浏览的页签不是执行节点；不要根据页签或旧启动请求选择节点、材料或生成内容。
-      算法实现由独立模块提供；全部产物必须由工具保存，不能自行补造材料或结果。
-      工具报错即报告错误并停止，不自行重试、补造或保存材料。
-      工具成功后结束本节点，等待用户确认或选择下一步，不擅自运行其他分支。
+      This is an already scheduled algorithm execution, not a planning or clarification task.
+      Immediately call run_paper_step exactly once with no arguments and wait for its result.
+      Do not substitute chat text for the tool call.
+      The tool reads the actual node, bound materials, current request, and retry flag from Runtime.
+      The currently viewed tab is not the execution node. Do not choose nodes, materials, or content
+      based on the viewed tab or an old launch request.
+      Independent modules implement the algorithms. The tool must save all artifacts; do not invent materials or results.
+      On tool failure, report the error and stop. Do not retry, fabricate, or save materials on your own.
+      On success, end this node and wait for user confirmation or selection; do not run other branches.
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
@@ -97,7 +101,7 @@ steps:
     outputs:
       - {material: literature_review_pool, required: true}
       - {material: literature_review_document, required: true}
-    acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
+    acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   refine_topic:
     label: "调整选题"
     mode: human
@@ -105,14 +109,16 @@ steps:
     tools_only: true
     terminal_tools_only: true
     prompt: |
-      这是已经调度的算法节点执行任务，不是规划或澄清任务。
-      必须立即调用且只调用一次 run_paper_step，无参数；等待工具返回，不得用聊天文本代替调用。
-      真实节点、绑定材料、本轮要求与重试标记均由工具从 Runtime 读取。
-      当前浏览的页签不是执行节点；不要根据页签或旧启动请求选择节点、材料或生成内容。
-      算法实现由独立模块提供；全部产物必须由工具保存，不能自行补造材料或结果。
-      工具报错即报告错误并停止，不自行重试、补造或保存材料。
-      工具成功后结束本节点，等待用户确认或选择下一步，不擅自运行其他分支。
-      用户要继续查文献时，使用平台 rewind 返回 literature_review；不得重新初始化材料。
+      This is an already scheduled algorithm execution, not a planning or clarification task.
+      Immediately call run_paper_step exactly once with no arguments and wait for its result.
+      Do not substitute chat text for the tool call.
+      The tool reads the actual node, bound materials, current request, and retry flag from Runtime.
+      The currently viewed tab is not the execution node. Do not choose nodes, materials, or content
+      based on the viewed tab or an old launch request.
+      Independent modules implement the algorithms. The tool must save all artifacts; do not invent materials or results.
+      On tool failure, report the error and stop. Do not retry, fabricate, or save materials on your own.
+      On success, end this node and wait for user confirmation or selection; do not run other branches.
+      When the user requests further literature research, use native rewind to literature_review; do not reinitialize materials.
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
@@ -129,7 +135,7 @@ steps:
     outputs:
       - {material: refine_topic_pool, required: true}
       - {material: refine_topic_document, required: true}
-    acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
+    acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   experiment:
     label: "实验研究"
     mode: human
@@ -137,13 +143,15 @@ steps:
     tools_only: true
     terminal_tools_only: true
     prompt: |
-      这是已经调度的算法节点执行任务，不是规划或澄清任务。
-      必须立即调用且只调用一次 run_paper_step，无参数；等待工具返回，不得用聊天文本代替调用。
-      真实节点、绑定材料、本轮要求与重试标记均由工具从 Runtime 读取。
-      当前浏览的页签不是执行节点；不要根据页签或旧启动请求选择节点、材料或生成内容。
-      算法实现由独立模块提供；全部产物必须由工具保存，不能自行补造材料或结果。
-      工具报错即报告错误并停止，不自行重试、补造或保存材料。
-      工具成功后结束本节点，等待用户确认或选择下一步，不擅自运行其他分支。
+      This is an already scheduled algorithm execution, not a planning or clarification task.
+      Immediately call run_paper_step exactly once with no arguments and wait for its result.
+      Do not substitute chat text for the tool call.
+      The tool reads the actual node, bound materials, current request, and retry flag from Runtime.
+      The currently viewed tab is not the execution node. Do not choose nodes, materials, or content
+      based on the viewed tab or an old launch request.
+      Independent modules implement the algorithms. The tool must save all artifacts; do not invent materials or results.
+      On tool failure, report the error and stop. Do not retry, fabricate, or save materials on your own.
+      On success, end this node and wait for user confirmation or selection; do not run other branches.
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
@@ -160,7 +168,7 @@ steps:
     outputs:
       - {material: experiment_pool, required: true}
       - {material: experiment_document, required: true}
-    acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
+    acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   data_analysis:
     label: "数据分析"
     mode: human
@@ -168,13 +176,15 @@ steps:
     tools_only: true
     terminal_tools_only: true
     prompt: |
-      这是已经调度的算法节点执行任务，不是规划或澄清任务。
-      必须立即调用且只调用一次 run_paper_step，无参数；等待工具返回，不得用聊天文本代替调用。
-      真实节点、绑定材料、本轮要求与重试标记均由工具从 Runtime 读取。
-      当前浏览的页签不是执行节点；不要根据页签或旧启动请求选择节点、材料或生成内容。
-      算法实现由独立模块提供；全部产物必须由工具保存，不能自行补造材料或结果。
-      工具报错即报告错误并停止，不自行重试、补造或保存材料。
-      工具成功后结束本节点，等待用户确认或选择下一步，不擅自运行其他分支。
+      This is an already scheduled algorithm execution, not a planning or clarification task.
+      Immediately call run_paper_step exactly once with no arguments and wait for its result.
+      Do not substitute chat text for the tool call.
+      The tool reads the actual node, bound materials, current request, and retry flag from Runtime.
+      The currently viewed tab is not the execution node. Do not choose nodes, materials, or content
+      based on the viewed tab or an old launch request.
+      Independent modules implement the algorithms. The tool must save all artifacts; do not invent materials or results.
+      On tool failure, report the error and stop. Do not retry, fabricate, or save materials on your own.
+      On success, end this node and wait for user confirmation or selection; do not run other branches.
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
@@ -194,7 +204,7 @@ steps:
       - {material: data_analysis_pool, required: true}
       - {material: data_analysis_document, required: true}
       - {material: analysis_chart, required: true}
-    acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
+    acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   write_document:
     label: "论文写作"
     mode: human
@@ -202,13 +212,15 @@ steps:
     tools_only: true
     terminal_tools_only: true
     prompt: |
-      这是已经调度的算法节点执行任务，不是规划或澄清任务。
-      必须立即调用且只调用一次 run_paper_step，无参数；等待工具返回，不得用聊天文本代替调用。
-      真实节点、绑定材料、本轮要求与重试标记均由工具从 Runtime 读取。
-      当前浏览的页签不是执行节点；不要根据页签或旧启动请求选择节点、材料或生成内容。
-      算法实现由独立模块提供；全部产物必须由工具保存，不能自行补造材料或结果。
-      工具报错即报告错误并停止，不自行重试、补造或保存材料。
-      工具成功后结束本节点，等待用户确认或选择下一步，不擅自运行其他分支。
+      This is an already scheduled algorithm execution, not a planning or clarification task.
+      Immediately call run_paper_step exactly once with no arguments and wait for its result.
+      Do not substitute chat text for the tool call.
+      The tool reads the actual node, bound materials, current request, and retry flag from Runtime.
+      The currently viewed tab is not the execution node. Do not choose nodes, materials, or content
+      based on the viewed tab or an old launch request.
+      Independent modules implement the algorithms. The tool must save all artifacts; do not invent materials or results.
+      On tool failure, report the error and stop. Do not retry, fabricate, or save materials on your own.
+      On success, end this node and wait for user confirmation or selection; do not run other branches.
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
@@ -229,7 +241,7 @@ steps:
     outputs:
       - {material: write_document_pool, required: true}
       - {material: write_document_document, required: true}
-    acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
+    acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   peer_review:
     label: "模拟审稿"
     mode: human
@@ -237,13 +249,15 @@ steps:
     tools_only: true
     terminal_tools_only: true
     prompt: |
-      这是已经调度的算法节点执行任务，不是规划或澄清任务。
-      必须立即调用且只调用一次 run_paper_step，无参数；等待工具返回，不得用聊天文本代替调用。
-      真实节点、绑定材料、本轮要求与重试标记均由工具从 Runtime 读取。
-      当前浏览的页签不是执行节点；不要根据页签或旧启动请求选择节点、材料或生成内容。
-      算法实现由独立模块提供；全部产物必须由工具保存，不能自行补造材料或结果。
-      工具报错即报告错误并停止，不自行重试、补造或保存材料。
-      工具成功后结束本节点，等待用户确认或选择下一步，不擅自运行其他分支。
+      This is an already scheduled algorithm execution, not a planning or clarification task.
+      Immediately call run_paper_step exactly once with no arguments and wait for its result.
+      Do not substitute chat text for the tool call.
+      The tool reads the actual node, bound materials, current request, and retry flag from Runtime.
+      The currently viewed tab is not the execution node. Do not choose nodes, materials, or content
+      based on the viewed tab or an old launch request.
+      Independent modules implement the algorithms. The tool must save all artifacts; do not invent materials or results.
+      On tool failure, report the error and stop. Do not retry, fabricate, or save materials on your own.
+      On success, end this node and wait for user confirmation or selection; do not run other branches.
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
@@ -269,7 +283,7 @@ steps:
       - {material: peer_review_pool, required: true}
       - {material: peer_review_document, required: true}
       - {material: peer_review_data, required: true}
-    acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
+    acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   revise_document:
     label: "论文修订"
     mode: human
@@ -277,14 +291,16 @@ steps:
     tools_only: true
     terminal_tools_only: true
     prompt: |
-      这是已经调度的算法节点执行任务，不是规划或澄清任务。
-      必须立即调用且只调用一次 run_paper_step，无参数；等待工具返回，不得用聊天文本代替调用。
-      真实节点、绑定材料、本轮要求与重试标记均由工具从 Runtime 读取。
-      当前浏览的页签不是执行节点；不要根据页签或旧启动请求选择节点、材料或生成内容。
-      算法实现由独立模块提供；全部产物必须由工具保存，不能自行补造材料或结果。
-      工具报错即报告错误并停止，不自行重试、补造或保存材料。
-      工具成功后结束本节点，等待用户确认或选择下一步，不擅自运行其他分支。
-      用户要再次审稿时，使用平台 rewind 返回 peer_review；也可选择结束。
+      This is an already scheduled algorithm execution, not a planning or clarification task.
+      Immediately call run_paper_step exactly once with no arguments and wait for its result.
+      Do not substitute chat text for the tool call.
+      The tool reads the actual node, bound materials, current request, and retry flag from Runtime.
+      The currently viewed tab is not the execution node. Do not choose nodes, materials, or content
+      based on the viewed tab or an old launch request.
+      Independent modules implement the algorithms. The tool must save all artifacts; do not invent materials or results.
+      On tool failure, report the error and stop. Do not retry, fabricate, or save materials on your own.
+      On success, end this node and wait for user confirmation or selection; do not run other branches.
+      When the user requests another review, use native rewind to peer_review; finishing is also available.
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
@@ -309,7 +325,7 @@ steps:
     outputs:
       - {material: revise_document_pool, required: true}
       - {material: revise_document_document, required: true}
-    acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
+    acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   reading_reflection:
     label: "阅读心得"
     mode: human
@@ -317,13 +333,15 @@ steps:
     tools_only: true
     terminal_tools_only: true
     prompt: |
-      这是已经调度的算法节点执行任务，不是规划或澄清任务。
-      必须立即调用且只调用一次 run_paper_step，无参数；等待工具返回，不得用聊天文本代替调用。
-      真实节点、绑定材料、本轮要求与重试标记均由工具从 Runtime 读取。
-      当前浏览的页签不是执行节点；不要根据页签或旧启动请求选择节点、材料或生成内容。
-      算法实现由独立模块提供；全部产物必须由工具保存，不能自行补造材料或结果。
-      工具报错即报告错误并停止，不自行重试、补造或保存材料。
-      工具成功后结束本节点，等待用户确认或选择下一步，不擅自运行其他分支。
+      This is an already scheduled algorithm execution, not a planning or clarification task.
+      Immediately call run_paper_step exactly once with no arguments and wait for its result.
+      Do not substitute chat text for the tool call.
+      The tool reads the actual node, bound materials, current request, and retry flag from Runtime.
+      The currently viewed tab is not the execution node. Do not choose nodes, materials, or content
+      based on the viewed tab or an old launch request.
+      Independent modules implement the algorithms. The tool must save all artifacts; do not invent materials or results.
+      On tool failure, report the error and stop. Do not retry, fabricate, or save materials on your own.
+      On success, end this node and wait for user confirmation or selection; do not run other branches.
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     inputs:
@@ -340,7 +358,7 @@ steps:
     outputs:
       - {material: reading_reflection_pool, required: true}
       - {material: reading_reflection_document, required: true}
-    acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
+    acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   finish:
     label: "结束"
     mode: auto
@@ -348,15 +366,17 @@ steps:
     tools_only: true
     terminal_tools_only: true
     prompt: |
-      这是已经调度的算法节点执行任务，不是规划或澄清任务。
-      必须立即调用且只调用一次 run_paper_step，无参数；等待工具返回，不得用聊天文本代替调用。
-      真实节点、绑定材料、本轮要求与重试标记均由工具从 Runtime 读取。
-      当前浏览的页签不是执行节点；不要根据页签或旧启动请求选择节点、材料或生成内容。
-      算法实现由独立模块提供；全部产物必须由工具保存，不能自行补造材料或结果。
-      工具报错即报告错误并停止，不自行重试、补造或保存材料。
-      工具成功后结束本节点，等待用户确认或选择下一步，不擅自运行其他分支。
+      This is an already scheduled algorithm execution, not a planning or clarification task.
+      Immediately call run_paper_step exactly once with no arguments and wait for its result.
+      Do not substitute chat text for the tool call.
+      The tool reads the actual node, bound materials, current request, and retry flag from Runtime.
+      The currently viewed tab is not the execution node. Do not choose nodes, materials, or content
+      based on the viewed tab or an old launch request.
+      Independent modules implement the algorithms. The tool must save all artifacts; do not invent materials or results.
+      On tool failure, report the error and stop. Do not retry, fabricate, or save materials on your own.
+      On success, end this node and wait for user confirmation or selection; do not run other branches.
     tools: [run_paper_step]
     terminal_tools: [run_paper_step]
     outputs:
       - {material: finish_document, required: true}
-    acceptance_criteria: 工具校验成功且全部声明产物已保存；演示产物不得冒充真实科研结论。
+    acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.

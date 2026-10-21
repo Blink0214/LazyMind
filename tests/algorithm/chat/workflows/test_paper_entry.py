@@ -7,6 +7,39 @@ from lazymind.document_tools.paper import workflow
 from lazymind.document_tools.paper.entry import read_manuscript
 
 
+@pytest.mark.parametrize('command', [
+    '重试', '重试！', 'retry', '请重新执行步骤 peer_review', 'Please re-run step peer_review',
+])
+def test_retry_control_preserves_review_requirements(command):
+    params = {'current_user_input': command, 'user_input': '重点检查数字与实验设计'}
+    request, _ = workflow._runtime_request(params)
+    pool = workflow.initialize_pool({}, request)
+    assert workflow._step_request('peer_review', pool, params) == '重点检查数字与实验设计'
+
+
+def test_retry_uses_saved_module_requirements_not_initial_launch():
+    pool = workflow.pool_from_business({'topic': 'T', 'request': '检查论文', 'manuscript': '正文'})
+    pool['history'] = [{'node': 'F6', 'request': '只检查引用'}, {'node': 'F5', 'request': '修改措辞'}]
+    params = {'retry_hint': 'Recovery request for this rerun only: 重试', 'user_input': '检查论文'}
+    assert workflow._step_request('peer_review', pool, params) == '只检查引用'
+    assert pool['request'] == '检查论文'
+
+
+@pytest.mark.parametrize('params', [
+    {'current_user_input': '重试，只检查引用'},
+    {'retry_hint': 'Recovery request for this rerun only: 只检查引用'},
+])
+def test_explicit_new_requirements_override_saved_request(params):
+    pool = workflow.pool_from_business({'topic': 'T', 'request': '检查数字', 'manuscript': '正文'})
+    assert '只检查引用' in workflow._step_request('peer_review', pool, params)
+
+
+def test_retry_does_not_replace_bound_review_request():
+    pool = workflow.pool_from_business({'topic': 'T', 'request': '检查可复现性', 'manuscript': '正文'})
+    params = {'current_user_input': '重试', 'launch_user_input': '审稿'}
+    assert workflow._step_request('peer_review', pool, params) == '检查可复现性'
+
+
 def test_text_upload_initializes_without_pool_or_json(tmp_path):
     source = tmp_path / 'paper.md'
     source.write_text('# My paper\n## Results\n12 of 20 questions were correct.')

@@ -1,6 +1,7 @@
 """Real-model F6 integration, plus direct schema and report-rendering checks."""
 import copy
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,14 @@ EXAMPLE = Path(__file__).resolve().parents[4] / 'tests/fixtures/paper-writing/pe
 @pytest.fixture
 def example():
     return json.loads(EXAMPLE.read_text())
+
+
+def test_review_instructions_are_english_with_explicit_output_language():
+    for prompt in (peer_review.REVIEW_PROMPT, peer_review.REPAIR_PROMPT):
+        assert not re.search(r'[\u4e00-\u9fff]', prompt)
+        assert 'Simplified Chinese unless the request' in prompt
+    for schema in (peer_review.ReviewResult, peer_review.RepairedIssue, peer_review.ReviewRepair):
+        assert not re.search(r'[\u4e00-\u9fff]', json.dumps(schema.model_json_schema(), ensure_ascii=False))
 
 
 def test_real_model_review_preserves_input_and_output_contract(example):
@@ -246,6 +255,46 @@ def test_repair_prompt_contains_only_bad_issues_and_numbered_source(example):
     targets = peer_review.repair_targets(candidate, example['input']['manuscript'])
     prompt = peer_review.repair_prompt(example['input'], targets)
     assert '只用于有效意见的标记' not in prompt
-    payload = json.loads(prompt.split('输入 JSON：\n', 1)[1])
+    payload = json.loads(prompt.split('Input JSON:\n', 1)[1])
     assert 'manuscript' not in payload['inputs']
     assert payload['inputs']['manuscript_lines'][2] == {'line': 3, 'text': '比较两种证据组织方法。'}
+
+
+def test_repeated_field_tag_does_not_split_or_expand_issues(example):
+    candidate = example['model_response']
+    raw = json.dumps(candidate, ensure_ascii=False, separators=(',', ':'))
+    damaged = raw.replace('"location":', '"category":"location":', 1)
+    assert damaged != raw
+    parsed = peer_review.parse_response(damaged)
+    assert parsed == candidate
+    assert peer_review.repair_targets(parsed, example['input']['manuscript']) == {}
+
+
+def test_json_parser_preserves_quoted_manuscript_syntax(example):
+    candidate = example['model_response']
+    candidate['issues'][0]['quote'] = '"category":"analysis","category":"location":"方法"'
+    raw = json.dumps(candidate, ensure_ascii=False)
+    assert peer_review.parse_response('```json\n' + raw + '\n```') == candidate
+
+
+@pytest.mark.parametrize('raw', [
+    '{"summary":"A","summary":"B","issues":[],"limitations":[]}',
+    '{"summary":"A","issues":[{"problem":"unfinished"}',
+    '{"summary":"A","issues":[{"problem":"a"} {"suggestion":"b"}],"limitations":[]}',
+])
+def test_ambiguous_json_is_not_guessed_or_expanded(raw):
+    with pytest.raises(ValueError):
+        peer_review.parse_response(raw)
+
+
+def test_large_repair_is_rejected_without_expanding_fragments(example):
+    candidate = {**example['model_response'], 'issues': [
+        {'problem': 'fragment'} for _ in range(peer_review.MAX_REPAIR_ISSUES + 1)]}
+    with pytest.raises(ValueError, match='损坏范围过大'):
+        peer_review.repair_targets(candidate, example['input']['manuscript'])
+
+
+def test_repair_payload_limit_does_not_silently_truncate_source(example):
+    inputs = {**example['input'], 'manuscript': '原文' * peer_review.MAX_REPAIR_CHARS}
+    with pytest.raises(ValueError, match='超过限制'):
+        peer_review.repair_prompt(inputs, {'summary': {'value': '', 'errors': []}})

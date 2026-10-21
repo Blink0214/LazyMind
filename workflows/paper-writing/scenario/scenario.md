@@ -1,25 +1,46 @@
-# 论文写作
-用户明确要求论文写作或审阅学术论文时启动。上传审稿：把准确附件名绑定到 manuscript_file，直接执行 peer_review。粘贴正文绑定 manuscript_text；paper_topic、review_request 为可选普通文本。没有主题时由正文标题或文件名提供默认值。
-paper_input 只兼容已有程序化业务输入；用户无需填写 JSON，更不需要 pool.json。不要把文件名、路径或摘要当作论文正文。多个附件且待审稿件不明确时，询问选择哪一篇。
-仅当输入 demo=true，或用户明确要求“默认演示材料”时使用虚构样例；没有真实材料时要求补充，禁止擅自生成演示材料兜底。
-如绑定 paper_input，必须使用它，校验失败不得回退到默认样例。
+# Paper writing
 
-按用户目标直接选择对应算法节点，不要求跑前序。审稿请求直接进入 peer_review；材料初始化在算法执行前由代码完成，不存在 prepare 步骤。
-每步必须等待用户选择；可随时走 finish。文献/审稿反馈用前向节点承接：
-literature_review → refine_topic，然后用户要求继续时 rewind literature_review；
-peer_review → revise_document，然后用户要求再次审稿时 rewind peer_review。
-原生回退会保留已确认反馈快照后失效下游，支持重复多轮，不要重新初始化材料。
-“回到最初从头做”与“使用反馈继续”不同；要清空反馈请新建会话。
+Start when the user explicitly requests paper writing or academic manuscript review.
+For uploaded manuscripts, bind the exact attachment filename to manuscript_file and run peer_review directly.
+Bind pasted text to manuscript_text; paper_topic and review_request are optional plain text.
+If no topic is supplied, code derives a default from the manuscript title or filename.
+paper_input supports existing programmatic business inputs only. Users need not supply JSON or pool.json.
+Never treat filenames, paths, or summaries as manuscript text. If multiple attachments make the target ambiguous,
+ask which manuscript to review.
+Use fictional examples only for demo=true or an explicit request for default demonstration materials.
+Otherwise ask for missing real materials; never silently fall back to fabricated examples.
+When paper_input is bound, use it; validation failure must not trigger a fallback to default examples.
 
-F1→F2；F2→F1/F3/F5/F7；F3→F4；F4→F5；
-F5→F6；F6→F5；F7 完成后结束。不新增其他执行边。
-refine_topic 和 revise_document 分别属于 F1/F5 的反馈操作，不是新算法功能。
-本工作流止于论文或阅读心得等产物，不承担外部工作流的生成或交接任务，不入知识库、不运行实验。
-失败应呈现错误并让用户补材料/重试，绝不以虚构成功兜底。
+Select the algorithm node matching the user's goal without requiring preceding steps.
+Review requests enter peer_review directly. Code initializes materials before execution; there is no prepare step.
+Wait for the user's selection at each step; finish is available at any point.
+Literature and review feedback use forward nodes:
+literature_review → refine_topic, then rewind literature_review when the user asks to continue;
+peer_review → revise_document, then rewind peer_review when the user asks for another review.
+Native rewind preserves confirmed feedback snapshots before invalidating downstream state, allowing multiple rounds.
+Do not reinitialize materials. Starting over differs from continuing with feedback; use a new session to clear feedback.
 
-## Chat 收尾
-用户本轮要求的步骤执行成功且产物已发布后，仅用一句话告知完成并引导查看工作流，例如“审稿完成，请在工作流中查看审稿意见。”不复述正文、审稿意见或 JSON，不罗列问题、结论或后续选项。
-不为总结、复述或再次确认已成功发布的产物而调用 list_artifacts、read_artifact、read_file_resource 等读取工具。用户明确要求解释结果时才按需读取回答；明确要求继续执行后续步骤时照常推进，完成本轮要求后再简短收尾。
-只要求审稿时，审稿成功即到达本轮用户边界，不自动修订或结束整个工作流。失败或缺少必要输入时说明实际原因并等待用户处理，不能套用成功短句；工具返回的必要 user_notice 仍须转告。
+Allowed routes: F1→F2; F2→F1/F3/F5/F7; F3→F4; F4→F5; F5→F6; F6→F5; finish after F7.
+Do not add other execution edges. refine_topic and revise_document are feedback operations of F1/F5,
+not additional algorithm capabilities.
+This workflow produces manuscripts or reading reflections. It does not generate or hand off to external workflows,
+ingest into the knowledge base, or execute experiments.
+Surface failures and ask for materials or a retry; never fabricate success.
 
-对用户只用中文阶段名，不展示 F 编号和内部标识。不展示材料准备节点或清单文档；文件解析失败应直接提示补充可解析的稿件。结束仅作为内部控制节点。用户可在聊天中要求结束，已有产物保留；后续操作只能选择执行图中实际存在的节点。
+## Chat completion
+
+After the steps requested in this turn succeed and their artifacts are published, acknowledge completion in one
+short sentence in the user's language and direct them to the workflow.
+Do not repeat the document, review, or JSON, or list issues, conclusions, or next-step options.
+Do not call list_artifacts, read_artifact, read_file_resource, or similar tools merely to summarize, repeat,
+or reconfirm successfully published artifacts.
+Read results when explicitly asked to explain them; continue subsequent steps when explicitly requested,
+then acknowledge briefly once the current request is fulfilled.
+For a review-only request, stop after successful review without automatically revising or finishing the workflow.
+On failure or missing required input, explain the actual cause and wait for user action; do not claim success.
+Always relay necessary user_notice messages from tools.
+
+Use the configured Chinese stage labels when addressing users; do not expose F numbers or internal identifiers.
+Do not show material preparation as a node or checklist document. On parsing failure, ask for a readable manuscript.
+finish is an internal control node. Users may request it in Chat; existing artifacts are preserved.
+Subsequent actions must select nodes that actually exist in the execution graph.
