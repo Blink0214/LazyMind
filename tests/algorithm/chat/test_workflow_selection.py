@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import lazyllm
 import pytest
-from lazyllm.tools.agent.toolsManager import ModuleTool
+from lazyllm.tools.agent.toolsManager import ModuleTool, ToolManager
 
 from lazymind.chat.workflow.file_adapter import InputResource
 from lazymind.chat.workflow.workflow_manager import (
@@ -673,7 +673,7 @@ def test_dynamic_trigger_activates_advance_step_in_the_same_agent_turn():
     assert toolkit.advance_step.call_args.args[1] == 1
 
 
-def test_selected_workflow_session_tool_auto_initializes_without_attachments():
+def test_selected_workflow_only_exposes_session_tools_after_explicit_launch():
     toolkit = MagicMock()
     toolkit.prepare_workflow.return_value = {
         'session_id': 'session-1', 'state_version': 1,
@@ -715,6 +715,18 @@ def test_selected_workflow_session_tool_auto_initializes_without_attachments():
             }],
         )
 
+        manager = ToolManager(contribution.tools)
+
+        def visible():
+            return {item['function']['name'] for item in manager.tools_description}
+
+        assert visible() == {'trigger_ppt_workflow'}
+        with pytest.raises(WorkflowClientError, match='Call the selected trigger'):
+            _tool(contribution, 'list_workflow_inputs')()
+        toolkit.prepare_workflow.assert_not_called()
+        _tool(contribution, 'trigger_ppt_workflow')()
+        assert 'trigger_ppt_workflow' not in visible()
+        assert {'list_workflow_inputs', 'get_ready_steps', 'advance_step'} <= visible()
         result = _tool(contribution, 'get_ready_steps')()
         repeated_trigger = _tool(contribution, 'trigger_ppt_workflow')()
 
@@ -726,6 +738,50 @@ def test_selected_workflow_session_tool_auto_initializes_without_attachments():
         request_context='生成三页关于加减法数学题的PPT',
         workflow_mode='dynamic',
     )
+
+
+def test_startup_validation_and_input_binding_are_atomic():
+    """Replay wrong arguments and early inspection without consuming the launch."""
+    from pydantic import ValidationError
+    toolkit = MagicMock()
+    toolkit.prepare_workflow.return_value = {'session_id': 'session-1', 'state_version': 1}
+    with patch('lazymind.chat.workflow.workflow_manager._client') as client_factory, patch(
+        'lazymind.chat.workflow.workflow_manager.HostWorkflowToolkit', return_value=toolkit,
+    ), patch('lazymind.chat.workflow.workflow_manager._import_text_binding', return_value={
+        'resource_id': 'resource-1', 'revision': 1, 'content_hash': 'sha256:test',
+    }) as import_text:
+        client_factory.return_value.get_workflow.return_value.result = {
+            'workflow_id': 'report', 'runtime': {'trigger_inputs': ['source']},
+            'compiled_graph': {
+                'material_types': {'source': 'text'},
+                'material_producers': {'source': {'kind': 'external'}},
+            },
+        }
+        client_factory.return_value.get_state.return_value = {
+            'session_id': 'session-1', 'state_version': 1, 'projection': {'ready': ['review']},
+        }
+        contribution = resolve_workflow_injection(
+            None, current_query='review the supplied text', conversation_id='conversation-1',
+            allowed_workflow_refs=['builtin:report'],
+            workflow_activations=[{
+                'workflow_ref': 'builtin:report', 'workflow_id': 'report',
+                'tool_name': 'trigger_report_workflow',
+            }],
+        )
+        manager = ToolManager(contribution.tools)
+        trigger = _tool(contribution, 'trigger_report_workflow')
+        with pytest.raises(ValidationError):
+            manager.tools_info['trigger_report_workflow']._validate_input({'input': 'text'})
+        with pytest.raises(WorkflowClientError, match='Call the selected trigger'):
+            _tool(contribution, 'list_workflow_inputs')()
+        toolkit.prepare_workflow.assert_not_called()
+        trigger(input_bindings={'source': 'manuscript'})
+        import_text.assert_called_once_with('source', 'manuscript')
+        assert toolkit.prepare_workflow.call_args.kwargs['input_bindings']['source']['resource_id'] == 'resource-1'
+        with pytest.raises(WorkflowClientError, match='different inputs'):
+            trigger(input_bindings={'source': 'different manuscript'})
+        assert import_text.call_count == 1
+        assert toolkit.prepare_workflow.call_count == 1
 
 
 def test_dynamic_trigger_exposes_handoff_after_session_is_created_in_same_turn():

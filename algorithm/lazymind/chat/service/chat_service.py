@@ -2181,13 +2181,16 @@ async def _handle_chat_impl(
                 (['KBToolkit'] if (agentic_config.get('filters') or {}).get('kb_id') else [])
                 + (['MailToolkit'] if confirm_id or mailbox_confirm else [])
             ),
-            required_tool_names=tuple(getattr(tool, '__name__', '') for tool in (
-                [] if sidechat_readonly else [
-                    *workflow_tools, *attachment_tools,
+            required_tool_names=() if sidechat_readonly else (
+                *workflow_contribution.required_tool_names,
+                *(getattr(tool, '__name__', '') for tool in [
+                    *attachment_tools,
                     *([directory_runtime.list_document_directories, directory_runtime.open_document_directory,
                        directory_runtime.folders.inspect_document_folder,
                        directory_runtime.folders.submit_document_directory_organization]
-                      if directory_runtime else [])])),
+                      if directory_runtime else []),
+                ]),
+            ),
             tool_state_scope='sidechat' if sidechat_readonly else 'chat',
             context_preview=runtime.context_usage_preview or runtime.context_prompt_export,
             configuration_runtime=configuration_runtime,

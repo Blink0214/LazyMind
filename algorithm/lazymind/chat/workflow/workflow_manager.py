@@ -62,6 +62,18 @@ class WorkflowAgentContribution:
     # This callback is never exposed as a model tool.
     bind_successor: Optional[Callable[[Dict[str, Any]], None]] = None
 
+    @property
+    def required_tool_names(self) -> tuple[str, ...]:
+        """Keep execution capabilities preloaded, including temporarily hidden ones."""
+        def names(tools):
+            for tool in tools:
+                if isinstance(tool, dict):
+                    if not tool.get('lazy', True):
+                        yield from names(tool.get('tools', []))
+                else:
+                    yield tool.__name__
+        return tuple(names(self.tools))
+
 
 @dataclass(frozen=True)
 class WorkflowDiscoveryContext:
@@ -369,27 +381,18 @@ def _with_terminal_agent_control(result: Dict[str, Any]) -> Dict[str, Any]:
 def _safe_session_tools(
     toolkit: HostWorkflowToolkit,
     session: Union[str, Callable[[], str]],
-    initialize_session: Optional[Callable[[], Any]] = None,
     user_input: Optional[Union[str, Callable[[], str]]] = None,
 ) -> List[Any]:
     """Model tools whose protocol and concurrency parameters are Host-injected."""
     capability = (
         'NONE' if _trusted_workflow_toolkit(toolkit)
         and all(_declared_workflow_callback(value)
-                for value in (session, initialize_session, user_input)) else 'UNDECLARED'
+                for value in (session, user_input)) else 'UNDECLARED'
     )
 
     def session_id() -> str:
         value = session() if callable(session) else session
         selected = str(value or '').strip()
-        if not selected and initialize_session is not None:
-            # Explicit Workflow mentions already authorize initialization.  Be
-            # tolerant when the model reaches for a Session tool before the
-            # bound trigger: initialize the sole selected Workflow from the
-            # current text request, then continue the requested operation.
-            initialize_session()
-            value = session() if callable(session) else session
-            selected = str(value or '').strip()
         if not selected:
             raise WorkflowClientError(
                 'WORKFLOW_SESSION_NOT_INITIALIZED',
@@ -1246,7 +1249,7 @@ def _normalize_trigger_input_bindings(value: Optional[Union[Dict[str, str], str]
 
 def _workflow_trigger_tools(
     activations: List[Dict[str, Any]], allowed_refs: set[str], current_query: str = '',
-    conversation_id: str = '', session_holder: Optional[Dict[str, str]] = None,
+    conversation_id: str = '', session_holder: Optional[Dict[str, Any]] = None,
     conversation_history: Optional[List[Dict[str, Any]]] = None,
     workflow_mode: str = 'dynamic',
 ) -> List[Any]:
@@ -1311,20 +1314,21 @@ def _workflow_trigger_tools(
                     if _is_explicit_merged_request_context(supplied_context)
                     else bound_query or supplied_context
                 )
-                if session_holder is not None:
-                    # Keep the immutable launch brief available to the first
-                    # Ready steps in this same Chat turn. In particular, an Ask
-                    # answer is supplemental context; it must not become the
-                    # step's answer-only ``user_input`` and erase the original
-                    # topic, page count, or other supplied constraints.
-                    session_holder['request_context'] = effective_context
                 existing_session_id = str(
                     (session_holder or {}).get('session_id') or '',
                 ).strip()
                 if existing_session_id:
-                    # Session tools may have initialized the sole explicitly
-                    # selected Workflow as a recovery path. Keep a later model
-                    # call to the advertised trigger idempotent within this turn.
+                    # Repeated launches must never silently discard new inputs.
+                    previous = session_holder.get('launch_bindings', {})
+                    if (session_holder.get('workflow_id') != bound_id or any(
+                        previous.get(key) != value.strip()
+                        for key, value in input_bindings.items() if value.strip()
+                    )):
+                        raise WorkflowClientError(
+                            'WORKFLOW_INPUT_BINDINGS_CONFLICT',
+                            'A Workflow has already started with different inputs. '
+                            'This call did not change its input bindings.',
+                        )
                     return {
                         'status': 'prepared',
                         'outcome': 'already_initialized',
@@ -1418,6 +1422,11 @@ def _workflow_trigger_tools(
                     }
                 if session_holder is not None:
                     session_holder['session_id'] = session_id
+                    session_holder['workflow_id'] = bound_id
+                    session_holder['launch_bindings'] = {
+                        key: value.strip() for key, value in input_bindings.items() if value.strip()
+                    }
+                    session_holder['request_context'] = effective_context
                 state = client.get_state(session_id)
                 projection = state.get('projection') if isinstance(state.get('projection'), dict) else state
 
@@ -1649,7 +1658,7 @@ def resolve_workflow_injection(
                 if str(item.get('tool_name') or '') not in activation_names
             ],
         ]
-    session_holder: Dict[str, str] = {'session_id': session_id}
+    session_holder: Dict[str, Any] = {'session_id': session_id}
 
     def bind_successor(result: Dict[str, Any]) -> None:
         target = str(result.get('session_id') or '')
@@ -1706,16 +1715,6 @@ def resolve_workflow_injection(
             or str(getattr(tool, '__name__', '')) in execution_tools
         ]
     if allowed_refs and not session_id:
-        # A ChatAgent tool set is fixed for the duration of one model turn. Expose
-        # Host-bound Session tools up front and resolve their Session id only after
-        # trigger_<workflow> creates it, so trigger -> advance works in the same turn.
-        if len(trigger_tools) == 1:
-            @fc_register(host_file='NONE')
-            def initialize_selected_session():
-                return trigger_tools[0]()
-        else:
-            initialize_selected_session = None
-
         @fc_register(host_file='NONE')
         def launch_user_input() -> str:
             return session_holder.get('request_context', '')
@@ -1729,7 +1728,6 @@ def resolve_workflow_injection(
             *_safe_session_tools(
                 toolkit,
                 selected_session_id,
-                initialize_session=initialize_selected_session,
                 user_input=launch_user_input,
             ),
             handoff,
@@ -1746,10 +1744,8 @@ def resolve_workflow_injection(
             authoring_tools,
         )
         if trigger_entry_tools:
-            # Discovery mode: expose triggers directly so the model can route
-            # from the injected catalog without a gateway hop. The tool set is
-            # fixed for the model turn, so Session tools must also be available
-            # for trigger -> advance execution in that same turn.
+            # Register both phases once; their schemas are exposed according to
+            # the live Session state below, without another discovery round.
             tools = [
                 *trigger_entry_tools,
                 *_safe_session_tools(
@@ -1765,6 +1761,23 @@ def resolve_workflow_injection(
             ]
         else:
             tools = [authoring_group]
+    if not session_id and trigger_tools:
+        # LazyLLM refreshes conditional tool schemas before each model round.
+        # Reading state must never create a Session; only a successful trigger
+        # can switch from launch capabilities to execution capabilities.
+        launch_tools = [tool for tool in tools if not isinstance(tool, dict)
+                        and _is_bound_workflow_trigger(tool.__name__)]
+        execution_tools = [tool for tool in tools if not isinstance(tool, dict)
+                           and not _is_bound_workflow_trigger(tool.__name__)]
+        tools = [
+            {**_workflow_tool_group('workflow_launch', 'Initialize the selected Workflow.',
+                                    launch_tools, lazy=False),
+             'key_source': lambda: not selected_session_id()},
+            {**_workflow_tool_group('workflow_session', 'Operate the initialized Workflow Session.',
+                                    execution_tools, lazy=False),
+             'key_source': selected_session_id},
+            *[tool for tool in tools if isinstance(tool, dict)],
+        ]
     if session_id:
         tools = _safe_session_tools(toolkit, selected_session_id)
         patch.update({
