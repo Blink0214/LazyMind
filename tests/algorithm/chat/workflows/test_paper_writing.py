@@ -19,6 +19,8 @@ def mock_f1_model(monkeypatch):
     def model(prompt):
         if '"paper_clues"' in prompt:
             return '{"topic": "证据可追溯性"}'
+        if 'Input materials (JSON):\n' not in prompt:
+            return '论文讨论证据追溯的方法与局限。'
         suffix = '\n\n## 文献反馈与调整依据\n根据综述调整验证路线。' if '"mode": "refine"' in prompt else ''
         return '# 研究选题\n\n## 研究问题\n现有方法能否改善效果？' + suffix
 
@@ -222,7 +224,9 @@ def test_f1_direct_entry_uses_conversation_pdfs_and_publishes_pool(runtime, monk
     outputs = {item['key']: item['value'] for item in batches[-1]}
     pool = tools._read_bound(outputs['research_topic_pool'])
     assert pool['topic'] == '证据可追溯性'
-    assert tools.material(pool, 'papers')['content'] == papers
+    assert tools.material(pool, 'papers')['content'] == [
+        {**paper, 'abstract': '论文讨论证据追溯的方法与局限。'} for paper in papers
+    ]
     assert pool['history'][0]['node'] == 'F1'
     assert '## 研究问题' in tools._read_bound(outputs['research_topic_document'])
 

@@ -88,11 +88,8 @@ def validate_pool(pool: Any) -> dict:
     if pool['sequence'] != len(pool['history']):
         raise ValueError('sequence 与执行历史长度不一致')
     papers = material(pool, 'papers')
-    if papers and (not isinstance(papers['content'], list) or not all(
-        isinstance(paper, dict) and isinstance(paper.get('id'), str) and paper['id']
-        and isinstance(paper.get('text'), str) and paper['text'] for paper in papers['content']
-    )):
-        raise ValueError('papers 必须是含 id/text 的论文列表')
+    if papers:
+        contracts.validate_value('papers', papers['content'])
     return pool
 
 
@@ -243,6 +240,15 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False) -
     if fail:
         raise RuntimeError('[示例] 模拟执行失败；可重试。')
     module = contracts.ALIASES.get(step, step)
+    if module == 'research_topic':
+        contracts.validate_input(step, business_input(step, pool, request))
+        pool = copy.deepcopy(pool)
+        papers = material(pool, 'papers')
+        if papers:
+            prepared = research_topic.prepare_papers(papers['content'])
+            if prepared != papers['content']:
+                add_material(pool, 'papers', prepared, [pool['current']['papers']], papers['source_refs'],
+                             is_demo=papers['mock'])
     relevant = contracts.FIELDS[module]
     inputs = [copy.deepcopy(pool['current'][kind]) for kind in relevant if kind in pool['current']]
     output = run_algorithm(step, business_input(step, pool, request))
@@ -439,7 +445,9 @@ def run_paper_step() -> dict:
         if step == 'research_topic' and 'paper_input' not in bound and not any(
             key.endswith('_pool') for key in bound
         ):
-            papers = _conversation_papers(context.params.get('history_files_per_turn'))
+            papers = research_topic.prepare_papers(
+                _conversation_papers(context.params.get('history_files_per_turn')),
+            )
             if papers and any(item['mock'] for item in pool['materials']):
                 # Real uploaded papers take precedence over a demo marker in the request.
                 pool = pool_from_business({'topic': research_topic.infer_topic(request, papers),

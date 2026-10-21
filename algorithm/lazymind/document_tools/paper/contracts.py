@@ -43,10 +43,15 @@ def validate_value(kind, value):
             raise ValueError('papers 必须是论文列表')
         ids = set()
         for paper in value:
-            if not isinstance(paper, dict) or set(paper) - {'id', 'title', 'text', 'url'}:
-                raise ValueError('论文字段必须是 id/title/text/url')
-            for key in ('id', 'title', 'text'):
+            if not isinstance(paper, dict) or set(paper) - {'id', 'title', 'abstract', 'text', 'url'}:
+                raise ValueError('论文字段必须是 id/title/abstract/text/url')
+            for key in ('id', 'title'):
                 text(paper.get(key), f'paper.{key}')
+            for key in ('abstract', 'text'):
+                if paper.get(key) is not None and not isinstance(paper[key], str):
+                    raise ValueError(f'paper.{key} 必须是字符串或 null')
+            if not any((paper.get(key) or '').strip() for key in ('abstract', 'text')):
+                raise MissingMaterials(f'论文 {paper["id"]} 缺少材料：需要摘要或全文')
             if 'url' in paper and not isinstance(paper['url'], str):
                 raise ValueError('paper.url 必须是字符串')
             if paper['id'] in ids:

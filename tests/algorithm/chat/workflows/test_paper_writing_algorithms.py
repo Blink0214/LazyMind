@@ -20,7 +20,8 @@ REFINED_TOPIC_MARKDOWN = TOPIC_MARKDOWN + '\n\n## 文献反馈与调整依据\n�
 @pytest.fixture
 def mock_topic_model(monkeypatch):
     monkeypatch.setattr(research_topic, 'AutoModel', lambda **_kwargs: lambda prompt: (
-        REFINED_TOPIC_MARKDOWN if '"mode": "refine"' in prompt else TOPIC_MARKDOWN
+        (REFINED_TOPIC_MARKDOWN if '"mode": "refine"' in prompt else TOPIC_MARKDOWN)
+        if 'Input materials (JSON):\n' in prompt else '论文讨论研究方法与结果。'
     ))
 
 
@@ -79,15 +80,16 @@ def test_f1_without_papers_uses_unverified_evidence_prompt(monkeypatch):
     assert 'Return only one Markdown document written in Chinese' in prompts[0]
 
 
-def test_f1_topic_inference_reads_paper_opening_not_filename(monkeypatch):
+def test_f1_topic_inference_reads_abstract_not_filename_or_full_text(monkeypatch):
     prompts = []
     monkeypatch.setattr(research_topic, 'AutoModel',
                         lambda **_kwargs: lambda prompt: prompts.append(prompt) or '{"topic": "证据可追溯性"}')
-    papers = [{'id': 'P1', 'title': '无关文件名', 'text': '<!-- page:1 -->\n摘要：讨论证据可追溯性。'}]
+    papers = [{'id': 'P1', 'title': '无关文件名', 'abstract': '讨论证据可追溯性。', 'text': '不应发送的全文'}]
     assert research_topic.infer_topic('根据论文确定选题', papers) == '证据可追溯性'
     assert 'Use Chinese for a non-null topic value' in prompts[0]
     assert '讨论证据可追溯性' in prompts[0]
     assert '无关文件名' not in prompts[0]
+    assert '不应发送的全文' not in prompts[0]
 
 
 def test_f1_long_paper_condenses_without_mutating_source_pool(monkeypatch):
@@ -106,9 +108,170 @@ def test_f1_long_paper_condenses_without_mutating_source_pool(monkeypatch):
     monkeypatch.setattr(research_topic, 'AutoModel', lambda **_kwargs: model)
     result = tools.execute_step('research_topic', pool)
     final_input = json.loads(prompts[-1].split('Input materials (JSON):\n', 1)[1])
-    assert 'Page-by-page notes' in final_input['papers'][0]['text']
+    assert final_input['papers'] == [{'id': 'P1', 'title': '长论文', 'abstract': '[P1] 方法与结果仍需核验。'}]
     assert pool == before
-    assert tools.material(result['pool'], 'papers')['content'] == [paper]
+    prepared = tools.material(result['pool'], 'papers')
+    assert prepared['content'] == [{**paper, 'abstract': '[P1] 方法与结果仍需核验。'}]
+    assert prepared['derived_from'] == [pool['current']['papers']]
+    assert result['pool']['current']['papers'] in result['pool']['history'][-1]['inputs']
+    assert all(research_topic.estimate_tokens(prompt) <= research_topic._prompt_token_limit() for prompt in prompts)
+    prompts.clear()
+    repeated = tools.execute_step('research_topic', result['pool'])
+    assert repeated['pool']['current']['papers'] == result['pool']['current']['papers']
+    assert len(prompts) == 1
+
+
+@pytest.mark.parametrize('fields', [
+    {'text': '全文'}, {'abstract': '摘要'}, {'abstract': '摘要', 'text': '全文'},
+    {'abstract': None, 'text': '全文'}, {'abstract': '摘要', 'text': None},
+])
+def test_paper_contract_accepts_abstract_or_full_text(fields):
+    papers = [{'id': 'P1', 'title': '论文', **fields}]
+    tools.validate_pool(tools.pool_from_business({'topic': 'T', 'papers': papers}))
+
+
+@pytest.mark.parametrize('fields', [{}, {'text': '', 'abstract': None}, {'text': ' ', 'abstract': ''}])
+def test_paper_contract_rejects_metadata_without_content(fields):
+    with pytest.raises(tools.MissingMaterials, match='摘要或全文'):
+        tools.pool_from_business({'topic': 'T', 'papers': [{'id': 'P1', 'title': '论文', **fields}]})
+
+
+
+
+@pytest.mark.parametrize('source,expected', [
+    ('## Abstract\nA study.\n## Introduction\nBody.', 'A study.'),
+    ('Abstract: A study.\nKeywords: retrieval', 'A study.'),
+    ('Abstract\nA study.\n\nAuthor information', 'A study.'),
+    ('摘要：研究证据。\n关键词：检索', '研究证据。'),
+    ('# 摘 要\n研究方法。\n<!-- page:2 -->\n研究结果。\n1 引言\n正文', '研究方法。\n\n研究结果。'),
+    ('Abstract\nA study.\n1. Introduction\nBody.', 'A study.'),
+    ('只有正文，没有摘要边界。', None), ('Abstract\n没有结束边界', None),
+    ('## Abstract\n## Methods\nBody.', None),
+])
+def test_f1_extracts_delimited_abstract(source, expected):
+    assert research_topic._extract_abstract(source) == expected
+
+
+def test_f1_prepares_only_missing_abstracts_and_projects_no_full_text(monkeypatch):
+    papers = [
+        {'id': 'P1', 'title': '一', 'abstract': '已有摘要', 'text': '全文一不应发送'},
+        {'id': 'P2', 'title': '二', 'text': '## 摘要\n提取摘要\n## 引言\n全文二不应发送'},
+        {'id': 'P3', 'title': '三', 'text': '需要总结的正文'},
+    ]
+    before = copy.deepcopy(papers)
+    prompts = []
+    def model(prompt):
+        prompts.append(prompt)
+        return TOPIC_MARKDOWN if 'Input materials (JSON):\n' in prompt else '生成摘要'
+    monkeypatch.setattr(research_topic, 'AutoModel', lambda **_: model)
+    tools.run_algorithm('research_topic', {'topic': 'T', 'papers': papers})
+    assert len(prompts) == 2
+    assert '需要总结的正文' in prompts[0]
+    projected = json.loads(prompts[-1].split('Input materials (JSON):\n')[1])['papers']
+    assert [paper['abstract'] for paper in projected] == ['已有摘要', '提取摘要', '生成摘要']
+    assert all(set(paper) == {'id', 'title', 'abstract'} for paper in projected)
+    assert papers == before
+
+
+def test_f1_summary_over_400_tokens_is_accepted(monkeypatch):
+    summary = '研究结果与方法。' * 60
+    assert research_topic.estimate_tokens(summary) > 400
+    monkeypatch.setattr(research_topic, 'AutoModel', lambda **_: lambda _: '<think>分析</think>\n' + summary)
+    paper = {'id': 'P1', 'title': '论文', 'text': '原文'}
+    assert research_topic.prepare_papers([paper]) == [{**paper, 'abstract': summary}]
+
+
+def test_f1_groups_summaries_by_complete_prompt_budget(monkeypatch):
+    paper = {'id': 'P1', 'title': '论文'}
+    prompt_limit = len(research_topic._note_prompt('', paper)) + 3500
+    monkeypatch.setattr(research_topic, '_prompt_token_limit', lambda: prompt_limit)
+    monkeypatch.setattr(research_topic, 'estimate_tokens', len)
+    monkeypatch.setattr(research_topic, '_paper_chunks', lambda *_: [f'chunk-{i}' for i in range(5)])
+    summary = '中' * 1600
+    merged_sizes = []
+
+    def model(prompt):
+        assert research_topic.estimate_tokens(prompt) <= research_topic._prompt_token_limit()
+        source = json.loads(prompt.split('\n', 1)[1])['source']
+        if source.startswith('chunk-'):
+            return summary
+        merged_sizes.append(source.count(summary))
+        return '合并后的摘要'
+    monkeypatch.setattr(research_topic, 'AutoModel', lambda **_: model)
+    result = research_topic.prepare_papers([{'id': 'P1', 'title': '论文', 'text': '原文'}])
+    assert result[0]['abstract'] == '合并后的摘要'
+    assert max(merged_sizes) == 2  # Four notes would exceed the actual request budget.
+
+
+def test_f1_paper_chunks_use_full_prompt_budget_without_losing_text(monkeypatch):
+    paper = {'id': 'P1', 'title': '论文'}
+    source = ''.join(f'第{line}行材料。\n' for line in range(30))
+    monkeypatch.setattr(research_topic, 'estimate_tokens', len)
+    full_prompt_limit = len(research_topic._note_prompt(source, paper))
+    assert research_topic._paper_chunks(source, paper, full_prompt_limit) == [source]
+
+    chunk_limit = len(research_topic._note_prompt('', paper)) + 80
+    chunks = research_topic._paper_chunks(source, paper, chunk_limit)
+    assert len(chunks) > 1
+    assert ''.join(chunks) == source
+    assert all(len(research_topic._note_prompt(chunk, paper)) <= chunk_limit for chunk in chunks)
+
+
+def test_f1_prompt_limit_uses_active_model_budget_and_128k_fallback(monkeypatch):
+    import lazyllm
+    from lazymind.chat.engine.agent_runtime.budget import build_context_budget
+    from lazymind.config import config
+    from lazymind import model_config
+
+    with config.temp('context_compression_default_max_input_tokens', 131072), \
+            config.temp('context_compression_reserved_output_tokens', 8192):
+        monkeypatch.setattr(model_config, 'load_model_config', lambda: {'llm': {'source': 'dynamic'}})
+        monkeypatch.setitem(lazyllm.globals['config'], 'dynamic_model_configs', {
+            'llm': {'chat': {'max_input_tokens': 64000}},
+        })
+        expected = int(build_context_budget(llm_config={'llm': {'max_input_tokens': 64000}})
+                       .effective_input_budget * 0.9)
+        assert research_topic._prompt_token_limit() == expected
+
+        monkeypatch.setattr(model_config, 'load_model_config', lambda: {'llm': {'source': 'openai'}})
+        expected = int(build_context_budget().effective_input_budget * 0.9)
+        assert research_topic._prompt_token_limit() == expected
+        assert expected > 6000
+
+
+@pytest.mark.parametrize('summary,error', [
+    ('', '分段提炼为空'), ('<think>未结束', '思考内容未闭合'),
+    ('中' * 5000, '超出合并输入预算'), ('中' * 2500, '无法在输入预算内继续合并'),
+])
+def test_f1_summary_failure_is_bounded_and_preserves_pool(summary, error, monkeypatch):
+    paper = {'id': 'P1', 'title': '论文'}
+    prompt_limit = len(research_topic._note_prompt('', paper)) + (
+        3000 if len(summary) == 5000 else len(summary) + 20
+    )
+    monkeypatch.setattr(research_topic, '_prompt_token_limit', lambda: prompt_limit)
+    monkeypatch.setattr(research_topic, 'estimate_tokens', len)
+    monkeypatch.setattr(research_topic, '_paper_chunks', lambda *_: ['part one', 'part two'])
+    calls = []
+    monkeypatch.setattr(research_topic, 'AutoModel', lambda **_: lambda prompt: calls.append(prompt) or summary)
+    pool = tools.pool_from_business({'topic': 'T', 'papers': [{'id': 'P1', 'title': '论文', 'text': '原文'}]})
+    before = copy.deepcopy(pool)
+    with pytest.raises(ValueError, match=error):
+        tools.execute_step('research_topic', pool)
+    assert pool == before
+    assert len(calls) <= 2
+
+
+@pytest.mark.parametrize('entry', ['infer_topic', 'run'])
+def test_f1_checks_complete_final_prompt_before_calling_model(entry, monkeypatch):
+    monkeypatch.setattr(research_topic, '_prompt_token_limit', lambda: 1000)
+    monkeypatch.setattr(research_topic, 'estimate_tokens', len)
+    monkeypatch.setattr(research_topic, 'AutoModel', lambda **_: pytest.fail('oversized prompt sent'))
+    papers = [{'id': 'P1', 'title': '论文', 'abstract': '中' * 5000}]
+    with pytest.raises(ValueError, match='输入过长|超出模型预算'):
+        if entry == 'infer_topic':
+            research_topic.infer_topic('主题', papers)
+        else:
+            tools.run_algorithm('research_topic', {'topic': 'T', 'papers': papers})
 
 
 @pytest.mark.parametrize('invalid', ['', '## 其他章节\n内容',
@@ -124,9 +287,11 @@ def test_f1_rejects_invalid_model_output_without_publishing(invalid, monkeypatch
 
 def test_f2_feedback_refines_f1_question_without_overwriting_evidence(monkeypatch):
     old_question = '# 旧选题\n\n## 研究问题\n原方法能否改善效果？'
-    pool = tools.pool_from_business({'topic': 'T', 'question': old_question})
+    papers = [{'id': 'P1', 'title': '论文一', 'abstract': '原有摘要'}]
+    added = {'id': 'P2', 'title': '论文二', 'text': '摘要：新证据\n关键词：检索'}
+    pool = tools.pool_from_business({'topic': 'T', 'question': old_question, 'papers': papers})
     monkeypatch.setattr(api.ALGORITHMS['literature_review'], 'run', lambda inputs: {
-        'evidence': '# 初始综述\n尚待人工核对。', 'papers': inputs['papers'], 'is_demo': False,
+        'evidence': '# 初始综述\n尚待人工核对。', 'papers': [*inputs['papers'], added], 'is_demo': False,
     })
     reviewed = tools.execute_step('literature_review', pool)
     edited = '# 人工确认的综述\n需要缩小研究范围。'
@@ -141,12 +306,14 @@ def test_f2_feedback_refines_f1_question_without_overwriting_evidence(monkeypatc
     model_input = json.loads(prompts[0].split('Input materials (JSON):\n', 1)[1])
     assert model_input['question'] == old_question
     assert model_input['evidence'] == edited
+    assert [paper['abstract'] for paper in model_input['papers']] == ['原有摘要', '新证据']
+    assert tools.material(result['pool'], 'papers')['content'] == [*papers, {**added, 'abstract': '新证据'}]
     assert result['document'] == REFINED_TOPIC_MARKDOWN
 
 
 def test_one_real_algorithm_replacement_preserves_storage_and_next_input(monkeypatch):
     pool = tools.pool_from_business({'topic': '实际主题', 'papers': [
-        {'id': 'P1', 'title': '原文', 'text': '真实输入正文'}]})
+        {'id': 'P1', 'title': '原文', 'text': '真实输入正文', 'abstract': '已有摘要'}]})
     before = copy.deepcopy(pool)
     seen = []
     def research(inputs):
@@ -184,6 +351,8 @@ def test_every_path_supplies_exact_current_business_values(path, monkeypatch):
     for step in path:
         module = api.ALGORITHMS[contracts.ALIASES.get(step, step)]
         expected = contracts.validate_input(step, tools.business_input(step, pool, '本轮要求'))
+        if contracts.ALIASES.get(step, step) == 'research_topic':
+            expected['papers'] = research_topic.prepare_papers(expected['papers'])
         original = module.run
         received = []
         def capture(value):
@@ -213,6 +382,7 @@ def test_business_input_data_is_not_mistaken_for_runtime_envelope(tmp_path):
     assert tools._read_bound(str(path)) == value
 
 
+@pytest.mark.usefixtures('mock_topic_model')
 def test_demo_provenance_cannot_be_erased_by_real_algorithm(monkeypatch):
     monkeypatch.setattr(api.ALGORITHMS['research_topic'], 'run',
                         lambda inputs: {'question': '# 结果', 'is_demo': False})
