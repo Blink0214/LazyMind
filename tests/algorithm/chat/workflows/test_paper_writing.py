@@ -391,8 +391,14 @@ def test_config_logical_edges_and_no_real_external_calls():
         # old launch request redefine a deterministic Mock tool invocation.
         assert '{{runtime_instruction}}' not in step['prompt']
         assert '{{user_input}}' not in step['prompt']
-        assert '不得用聊天文本代替调用' in step['prompt']
-        assert '当前浏览的页签不是执行节点' in step['prompt']
+        assert 'Do not substitute chat text for the tool call.' in step['prompt']
+        assert 'The currently viewed tab is not the execution node.' in step['prompt']
+        assert step['prompt'].isascii()
+        assert step['acceptance_criteria'].isascii()
+    assert all(edge['when'].isascii() for edges in state['transitions'].values() for edge in edges)
+    config = yaml.safe_load((PACKAGE / 'workflow.yaml').read_text())
+    assert config['when_to_use'].isascii()
+    assert config['name'] == '论文写作'
     for step, node in tools.STEP_NODE.items():
         actual = {tools.STEP_NODE[e['to']] for e in state['transitions'][step] if e['to'] != 'finish'}
         if step == 'refine_topic':

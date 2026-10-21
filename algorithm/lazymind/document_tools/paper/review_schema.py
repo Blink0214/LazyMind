@@ -13,10 +13,12 @@ class ReviewIssue(BaseModel):
 
     severity: Literal['major', 'minor', 'suggestion']
     category: Literal['method', 'evidence', 'analysis', 'structure', 'language', 'citation']
-    location: NonEmptyText = Field(description='原文章节路径；全文或缺失内容可标全文')
-    quote: NonEmptyText | None = Field(description='逐字引用原文；全文或缺失内容建议为 null')
-    problem: NonEmptyText = Field(description='问题及其可观察依据，区分错误、待澄清和无法判断')
-    suggestion: NonEmptyText = Field(description='最小可执行修改建议，不虚构材料或实验')
+    location: NonEmptyText = Field(description='Manuscript section path; identify whole-document or missing content')
+    quote: NonEmptyText | None = Field(description='Verbatim manuscript excerpt; null only for whole/missing content')
+    problem: NonEmptyText = Field(
+        description='Issue and observable evidence; distinguish errors, clarification, unknowns')
+    suggestion: NonEmptyText = Field(
+        description='Smallest actionable correction; do not invent materials or experiments')
     action_type: Literal['text_revision', 'needs_material', 'needs_experiment']
 
 
@@ -31,7 +33,8 @@ class ReviewResult(BaseModel):
 class ReviewRepair(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
 
-    replacements: dict[str, Any] = Field(description='仅返回要求修复的路径及替换值，如 issues.2 对应一条完整意见')
+    replacements: dict[str, Any] = Field(
+        description='Only requested paths and replacements; issues.2 is a complete issue')
 
 
 class QuoteLines(BaseModel):
@@ -42,7 +45,8 @@ class QuoteLines(BaseModel):
 
 
 class RepairedIssue(ReviewIssue):
-    quote: QuoteLines | None = Field(description='原稿连续行的起止行号，由程序复制原文；仅全文/缺失内容可为空')
+    quote: QuoteLines | None = Field(
+        description='Contiguous source line range copied by code; null only for whole/missing content')
 
 
 class SavedReviewIssue(ReviewIssue):

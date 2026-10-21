@@ -2,17 +2,23 @@ id: paper-writing
 name: 论文写作
 description: 支持选题、综述、实验、分析、写作、审稿与阅读心得；模拟审稿已接真实算法，其他能力仍在开发。
 when_to_use: >
-  用户要求使用论文写作工作流或审阅上传的学术论文时使用。上传论文审稿时，
-  将会话中的准确文件名绑定到 manuscript_file，直接选择 peer_review，不先让 Chat 摘要或复制全文。
-  粘贴正文可绑定 manuscript_text；paper_topic 和 review_request 可选。
-  不要求用户提供 JSON 或材料池，paper_input 仅供已有程序化接入。
-  多个附件且无法确定待审稿件时才询问；不得用文件名或摘要代替正文。
-  Chat 收尾规则：用户本轮要求的步骤执行成功且产物已发布后，仅用一句话告知完成并引导查看工作流，
-  例如“审稿完成，请在工作流中查看审稿意见。”不复述正文、审稿意见或 JSON，不罗列问题、结论或后续选项；
-  不为总结、复述或再次确认已成功发布的产物而调用 list_artifacts、read_artifact、read_file_resource 等读取工具。
-  用户明确要求解释结果时才按需读取回答；明确要求继续执行后续步骤时照常推进，完成本轮要求后再简短收尾。
-  只要求审稿时，审稿成功即到达本轮用户边界，不自动修订或结束整个工作流。
-  失败或缺少必要输入时说明实际原因并等待用户处理，不能套用成功短句；工具返回的必要 user_notice 仍须转告。
+  Use when the user requests the paper-writing workflow or review of an uploaded academic manuscript.
+  Bind the exact attachment filename to manuscript_file and select peer_review directly;
+  do not first summarize or copy the manuscript through Chat.
+  Bind pasted manuscript text to manuscript_text; paper_topic and review_request are optional.
+  Do not ask users for JSON or a material pool; paper_input is only for existing programmatic integrations.
+  Ask which manuscript to review only when multiple attachments make the target ambiguous.
+  Never substitute a filename or summary for the manuscript.
+  After the requested steps succeed and their artifacts are published, acknowledge completion in one
+  short sentence in the user's language and direct them to the workflow.
+  Do not repeat the document, review, or JSON, or list issues, conclusions, or next-step options.
+  Do not call list_artifacts, read_artifact, read_file_resource, or similar tools merely to summarize,
+  repeat, or reconfirm successfully published artifacts.
+  Read results when explicitly asked to explain them; continue subsequent steps when explicitly requested,
+  then acknowledge briefly once the current request is fulfilled.
+  For a review-only request, stop after successful review without automatically revising or finishing the workflow.
+  On failure or missing required input, explain the actual cause and wait for user action; do not claim success.
+  Always relay necessary user_notice messages from tools.
 runtime:
   trigger_inputs: [manuscript_file, manuscript_text, paper_topic, review_request, paper_input]
   transactional_outputs: true

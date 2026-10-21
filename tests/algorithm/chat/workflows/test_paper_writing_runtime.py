@@ -13,6 +13,47 @@ from lazymind.document_tools.paper import api
 from lazymind.document_tools.paper import workflow as tools
 
 
+@pytest.mark.parametrize('reject_output', [False, True])
+def test_completion_feedback_uses_brief_text_only_after_real_publication(tmp_path, reject_output):
+    from lazyllm.tools.agent import ToolExecutionError
+    from lazyllm.tools.agent.functionCall import _tool_result_stop_text
+
+    previous = lazyllm.globals.get('subagent_ctx')
+    events = []
+    output_slot = 'unexpected_slot' if reject_output else 'finish_document'
+    set_context(SubAgentContext(
+        task_id='paper-completion', conversation_id='paper-test', agent_type='workflow_step',
+        objective='Check completion feedback', params={
+            'step_id': 'finish', 'output_slot_types': {output_slot: 'file'},
+        },
+        workspace_path=str(tmp_path), input_slots=[], output_slots=[output_slot],
+        db=None, emit=events.append,
+    ))
+    try:
+        if reject_output:
+            with pytest.raises(ToolExecutionError, match='Allowed keys'):
+                tools.run_paper_step()
+            assert not events
+            return
+        result = tools.run_paper_step()
+        assert result['status'] == 'completed'
+        assert result['step'] == 'finish'
+        assert result['saved']['status'] == 'ok'
+        assert result['saved']['saved_count'] == 1
+        assert 'next_step' not in result.get('control', {})
+        for payload in (result, {'ok': True, 'value': result}):
+            assert _tool_result_stop_text(payload) == '产物已保存，请在工作流中查看。'
+        artifacts = [event for event in events if event['type'] == 'artifact']
+        assert len(artifacts) == 1
+        assert artifacts[0]['slot'] == 'finish_document'
+        assert '已有产物保留' in Path(artifacts[0]['value']['path']).read_text()
+    finally:
+        if previous is None:
+            lazyllm.globals.pop('subagent_ctx', None)
+        else:
+            lazyllm.globals['subagent_ctx'] = previous
+
+
 @pytest.mark.parametrize('start,feedback,recovery', [
     ('literature_review', 'refine_topic', 'recovery_research'),
     ('peer_review', 'revise_document', 'recovery_review'),

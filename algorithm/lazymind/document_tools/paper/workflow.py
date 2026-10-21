@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -331,13 +332,36 @@ def pool_from_inputs(inputs: dict[str, Any]) -> dict:
     return validate_pool(pool)
 
 
+def _business_request(value: Any) -> str:
+    """UI retry commands control execution; they are not algorithm requirements."""
+    text = str(value or '').strip()
+    if text.rstrip('。.!！').lower() in {'重试', '重新执行', 'retry', 're-run', 'rerun', 'try again'}:
+        return ''
+    if re.fullmatch(r'(?:请重新执行步骤|Please re-run step)\s+[A-Za-z0-9_.:-]+', text, re.IGNORECASE):
+        return ''
+    return text
+
+
 def _runtime_request(params: dict) -> tuple[str, str]:
     instruction = str(params.get('retry_hint') or params.get('runtime_instruction') or '').strip()
     # Core restores launch intent in user_input on rewind; the new request is in retry_hint.
     recovery = instruction.partition('Recovery request for this rerun only:')[2].strip()
-    request = str(params.get('current_user_input') or recovery or params.get('user_input')
-                  or params.get('launch_user_input') or '').strip()
+    values = (params.get('current_user_input'), recovery, params.get('user_input'), params.get('launch_user_input'))
+    request = next((text for value in values if (text := _business_request(value))), '')
     return request, instruction
+
+
+def _step_request(step: str, pool: dict, params: dict) -> str:
+    request, instruction = _runtime_request(params)
+    recovery = instruction.partition('Recovery request for this rerun only:')[2].strip()
+    if _business_request(params.get('current_user_input')) or _business_request(recovery):
+        return request
+    # Reuse the last saved requirements for this module before falling back to launch intent.
+    previous = ''
+    if params.get('current_user_input') or recovery:
+        previous = next((_business_request(item.get('request')) for item in reversed(pool['history'])
+                         if item['node'] == STEP_NODE[step] and _business_request(item.get('request'))), '')
+    return previous or _business_request(pool.get('request')) or request
 
 
 def initialize_pool(bound: dict[str, str], request: str = '') -> dict:
@@ -425,8 +449,7 @@ def run_paper_step() -> dict:
                     add_material(pool, 'papers', papers, [], [paper['id'] for paper in papers])
                 if 'paper_topic' not in bound:
                     pool['topic'] = research_topic.infer_topic(pool.get('request') or request, papers)
-        if not context.params.get('current_user_input') and 'Recovery request for this rerun only:' not in instruction:
-            request = pool.get('request') or request
+        request = _step_request(step, pool, context.params)
         fail = '[mock:fail]' in request + instruction and '[mock:retry]' not in request + instruction
         result = execute_step(step, pool, request, fail=fail)
         artifacts = [
@@ -455,4 +478,8 @@ def run_paper_step() -> dict:
             path.write_text(artifact['value'], encoding='utf-8')
             artifact.update(content_type='file', value=str(path))
     saved = save_artifacts(artifacts)
-    return {'status': 'completed', 'step': step, 'saved': saved}
+    return {
+        'status': 'completed', 'step': step, 'saved': saved,
+        # Stop the node with user-facing text, not a stringified publication receipt.
+        '_agent_control': {'stop': True, 'final_text': '产物已保存，请在工作流中查看。'},
+    }
