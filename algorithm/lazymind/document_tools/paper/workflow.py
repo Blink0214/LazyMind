@@ -173,14 +173,16 @@ def pool_from_business(value: dict) -> dict:
 
 
 def _conversation_papers(files_by_turn: dict | None) -> list[dict]:
-    """Resolve this conversation's PDFs through the existing file-resource store."""
-    pdf_paths = []
+    """Resolve paper attachments through the existing conversation text resolver."""
+    paths = []
     for turn in sorted(files_by_turn or {}, key=int):
         for raw_path in files_by_turn[turn] or []:
             path = str(raw_path).split('?', 1)[0]
-            if Path(path).suffix.lower() == '.pdf':
-                pdf_paths.append((int(turn), path))
-    if not pdf_paths:
+            if Path(path).suffix.lower() in {
+                '.pdf', '.doc', '.docx', '.pptx', '.txt', '.md', '.markdown', '.tex', '.rst', '.html', '.htm',
+            }:
+                paths.append((int(turn), path))
+    if not paths:
         return []
 
     from lazymind.chat.engine.tools.file_resources.ingest import ingest_pdf_file
@@ -190,22 +192,30 @@ def _conversation_papers(files_by_turn: dict | None) -> list[dict]:
     store = FileResourceStore(workspace_for_request())
     papers = []
     known_ids = set()
-    for turn, path in pdf_paths:
+    for turn, path in paths:
         try:
-            manifest = ingest_pdf_file(path, turn_seq=turn, store=store)
-            if manifest.get('parse_status') != 'ready':
-                raise ValueError('PDF is not ready')
-            file_id = manifest['file_id']
-            if file_id in known_ids:
-                continue
-            resolved = resolve_text_target(file_id, resources_only=True)
-            if resolved.kind != 'file_resource' or resolved.file_id != file_id:
-                raise ValueError('not a parsed PDF')
+            if Path(path).suffix.lower() == '.pdf':
+                manifest = ingest_pdf_file(path, turn_seq=turn, store=store)
+                if manifest.get('parse_status') != 'ready':
+                    raise ValueError('PDF is not ready')
+                file_id = manifest['file_id']
+                if file_id in known_ids:
+                    continue
+                resolved = resolve_text_target(file_id, resources_only=True)
+                if resolved.kind != 'file_resource' or resolved.file_id != file_id:
+                    raise ValueError('not a parsed PDF')
+            else:
+                resolved = resolve_text_target(path, turn=turn, resources_only=True)
             text = Path(resolved.path).read_text(encoding='utf-8').strip()
         except (OSError, ValueError):
             raise MissingMaterials(f'论文附件 {Path(path).name} 无法读取或尚未解析完成，请检查后重试。') from None
         if not text:
             raise MissingMaterials(f'论文附件 {Path(path).name} 没有可用的解析正文，请重新上传。')
+        if re.search(r'\[Attachment truncated after \d+ characters\.\]', text):
+            raise MissingMaterials(f'论文附件 {Path(path).name} 的解析正文被截断，请提供完整材料。')
+        file_id = resolved.file_id or f'upload-{text_digest(text)}'
+        if file_id in known_ids:
+            continue
         known_ids.add(file_id)
         papers.append({'id': file_id, 'title': Path(resolved.display_name).stem or file_id, 'text': text})
     return papers
