@@ -1,5 +1,6 @@
 """Generate one research question from the available F1 materials."""
 
+import copy
 import json
 import re
 
@@ -7,11 +8,10 @@ from lazyllm import AutoModel, ThreadPoolExecutor
 
 from lazymind.common.token_estimation import estimate_tokens
 
-from .contracts import MissingMaterials
+from .contracts import MissingMaterials, validate_value
 from .prompts.research_topic_prompt import (
-    CONDENSED_PAPER_GUIDANCE,
+    ABSTRACT_PAPER_GUIDANCE,
     CONTENT_TOPICS,
-    FULL_PAPER_GUIDANCE,
     NO_PAPER_GUIDANCE,
     PAPER_NOTE_PROMPT,
     QUESTION_PROMPT,
@@ -21,44 +21,82 @@ from .prompts.research_topic_prompt import (
 
 _SECTION_RE = re.compile(r'^##[ \t]+([^\n]+)$', re.MULTILINE)
 _PAGE_RE = re.compile(r'<!-- page:(\d+) -->')
-_PROMPT_TOKENS = 6000
-_CHUNK_TOKENS = 2500
-_NOTE_TOKENS = 400
 _MAX_WORKERS = 4
 
 
-def _topic_excerpt(text: str, token_budget: int) -> str:
-    """Use parsed opening pages, preferring an abstract when one is present."""
-    pages = re.split(r'(?m)^<!-- page:\d+ -->[ \t]*$', text, maxsplit=4)
-    opening = '\n'.join([page.strip() for page in pages if page.strip()][:3])[:20000]
-    abstract = re.search(r'(?im)^[ \t]*(?:#{1,6}[ \t]*)?(?:摘[ \t]*要|abstract)'
-                         r'[ \t]*(?:[:：—-][ \t]*)?', opening)
+def _prompt_token_limit() -> int:
+    """Resolve the current LLM input budget, leaving output and safety margin."""
+    import lazyllm
 
-    def bounded(value: str, budget: int) -> str:
-        low, high = 0, len(value)
-        while low < high:
-            middle = (low + high + 1) // 2
-            if estimate_tokens(value[:middle]) <= budget:
-                low = middle
-            else:
-                high = middle - 1
-        return value[:low].strip()
+    from lazymind.chat.engine.agent_runtime.budget import build_context_budget
+    from lazymind.model_config import load_model_config
 
-    if abstract:
-        lead = bounded(opening[:abstract.start()], min(120, token_budget // 4))
-        opening = f'{lead}\nAbstract:\n{opening[abstract.end():].strip()}'
-    return bounded(opening, token_budget)
+    llm_config = load_model_config().get('llm') or {}
+    if isinstance(llm_config, list):
+        llm_config = llm_config[0] if llm_config else {}
+    if not isinstance(llm_config, dict):
+        llm_config = {}
+
+    if str(llm_config.get('source') or '').lower() == 'dynamic':
+        dynamic_configs = lazyllm.globals['config'].get('dynamic_model_configs') or {}
+        dynamic_llm = dynamic_configs.get('llm') or {}
+        if isinstance(dynamic_llm, dict):
+            dynamic_llm = dynamic_llm.get('chat') or {}
+        if isinstance(dynamic_llm, dict):
+            llm_config = {**llm_config, **dynamic_llm}
+
+    budget = build_context_budget(llm_config={'llm': llm_config})
+    return max(1, int(budget.effective_input_budget * 0.9))
+
+
+def _extract_abstract(text: str) -> str | None:
+    """Extract a delimited abstract from parsed Markdown or plain text."""
+    text = _PAGE_RE.sub('', text)
+    start = re.search(r'(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:abstract\b|摘[ \t]*要)'
+                      r'[ \t]*(?:[:：—-][ \t]*)?(?:\r?\n)?', text)
+    if not start:
+        return None
+    body = text[start.end():].lstrip()
+    end = re.search(r'(?im)^[ \t]*(?:#{1,6}[ \t]+|(?:\d+(?:\.\d+)*\.?[ \t]+)?'
+                    r'(?:key[ \t]*words\b|关键词|关[ \t]*键[ \t]*词|introduction\b|引言|绪论))', body)
+    if not end:
+        end = re.search(r'\r?\n[ \t]*\r?\n', body)
+    if end:
+        return body[:end.start()].strip() or None
+    return None
+
+
+def prepare_papers(papers: list[dict], prompt_limit: int | None = None) -> list[dict]:
+    """Fill missing abstracts without replacing full text or mutating the caller."""
+    validate_value('papers', papers)
+    prepared = copy.deepcopy(papers)
+    pending = []
+    for index, paper in enumerate(prepared):
+        if (paper.get('abstract') or '').strip():
+            continue
+        abstract = _extract_abstract(paper['text'])
+        if abstract:
+            paper['abstract'] = abstract
+        else:
+            pending.append(index)
+    if pending:
+        if prompt_limit is None:
+            prompt_limit = _prompt_token_limit()
+        for index, paper in zip(
+            pending,
+            _condensed_papers([prepared[index] for index in pending], prompt_limit),
+        ):
+            prepared[index] = paper
+    return prepared
 
 
 def infer_topic(request: str, papers: list[dict]) -> str:
-    """Infer the F1 topic from the request and parsed paper openings."""
-    excerpt_budget = max(1, 3000 // len(papers)) if papers else 0
-    paper_clues = [{'id': paper['id'], 'opening': _topic_excerpt(paper['text'], excerpt_budget)}
-                   for paper in papers]
+    """Infer the F1 topic from the request and prepared paper abstracts."""
+    paper_clues = [{'id': paper['id'], 'abstract': paper['abstract']} for paper in papers]
     prompt = TOPIC_EXTRACTION_PROMPT + '\n' + json.dumps(
         {'request': request, 'paper_clues': paper_clues}, ensure_ascii=False,
     )
-    if estimate_tokens(prompt) > _PROMPT_TOKENS:
+    if estimate_tokens(prompt) > _prompt_token_limit():
         raise MissingMaterials('研究主题提取输入过长，请缩短要求或减少论文。')
     response = str(AutoModel(model='llm')(prompt) or '').strip()
     if not response:
@@ -79,69 +117,61 @@ def infer_topic(request: str, papers: list[dict]) -> str:
     return topic.strip()
 
 
-def _paper_chunks(text: str) -> list[str]:
-    """Split parsed text on page boundaries, then bound oversized pages."""
-    markers = list(_PAGE_RE.finditer(text))
-    pages = []
-    if not markers:
-        pages.append(('unknown', text))
-    else:
-        if text[:markers[0].start()].strip():
-            pages.append(('unknown', text[:markers[0].start()]))
-        for index, marker in enumerate(markers):
-            end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
-            pages.append((marker.group(1), text[marker.end():end]))
+def _paper_chunks(text: str, paper: dict, prompt_limit: int) -> list[str]:
+    """Keep a fitting paper whole; otherwise split contiguous text to fit its full prompt."""
+    if not text:
+        return []
+    if estimate_tokens(_note_prompt(text, paper)) <= prompt_limit:
+        return [text]
 
     chunks = []
-    current = ''
-    for page, body in pages:
-        body = body.strip()
-        prefix = f'<!-- page:{page} -->\n'
-        while body:
-            low, high = 1, len(body)
-            while low < high:
-                middle = (low + high + 1) // 2
-                if estimate_tokens(prefix + body[:middle]) <= _CHUNK_TOKENS:
-                    low = middle
-                else:
-                    high = middle - 1
-            length = low
-            if length < len(body):
-                line_end = body.rfind('\n', 0, length)
-                if line_end >= length // 2:
-                    length = line_end + 1
-            piece, body = body[:length], body[length:]
-            segment = prefix + piece.strip()
-            if current and estimate_tokens(current + '\n\n' + segment) > _CHUNK_TOKENS:
-                chunks.append(current)
-                current = ''
-            current = current + '\n\n' + segment if current else segment
-            body = body.lstrip()
-    if current:
-        chunks.append(current)
+    start = 0
+    while start < len(text):
+        low, high = start + 1, len(text)
+        end = start
+        while low <= high:
+            middle = (low + high) // 2
+            if estimate_tokens(_note_prompt(text[start:middle], paper)) <= prompt_limit:
+                end = middle
+                low = middle + 1
+            else:
+                high = middle - 1
+        if end == start:
+            raise ValueError('研究选题的论文片段提示超出模型输入预算。')
+        if end < len(text):
+            line_end = text.rfind('\n', start, end)
+            if line_end >= start + (end - start) // 2:
+                end = line_end + 1
+        chunks.append(text[start:end])
+        start = end
     return chunks
 
 
-def _condense(source: str, topic: str, request: str, paper: dict) -> str:
-    prompt = PAPER_NOTE_PROMPT + '\n' + json.dumps(
-        {'topic': topic, 'request': request, 'paper_id': paper['id'],
-         'title': paper['title'], 'source': source}, ensure_ascii=False,
+def _note_prompt(source: str, paper: dict) -> str:
+    return PAPER_NOTE_PROMPT + '\n' + json.dumps(
+        {'paper_id': paper['id'], 'title': paper['title'], 'source': source}, ensure_ascii=False,
     )
-    if estimate_tokens(prompt) > _PROMPT_TOKENS:
-        raise ValueError('研究选题的论文片段或要求超出模型输入预算。')
+
+
+def _condense(source: str, paper: dict, prompt_limit: int) -> str:
+    prompt = _note_prompt(source, paper)
+    if estimate_tokens(prompt) > prompt_limit:
+        raise ValueError('研究选题的论文片段或摘要超出模型输入预算。')
     note = str(AutoModel(model='llm')(prompt) or '').strip()
-    if not note or estimate_tokens(note) > _NOTE_TOKENS:
-        raise ValueError(f'论文 {paper["id"]} 的分段提炼为空或超出长度预算。')
+    note = re.sub(r'^(?:<think\b[^>]*>.*?</think>\s*)+', '', note,
+                  flags=re.IGNORECASE | re.DOTALL)
+    if not note or re.match(r'^<think\b', note, flags=re.IGNORECASE):
+        raise ValueError(f'论文 {paper["id"]} 的分段提炼为空或思考内容未闭合。')
     return note
 
 
-def _condensed_papers(papers: list[dict], topic: str, request: str) -> list[dict]:
-    paper_chunks = [(paper, _paper_chunks(paper['text'])) for paper in papers]
-    tasks = [(chunk, topic, request, paper) for paper, chunks in paper_chunks for chunk in chunks]
+def _condensed_papers(papers: list[dict], prompt_limit: int) -> list[dict]:
+    paper_chunks = [(paper, _paper_chunks(paper['text'], paper, prompt_limit)) for paper in papers]
+    tasks = [(chunk, paper) for paper, chunks in paper_chunks for chunk in chunks]
     if not tasks:
         raise ValueError('论文解析正文为空，无法提炼研究材料。')
     with ThreadPoolExecutor(max_workers=min(_MAX_WORKERS, len(tasks))) as executor:
-        notes = list(executor.map(lambda task: _condense(*task), tasks))
+        notes = list(executor.map(lambda task: _condense(*task, prompt_limit), tasks))
 
     result = []
     offset = 0
@@ -150,14 +180,28 @@ def _condensed_papers(papers: list[dict], topic: str, request: str) -> list[dict
         paper_notes = notes[offset:offset + count]
         offset += count
         while len(paper_notes) > 1:
-            groups = [paper_notes[index:index + 4] for index in range(0, len(paper_notes), 4)]
+            groups = []
+            group = []
+            for note in paper_notes:
+                if estimate_tokens(_note_prompt(note, paper)) > prompt_limit:
+                    raise ValueError(f'论文 {paper["id"]} 的摘要超出合并输入预算。')
+                if group and estimate_tokens(
+                    _note_prompt('\n\n'.join([*group, note]), paper)
+                ) > prompt_limit:
+                    groups.append(group)
+                    group = []
+                group.append(note)
+            groups.append(group)
+            if len(groups) == len(paper_notes):
+                raise ValueError(f'论文 {paper["id"]} 的摘要无法在输入预算内继续合并。')
             with ThreadPoolExecutor(max_workers=min(_MAX_WORKERS, len(groups))) as executor:
                 paper_notes = list(executor.map(
-                    lambda group, current_paper=paper: _condense('\n\n'.join(group), topic, request, current_paper)
+                    lambda group, current_paper=paper: _condense(
+                        '\n\n'.join(group), current_paper, prompt_limit,
+                    )
                     if len(group) > 1 else group[0], groups,
                 ))
-        result.append({**paper, 'text': 'Page-by-page notes covering the full paper, not the original text:\n'
-                                          + paper_notes[0]})
+        result.append({**paper, 'abstract': paper_notes[0]})
     return result
 
 
@@ -185,23 +229,16 @@ def _validate_question_markdown(markdown: str, mode: str) -> None:
 
 def run(inputs: dict) -> dict:
     """topic/request/papers/question/evidence/mode -> question, is_demo."""
-    papers = inputs.get('papers', []) or []
+    prompt_limit = _prompt_token_limit()
+    papers = prepare_papers(inputs.get('papers', []) or [], prompt_limit)
     material = {key: inputs.get(key) for key in ('topic', 'request', 'papers', 'question', 'evidence', 'mode')}
-
-    def make_prompt(condensed: bool = False) -> str:
-        guidance = (CONDENSED_PAPER_GUIDANCE if condensed else FULL_PAPER_GUIDANCE) if papers else NO_PAPER_GUIDANCE
-        return QUESTION_PROMPT.format(paper_guidance=guidance, topics='; '.join(CONTENT_TOPICS)) + (
-            'Input materials (JSON):\n' + json.dumps(material, ensure_ascii=False)
-        )
-
-    prompt = make_prompt()
-    if estimate_tokens(prompt) > _PROMPT_TOKENS:
-        if not papers:
-            raise ValueError('研究选题输入超出模型预算，请缩短用户要求或已有材料。')
-        material['papers'] = _condensed_papers(papers, inputs['topic'], inputs.get('request', ''))
-        prompt = make_prompt(condensed=True)
-        if estimate_tokens(prompt) > _PROMPT_TOKENS:
-            raise ValueError('论文提炼后仍超出研究选题输入预算，请减少论文或缩短其他材料。')
+    material['papers'] = [{key: paper[key] for key in ('id', 'title', 'abstract')} for paper in papers]
+    guidance = ABSTRACT_PAPER_GUIDANCE if papers else NO_PAPER_GUIDANCE
+    prompt = QUESTION_PROMPT.format(paper_guidance=guidance, topics='; '.join(CONTENT_TOPICS)) + (
+        'Input materials (JSON):\n' + json.dumps(material, ensure_ascii=False)
+    )
+    if estimate_tokens(prompt) > prompt_limit:
+        raise ValueError('研究选题输入超出模型预算，请减少论文或缩短其他材料。')
     markdown = str(AutoModel(model='llm')(prompt) or '').strip()
     markdown = re.sub(r'^(?:<think\b[^>]*>.*?</think>\s*)+', '', markdown,
                       flags=re.IGNORECASE | re.DOTALL)
