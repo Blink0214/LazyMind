@@ -61,6 +61,7 @@ import { SlideThumb } from './ppt/SlideThumb';
 import { WorkflowTabActions } from './actions/WorkflowTabActions';
 import { WorkflowPanelTabActiveContext, SlotEditingContext } from './slotEditingContext';
 import { findWriterArtifactStream } from './writerArtifactStream';
+import { PaperAnalysisProgress } from './PaperAnalysisProgress';
 import { resolveCompletedContinueStep, resolveExternalContinueAction, resolveWorkflowContinueAction } from './workflowContinue';
 import { resolvePendingApprovalStep } from './workflowApproval';
 import { moveSelectedCompositePages, sameCompositePageOrder } from './compositePageReorder';
@@ -69,6 +70,7 @@ import {
   filterPresentCompositeItems,
   findAlignedCompositeRevision,
 } from './compositeArtifactLayout';
+import { PaperAnalysisCharts } from './PaperAnalysisCharts';
 import './WorkflowPanel.scss';
 
 const EMPTY_TASK_CENTER_TASKS: SubAgentTask[] = [];
@@ -1403,6 +1405,7 @@ function NamedTabSlot({
   const compactEmptyStates = React.useContext(CompactWorkflowEmptyStatesContext);
   const slotLabel = slotDef.label ?? slotDef.id;
   const isImageList = slotDef.type === 'image' && slotDef.cardinality === 'list';
+  const isPaperAnalysisCharts = session.workflow_id === 'paper-writing' && slotDef.id === 'analysis_chart';
   const isDraggable = Boolean(slotDef.ordered) && !readOnly;
   const [nativeCollapsed, setContentCollapsed] = useState(slotDef.widget?.collapsed === true);
   const collapseWhenEmpty = compactEmptyStates && slotDef.widget?.collapseWhenEmpty !== false;
@@ -1410,7 +1413,7 @@ function NamedTabSlot({
     revisions.length > 0 || Boolean(artifactStream), collapseWhenEmpty, slotDef.widget?.collapsed === true,
   );
   const contentCollapsed = compactEmptyStates ? externalCollapsed : nativeCollapsed;
-  const prefersFullGridRow = slotDef.widget?.itemLayout === 'grid'
+  const prefersFullGridRow = isPaperAnalysisCharts || slotDef.widget?.itemLayout === 'grid'
     || (slotDef.widget?.itemWidth ?? 0) >= 600
     || slotDef.widget?.collapsed === true;
   const isWriterDocument = slotDef.widget?.widgetType === 'writer-document';
@@ -1427,6 +1430,8 @@ function NamedTabSlot({
     >
       <span>{compactEmptyStates ? t(workflowEmptyStateKey(session, slotStepId)) : '—'}</span>
     </div>
+  ) : isPaperAnalysisCharts ? (
+    <PaperAnalysisCharts revisions={revisions} metadataSlots={session.slots ?? []} />
   ) : isImageList ? (
     <SortableImageList
       revisions={revisions}
@@ -1863,11 +1868,13 @@ export function WorkflowPanel({
       ui.tab_visibility_ready_material,
       session?.projection,
       ui.hide_skipped_steps,
+      ui.hide_unstarted_steps && session?.workflow_mode === 'dynamic',
     );
     if (!tabs.length || !persistedFocusedTab) return;
     const idx = tabs.findIndex((t) => t.id === persistedFocusedTab);
     if (idx !== -1) setActiveTabIdx(idx);
-  }, [ui.tabs, ui.tab_visibility_ready_material, ui.hide_skipped_steps, persistedFocusedTab, session?.slots, session?.projection]);
+  }, [ui.tabs, ui.tab_visibility_ready_material, ui.hide_skipped_steps, ui.hide_unstarted_steps,
+    persistedFocusedTab, session?.slots, session?.projection, session?.workflow_mode]);
 
   // Until the user explicitly chooses a visible tab, follow the runtime
   // frontier. This also moves focus immediately when a skip material removes
@@ -1879,6 +1886,7 @@ export function WorkflowPanel({
       ui.tab_visibility_ready_material,
       session?.projection,
       ui.hide_skipped_steps,
+      ui.hide_unstarted_steps && session?.workflow_mode === 'dynamic',
     );
     const focusedTabVisible = Boolean(
       persistedFocusedTab && tabs.some((tab) => tab.id === persistedFocusedTab),
@@ -1893,6 +1901,8 @@ export function WorkflowPanel({
     ui.tabs,
     ui.tab_visibility_ready_material,
     ui.hide_skipped_steps,
+    ui.hide_unstarted_steps,
+    session?.workflow_mode,
     session?.projection,
     persistedFocusedTab,
     session?.current_step_id,
@@ -1930,6 +1940,7 @@ export function WorkflowPanel({
     ui.tab_visibility_ready_material,
     session.projection,
     ui.hide_skipped_steps,
+    ui.hide_unstarted_steps && session.workflow_mode === 'dynamic',
   );
   const hasTabs = tabs.length > 0;
   const visibleActiveTabIdx = hasTabs
@@ -2332,15 +2343,20 @@ export function WorkflowPanel({
             tabs.map((tab, idx) => {
               const preview = externalPresentation && !anySlotEditing ? executionPreview(session, tab, activities) : session;
               const previewing = preview !== session;
+              const isPaperAnalysis = session.workflow_id === 'paper-writing'
+                && resolveWorkflowTabStepId(tab, session.steps) === 'data_analysis';
               return <div
                 key={tab.id}
                 id={`workflow-tab-panel-${tab.id}`}
                 role='tabpanel'
+                className={isPaperAnalysis ? 'workflow-panel__f4-tab' : undefined}
+                tabIndex={isPaperAnalysis ? 0 : undefined}
                 aria-labelledby={`workflow-tab-${session.session_id}-${tab.id}`}
                 hidden={idx !== visibleActiveTabIdx}
               >
                 <WorkflowPanelTabActiveContext.Provider value={idx === visibleActiveTabIdx}>
                 <SlotDownloadContext.Provider value={!previewing && workflowTabAllowsDownload(tab, idx, tabs.length)}>
+                  {isPaperAnalysis && <PaperAnalysisProgress session={session} active={idx === visibleActiveTabIdx} />}
                   {previewing && <div className="workflow-panel__preview-label" role="status">{t('chat.workflowGeneratingPreview')}</div>}
                   <TabSlotGrid
                     tab={executionPreviewTab(tab, session, preview)}

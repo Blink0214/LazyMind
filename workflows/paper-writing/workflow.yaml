@@ -1,7 +1,9 @@
 id: paper-writing
 name: 论文写作
-description: 支持选题、综述、实验、分析、写作、审稿与阅读心得；模拟审稿已接真实算法，其他能力仍在开发。
+description: 支持选题、综述、实验、分析、写作、审稿与阅读心得；数据分析与模拟审稿已接真实算法，其他能力仍在开发。
 when_to_use: >
+  用户只要求数据分析时，直接选择 data_analysis；F4 工具会从当前会话的 JSON 附件读取完整约定输入，
+  不需要模型逐行读取或重写附件内容。已有 paper_input 或材料池绑定时优先沿用绑定。
   Use when the user requests the paper-writing workflow or review of an uploaded academic manuscript.
   Bind the exact attachment filename to manuscript_file and select peer_review directly;
   do not first summarize or copy the manuscript through Chat.
@@ -73,10 +75,11 @@ slots:
   - {id: revise_document_document, label: "论文修订", type: file, cardinality: single}
   - {id: reading_reflection_pool, label: "阅读心得材料池", type: file, cardinality: single, exposed: false}
   - {id: reading_reflection_document, label: "阅读心得", type: file, cardinality: single}
-  - {id: analysis_chart, label: 分析图表, type: file, cardinality: single}
+  - {id: analysis_chart, label: 分析图表, type: file, cardinality: list, ordered: true}
   - {id: finish_document, label: 结束说明, type: file, cardinality: single, exposed: false}
 ui:
   hide_skipped_steps: true
+  hide_unstarted_steps: true
   task_presentation:
     hidden_steps: [finish]
   slots:

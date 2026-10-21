@@ -517,6 +517,7 @@ export function filterWorkflowTabs(
   readyMaterial?: string,
   projection?: WorkflowRuntimeProjection,
   hideSkippedSteps = false,
+  hideUnstartedSteps = false,
 ): TabDef[] {
   const present = new Set(
     slots.filter((slot) => slot.selected).map((slot) => slot.slot),
@@ -532,9 +533,12 @@ export function filterWorkflowTabs(
     const node = projection?.nodes?.[id];
     return node ? ['pruned', 'bypassed'].includes(node.branch) : skipped.has(id);
   };
+  const executionStarted = retained.size > 0 || Object.keys(projection?.nodes ?? {}).some(wasExecuted);
   return tabs.filter((tab) => {
+    const steps = tab.status_step_ids?.length ? tab.status_step_ids : [tab.step_id || tab.id];
+    if (hideUnstartedSteps && executionStarted && !steps.some(wasExecuted)
+        && !tab.slots.some((slot) => present.has(slot.id))) return false;
     if (hideSkippedSteps) {
-      const steps = tab.status_step_ids?.length ? tab.status_step_ids : [tab.step_id || tab.id];
       if (projection?.completed && !steps.some(wasExecuted)
           && !tab.slots.some((slot) => present.has(slot.id))) return false;
       if (tab.hide_when_step_skipped && wasSkipped(tab.hide_when_step_skipped)
@@ -584,6 +588,8 @@ export interface WorkflowUI {
   tab_visibility_ready_material?: string;
   /** Opt in to hiding tabs whose runtime steps were explicitly skipped. */
   hide_skipped_steps?: boolean;
+  /** In dynamic sessions, show started steps and existing results once execution begins. */
+  hide_unstarted_steps?: boolean;
   /** Global widget config keyed by slot id. */
   slots?: Record<string, Record<string, unknown>>;
 }

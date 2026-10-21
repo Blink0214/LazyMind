@@ -203,7 +203,7 @@ steps:
     outputs:
       - {material: data_analysis_pool, required: true}
       - {material: data_analysis_document, required: true}
-      - {material: analysis_chart, required: true}
+      - {material: analysis_chart, required: false}
     acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   write_document:
     label: "论文写作"

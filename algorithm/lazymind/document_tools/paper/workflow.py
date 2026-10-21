@@ -1,6 +1,7 @@
 """Paper Workflow state and Runtime adapter; algorithms use the separate business API."""
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import re
@@ -13,6 +14,7 @@ from .api import run_algorithm
 from .contracts import MissingMaterials
 from .entry import MAX_MANUSCRIPT_CHARS, read_manuscript
 from .review_schema import text_digest
+from .analysis import trace as diagnostics
 
 SCHEMA = 'paper-material-pool.v1'
 ROUTES = {
@@ -53,8 +55,14 @@ def validate_pool(pool: Any) -> dict:
         key = (item['id'], item['version'])
         if key in indexed:
             raise ValueError('材料 id/version 重复')
-        if not isinstance(item.get('content'), (str, dict, list)) or (not item['content'] and item['kind'] != 'papers'):
+        if (not isinstance(item.get('content'), (str, dict, list))
+                or (not item['content'] and item['kind'] not in ('papers', 'charts'))):
             raise ValueError('材料 content 不能为空')
+        if item['kind'] == 'analysis' and isinstance(item['content'], dict):
+            from .analysis.schema import VERSION, validate_analysis
+            if item.get('contract') != VERSION:
+                raise ValueError('结构化分析缺少匹配的契约版本，旧结果需要原始材料重新分析')
+            validate_analysis(item['content'])
         if not isinstance(item.get('source_refs'), list) or not all(
             isinstance(ref, str) and ref for ref in item['source_refs']
         ):
@@ -101,7 +109,8 @@ def material(pool: dict, kind: str) -> dict | None:
                 if item['id'] == ref['id'] and item['version'] == ref['version'])
 
 
-def add_material(pool: dict, kind: str, content: Any, derived: list[dict], sources: list[str], *, is_demo: bool = False) -> dict:
+def add_material(pool: dict, kind: str, content: Any, derived: list[dict], sources: list[str],
+                 *, is_demo: bool = False) -> dict:
     identifier = pool['current'].get(kind, {}).get('id', f'material-{kind}')
     version = 1 + max((item['version'] for item in pool['materials'] if item['id'] == identifier), default=0)
     ref = {'id': identifier, 'version': version}
@@ -109,6 +118,9 @@ def add_material(pool: dict, kind: str, content: Any, derived: list[dict], sourc
         **ref, 'kind': kind, 'title': kind, 'mock': is_demo,
         'content': content, 'source_refs': sorted(set(sources)), 'derived_from': copy.deepcopy(derived),
     })
+    if kind == 'analysis' and isinstance(content, dict):
+        from .analysis.schema import VERSION
+        pool['materials'][-1]['contract'] = VERSION
     pool['current'][kind] = ref
     return ref
 
@@ -123,7 +135,7 @@ def seed_pool() -> dict:
         {'id': '示例P2', 'title': '[示例] 生成答案的来源检查', 'text': '示例论文讨论主张与来源核验，不是真实论文。'},
     ], [], ['示例P1', '示例P2'], is_demo=True)
     add_material(pool, 'data', {'columns': ['method', 'score'],
-                               'rows': [['baseline', 60], ['evidence', 75]]}, [], [], is_demo=True)
+                                'rows': [['baseline', 60], ['evidence', 75]]}, [], [], is_demo=True)
     add_material(pool, 'manuscript', '# [示例] 已有论文\n\n## 方法\n待完善证据定位。\n\n## 局限\n仅为流程测试。', [], ['示例P1'], is_demo=True)
     return validate_pool(pool)
 
@@ -131,6 +143,8 @@ def seed_pool() -> dict:
 def business_input(step: str, pool: dict, request: str = '') -> dict:
     module = contracts.ALIASES.get(step, step)
     value = {'topic': pool['topic'], 'request': request or pool.get('request', '')}
+    if module == 'data_analysis' and 'constraints' in pool:
+        value['constraints'] = copy.deepcopy(pool['constraints'])
     for kind in contracts.FIELDS[module]:
         item = material(pool, kind)
         if item:
@@ -144,7 +158,7 @@ def pool_from_business(value: dict) -> dict:
         raise ValueError('入口材料必须是 JSON 对象')
     if value.get('schema') == SCHEMA:
         return validate_pool(copy.deepcopy(value))  # Existing pinned integrations.
-    if set(value) - {'topic', 'request', 'demo', *KINDS}:
+    if set(value) - {'topic', 'request', 'demo', 'constraints', *KINDS}:
         raise ValueError('入口材料含未知字段')
     if type(value.get('demo', False)) is not bool:
         raise ValueError('demo 必须是布尔值')
@@ -161,6 +175,9 @@ def pool_from_business(value: dict) -> dict:
         raise ValueError('request 必须是字符串')
     pool = {'schema': SCHEMA, 'topic': value['topic'], 'request': value.get('request', ''),
             'sequence': 0, 'materials': [], 'current': {}, 'history': []}
+    if 'constraints' in value:
+        from .analysis.schema import Constraints, parse
+        pool['constraints'] = parse(Constraints, value['constraints'])
     paper_ids = []
     if 'papers' in value:
         contracts.validate_value('papers', value['papers'])
@@ -224,9 +241,10 @@ def _conversation_papers(files_by_turn: dict | None) -> list[dict]:
 def preparation_document(pool: dict) -> str:
     # Compatibility for already pinned legacy sessions; new workflows have no prepare node.
     names = {'papers': '论文', 'data': '数据表', 'question': '研究选题', 'evidence': '文献综述',
-             'experiment': '实验结果', 'analysis': '分析结论', 'chart': '图表',
+             'experiment': '实验结果', 'analysis': '分析结论', 'chart': '图表', 'charts': '图表列表',
              'outline': '大纲', 'manuscript': '稿件', 'review': '审稿意见', 'review_data': '结构化审稿意见',
              'reflection': '阅读心得'}
+    names.update(data_context='数据说明', study_design='观测设计事实')
     lines = ['# 材料准备', '', '## 研究主题', pool['topic'], '', '## 已接收材料']
     for kind in pool['current']:
         item = material(pool, kind)
@@ -261,19 +279,30 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False) -
                              is_demo=papers['mock'])
     relevant = contracts.FIELDS[module]
     inputs = [copy.deepcopy(pool['current'][kind]) for kind in relevant if kind in pool['current']]
-    output = run_algorithm(step, business_input(step, pool, request))
+    execution_records = []
+    if module == 'data_analysis':
+        from .analysis.pipeline import capture_execution
+        with capture_execution() as execution_records:
+            output = run_algorithm(step, business_input(step, pool, request))
+    else:
+        output = run_algorithm(step, business_input(step, pool, request))
     is_demo = output['is_demo'] or any(material(pool, k)['mock'] for k in relevant if material(pool, k))
     generated = {key: copy.deepcopy(output[key]) for key in contracts.OUTPUTS[module]}
     main = {'F1': 'question', 'F2': 'evidence', 'F3': 'experiment', 'F4': 'analysis',
             'F5': 'manuscript', 'F6': 'review', 'F7': 'reflection'}[node]
-    document = generated[main]['report'] if main == 'experiment' else generated[main]
+    structured_analysis = main == 'analysis' and isinstance(generated[main], dict)
+    if structured_analysis:
+        from .analysis.render import render
+        document = render(generated[main], '数据分析 · ' + pool['topic'])
+    else:
+        document = generated[main]['report'] if main == 'experiment' else generated[main]
     notice = '> 演示数据，仅用于流程测试，不是真实研究结果。'
     if is_demo and notice not in document:
         first, sep, rest = document.partition('\n')
         document = first + '\n\n' + notice + '\n' + rest
     if main == 'experiment':
         generated[main]['report'] = document
-    else:
+    elif not structured_analysis:
         generated[main] = document
     if main == 'review':
         generated['review_data']['review_sha256'] = text_digest(document)
@@ -285,6 +314,8 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False) -
                for kind, content in generated.items()]
     result['sequence'] += 1
     result['history'].append({'node': node, 'request': request, 'inputs': inputs, 'outputs': outputs})
+    if execution_records:
+        result['history'][-1]['analysis_execution'] = execution_records
     validate_pool(result)
     return {'status': 'completed', 'pool': result, 'document': document,
             'next': ROUTES[node] + ['END'], 'mock': is_demo}
@@ -341,10 +372,23 @@ def pool_from_inputs(inputs: dict[str, Any]) -> dict:
         current = material(pool, kind) if kind else None
         if current:
             content = current['content']
+            if kind == 'analysis' and isinstance(content, dict):
+                from .analysis.render import render
+                from .analysis.schema import ContractError
+                previous_document = render(content, '数据分析 · ' + pool['topic'])
+                if current['mock']:
+                    first, _, rest = previous_document.partition('\n')
+                    previous_document = first + '\n\n> 演示数据，仅用于流程测试，不是真实研究结果。\n' + rest
+                if previous_document != document:
+                    raise ContractError('STALE_MATERIAL', 'analysis',
+                                        '分析报告已编辑；编辑稿保留，请将改动作为本轮要求重新分析，不能将修改后的数字视为已复算结果')
+                return validate_pool(pool)
             previous_document = content.get('report') if kind == 'experiment' and isinstance(content, dict) else content
             if previous_document != document:
-                updated = {**content, 'report': document} if kind == 'experiment' and isinstance(content, dict) else document
-                add_material(pool, kind, updated, [pool['current'][kind]], current['source_refs'], is_demo=current['mock'])
+                updated = ({**content, 'report': document}
+                           if kind == 'experiment' and isinstance(content, dict) else document)
+                add_material(pool, kind, updated, [pool['current'][kind]], current['source_refs'],
+                             is_demo=current['mock'])
     return validate_pool(pool)
 
 
@@ -423,6 +467,7 @@ def initialize_pool(bound: dict[str, str], request: str = '') -> dict:
     return pool_from_business(value)
 
 
+@diagnostics.workflow_trace
 def run_paper_step() -> dict:
     """Execute the authoritative current step and save its artifacts in one batch.
 
@@ -451,7 +496,15 @@ def run_paper_step() -> dict:
     else:
         if step not in STEP_NODE:
             raise ValueError(f'未知 Workflow 步骤: {step}')
-        pool = initialize_pool(bound, request)
+        if step == 'data_analysis':
+            from .analysis.attachments import bind_attachment, retry_request
+            request = retry_request(context.params, request)
+            with diagnostics.stage('input_binding'):
+                bound = bind_attachment(bound, context.workspace_path, request)
+            with diagnostics.stage('input_validation'):
+                pool = initialize_pool(bound, request)
+        else:
+            pool = initialize_pool(bound, request)
         if step == 'research_topic' and 'paper_input' not in bound and not any(
             key.endswith('_pool') for key in bound
         ):
@@ -481,9 +534,18 @@ def run_paper_step() -> dict:
                                        ensure_ascii=False, indent=2), encoding='utf-8')
             artifacts.append({'key': 'peer_review_data', 'content_type': 'file', 'value': str(path)})
         if step == 'data_analysis':
-            chart = Path(context.workspace_path) / '分析图表.svg'
-            chart.write_text(material(result['pool'], 'chart')['content'], encoding='utf-8')
-            artifacts.append({'key': 'analysis_chart', 'content_type': 'file', 'value': str(chart)})
+            execution = result['pool']['history'][-1].get('analysis_execution', [])
+            figure_exports = {f['id']: f.get('exports', {}) for record in execution for f in record.get('figures', [])}
+            for figure in material(result['pool'], 'charts')['content']:
+                chart = Path(context.workspace_path) / f'分析图表-{figure["id"]}.svg'
+                chart.write_text(figure['svg'], encoding='utf-8')
+                artifacts.append({'key': 'analysis_chart', 'content_type': 'file', 'value': str(chart),
+                                  'caption': figure.get('caption') or figure['title']})
+                for extension, encoded in figure.get('exports', figure_exports.get(figure['id'], {})).items():
+                    exported = chart.with_suffix('.' + extension)
+                    exported.write_bytes(base64.b64decode(encoded, validate=True))
+                    artifacts.append({'key': 'analysis_chart', 'content_type': 'file', 'value': str(exported),
+                                      'caption': f'{figure.get("caption") or figure["title"]} ({extension.upper()})'})
     # Publish actual named files; the existing document projection supplies the editor.
     for artifact in artifacts:
         if artifact['key'].endswith('_pool'):
@@ -495,7 +557,12 @@ def run_paper_step() -> dict:
             path = Path(context.workspace_path) / markdown_filename(STEP_LABELS[step])
             path.write_text(artifact['value'], encoding='utf-8')
             artifact.update(content_type='file', value=str(path))
-    saved = save_artifacts(artifacts)
+    with diagnostics.stage('output_publication'):
+        saved = save_artifacts(artifacts)
+        diagnostics.save('published-files.json', [
+            {'slot': item['key'], 'filename': Path(item['value']).name}
+            for item in artifacts if item['content_type'] == 'file'
+        ])
     return {
         'status': 'completed', 'step': step, 'saved': saved,
         # Stop the node with user-facing text, not a stringified publication receipt.
