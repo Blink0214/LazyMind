@@ -505,6 +505,15 @@ def run_paper_step() -> dict:
                 pool = initialize_pool(bound, request)
         else:
             pool = initialize_pool(bound, request)
+        if step == 'literature_review' and not any(key.endswith('_pool') for key in bound):
+            uploaded = _conversation_papers(context.params.get('history_files_per_turn'))
+            current = material(pool, 'papers')
+            papers = copy.deepcopy(current['content']) if current else []
+            existing_ids = {paper['id'] for paper in papers}
+            papers.extend(paper for paper in uploaded if paper['id'] not in existing_ids)
+            if len(papers) > len(existing_ids):
+                derived = [pool['current']['papers']] if current else []
+                add_material(pool, 'papers', papers, derived, [paper['id'] for paper in papers])
         if step == 'research_topic' and 'paper_input' not in bound and not any(
             key.endswith('_pool') for key in bound
         ):

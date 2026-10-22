@@ -54,8 +54,8 @@ def validate_value(kind, value):
             raise ValueError('papers 必须是论文列表')
         ids = set()
         for paper in value:
-            if not isinstance(paper, dict) or set(paper) - {'id', 'title', 'abstract', 'text', 'url'}:
-                raise ValueError('论文字段必须是 id/title/abstract/text/url')
+            if not isinstance(paper, dict):
+                raise ValueError('论文条目必须是对象')
             for key in ('id', 'title'):
                 text(paper.get(key), f'paper.{key}')
             for key in ('abstract', 'text'):
@@ -65,6 +65,8 @@ def validate_value(kind, value):
                 raise MissingMaterials(f'论文 {paper["id"]} 缺少材料：需要摘要或全文')
             if 'url' in paper and not isinstance(paper['url'], str):
                 raise ValueError('paper.url 必须是字符串')
+            if 'citation' in paper:
+                text(paper['citation'], 'paper.citation')
             if paper['id'] in ids:
                 raise ValueError('论文 id 重复')
             ids.add(paper['id'])
@@ -184,6 +186,9 @@ def validate_output(module, value, inputs=None):
         return value
     for key in OUTPUTS[module]:
         validate_value(key, value[key])
+    if module == 'literature_review':
+        for paper in value['papers']:
+            text(paper.get('citation'), 'paper.citation')
     if module == 'peer_review' and value['review_data']['review_sha256'] != text_digest(value['review']):
         raise ValueError('结构化审稿意见与 Markdown 报告不匹配')
     return value
