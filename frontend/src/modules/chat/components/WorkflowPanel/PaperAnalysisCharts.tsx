@@ -43,7 +43,7 @@ export function paperChartDescriptions(value: unknown): ChartDescription[] {
   if (!value || typeof value !== 'object') return [];
   const envelope = value as Record<string, any>;
   const pool = Array.isArray(envelope.materials) ? envelope : envelope.data;
-  if (!pool || pool.schema !== 'paper-material-pool.v1' || !Array.isArray(pool.materials)) return [];
+  if (!pool || !['paper-material-pool.v1', 'paper-material-pool.v2'].includes(pool.schema) || !Array.isArray(pool.materials)) return [];
   const reference = pool.current?.charts;
   const material = pool.materials.find((item: any) => item.kind === 'charts'
     && item.id === reference?.id && item.version === reference?.version);

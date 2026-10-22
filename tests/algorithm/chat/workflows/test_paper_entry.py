@@ -57,7 +57,9 @@ def test_plaintext_body_and_requirements_without_business_json(tmp_path):
     request = tmp_path / 'request'
     request.write_text('Only check evidence')
     pool = workflow.initialize_pool({'manuscript_text': str(body), 'review_request': str(request)}, 'launch command')
-    assert pool['request'] == 'Only check evidence'
+    # Review requirements are resolved by the executing step, not mixed into materials.
+    assert pool['request'] == 'launch command'
+    assert workflow._step_request('peer_review', pool, {}, {'review_request': str(request)}) == 'Only check evidence'
     assert pool['topic'] == 'Title'
 
 

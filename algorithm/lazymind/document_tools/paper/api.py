@@ -1,4 +1,6 @@
 """Business API: no workflow context, paths, pool or publication in algorithms."""
+import copy
+
 from . import contracts
 from . import research_topic, literature_review, experiment, data_analysis
 from . import write_document, peer_review, reading_reflection
@@ -17,7 +19,13 @@ def run_algorithm(step: str, inputs: dict, *, on_event=None, allow_execution=Fal
     if module not in ALGORITHMS:
         raise ValueError(f'未知 Workflow 步骤: {step}')
     normalized = contracts.validate_input(step, inputs)
-    result = ALGORITHMS[module].run(normalized, on_event=on_event, allow_execution=allow_execution) \
-        if module == 'experiment' else ALGORITHMS[module].run(normalized)
-    bound = normalized if module == 'data_analysis' and 'constraints' in normalized else None
-    return contracts.validate_output(module, result, bound)
+    algorithm = ALGORITHMS[module]
+    if hasattr(algorithm, 'validate_inputs'):
+        algorithm.validate_inputs(normalized)
+    prepared = copy.deepcopy(normalized)
+    result = algorithm.run(prepared, on_event=on_event, allow_execution=allow_execution) \
+        if module == 'experiment' else algorithm.run(prepared)
+    contracts.validate_output(module, result, inputs=normalized)
+    if hasattr(algorithm, 'validate_result'):
+        algorithm.validate_result(result, normalized)
+    return result

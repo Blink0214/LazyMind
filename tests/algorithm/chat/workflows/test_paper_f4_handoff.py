@@ -36,11 +36,16 @@ def test_f4_materials_reach_writing_review_and_revision(f4_result, monkeypatch, 
     output['charts'] = output['charts'][:chart_count]
     before = copy.deepcopy(output)
     monkeypatch.setattr(api.ALGORITHMS['data_analysis'], 'run', lambda _: copy.deepcopy(output))
-    writing = Mock(wraps=write_document.run)
+    # Contract handoff test: generation is isolated; real Writer has separate coverage.
+    writing = Mock(side_effect=lambda value: dict(
+        outline=value['outline'] or '# 稿件\n\n## 结果',
+        manuscript=(value['manuscript'] or '# 稿件\n\n## 结果\n\n当前样本平均得分为二分。') + '\n补充样本范围。',
+        is_demo=False))
     monkeypatch.setattr(write_document, 'run', writing)
     monkeypatch.setattr(peer_review, 'AutoModel', lambda **_: object())
     monkeypatch.setattr(peer_review, 'WriterToolBase', lambda **_: object())
-    review_call = Mock(return_value=dict(summary='结论需限定到当前样本。', issues=[], limitations=[]))
+    review_call = Mock(return_value=dict(summary='结论需限定到当前样本。', issues=[dict(severity='minor', category='language', location='全文',
+        action_type='text_revision', quote=None, problem='样本范围需明确', suggestion='补充样本范围')], limitations=[]))
     monkeypatch.setattr(peer_review, 'call_once', review_call)
 
     f4_pool = workflow.execute_step('data_analysis', workflow.pool_from_business(inputs))['pool']
@@ -58,6 +63,7 @@ def test_f4_materials_reach_writing_review_and_revision(f4_result, monkeypatch, 
     assert review_input['analysis'] == output['analysis']
     assert f4_pool['current']['analysis'] in reviewed['history'][-1]['inputs']
 
+    reviewed['selected_issue_ids'] = ['R1']
     workflow.execute_step('revise_document', reviewed)
     assert writing.call_args.args[0]['analysis'] == output['analysis']
     assert writing.call_args.args[0]['charts'] == output['charts']
@@ -86,14 +92,10 @@ def test_writing_rejects_chart_references_outside_analysis(f4_result):
 
 
 @pytest.mark.parametrize('step', ['write_document', 'revise_document', 'peer_review'])
-def test_legacy_text_analysis_still_works(step):
+def test_legacy_text_analysis_still_works_for_peer_review_only(step):
     inputs = dict(topic='T', analysis='已有文字分析', manuscript='# 稿件')
-    if step == 'revise_document':
-        inputs['review'] = '# 审稿意见'
-    if step != 'peer_review':
-        inputs['chart'] = '<svg xmlns="http://www.w3.org/2000/svg"/>'
-    normalized = contracts.validate_input(step, inputs)
-    assert normalized['analysis'] == inputs['analysis']
-    if step != 'peer_review':
-        assert normalized['charts'] == []
-        assert normalized['chart'] == inputs['chart']
+    if step == 'peer_review':
+        assert contracts.validate_input(step, inputs)['analysis'] == inputs['analysis']
+    else:
+        with pytest.raises(ValueError):
+            contracts.validate_input(step, inputs)

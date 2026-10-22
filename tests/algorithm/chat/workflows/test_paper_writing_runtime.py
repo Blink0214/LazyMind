@@ -54,6 +54,7 @@ def test_completion_feedback_uses_brief_text_only_after_real_publication(tmp_pat
             lazyllm.globals['subagent_ctx'] = previous
 
 
+@pytest.mark.usefixtures('paper_simulation')
 @pytest.mark.parametrize('start,feedback,recovery', [
     ('literature_review', 'refine_topic', 'recovery_research'),
     ('peer_review', 'revise_document', 'recovery_review'),
@@ -88,6 +89,7 @@ def test_real_artifact_publisher_across_ten_feedback_rounds(tmp_path, start, fee
         set_context(SubAgentContext(
             task_id='paper-' + workspace.name, conversation_id='paper-test', agent_type='workflow_step',
             objective='Mock contract test', params={'step_id': step, 'remote_inputs': bound,
+                'selected_issue_ids': ['R1'] if step == 'revise_document' else [],
                 'output_slot_types': {slot: types[slot] for slot in slots}},
             workspace_path=str(workspace), input_slots=list(inputs), output_slots=slots,
             db=None, emit=emitted.append,

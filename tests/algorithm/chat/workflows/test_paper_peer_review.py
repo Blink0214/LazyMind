@@ -165,11 +165,12 @@ def test_edited_report_from_pool_cannot_use_old_structured_advice(example):
         api.contracts.validate_input('revise_document', workflow.business_input('revise_document', edited))
 
 
-def test_legacy_markdown_only_revision_remains_supported(example):
-    normalized = api.contracts.validate_input('revise_document', {
-        **example['input'], 'review': example['output']['review'],
-    })
-    assert normalized['review_data'] is None
+def test_legacy_markdown_only_revision_requires_structured_review(example):
+    # F5 now consumes the paired report/review_data produced by F6.
+    with pytest.raises(api.contracts.MissingMaterials, match='review_data'):
+        api.contracts.validate_input('revise_document', {
+            **example['input'], 'review': example['output']['review'],
+        })
 
 
 def test_partial_repair_keeps_valid_issues_and_input_unchanged(example):
