@@ -11,12 +11,13 @@ ALGORITHMS = {
 }
 
 
-def run_algorithm(step: str, inputs: dict) -> dict:
+def run_algorithm(step: str, inputs: dict, *, on_event=None, allow_execution=False) -> dict:
     """Validate business input, call only the requested module, validate output."""
     module = contracts.ALIASES.get(step, step)
     if module not in ALGORITHMS:
         raise ValueError(f'未知 Workflow 步骤: {step}')
     normalized = contracts.validate_input(step, inputs)
-    result = ALGORITHMS[module].run(normalized)
+    result = ALGORITHMS[module].run(normalized, on_event=on_event, allow_execution=allow_execution) \
+        if module == 'experiment' else ALGORITHMS[module].run(normalized)
     bound = normalized if module == 'data_analysis' and 'constraints' in normalized else None
     return contracts.validate_output(module, result, bound)

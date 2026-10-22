@@ -35,6 +35,9 @@ describe('findWriterArtifactStream', () => {
     ['outline', 'outline_document'],
     ['write_flat_document', 'flat_draft_document'],
     ['write_document', 'draft_document'],
+    ['experiment', 'experiment_document'],
+    ['experiment', 'experiment_code'],
+    ['experiment', 'experiment_results'],
   ];
 
   it.each(stepCases)('matches the %s step stream to %s', (stepId: string, slotId: string) => {

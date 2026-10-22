@@ -160,7 +160,7 @@ def test_edited_experiment_report_keeps_simulated_result_and_history():
 
 @pytest.fixture
 def runtime(monkeypatch, tmp_path):
-    ctx = SimpleNamespace(params={}, workspace_path=str(tmp_path))
+    ctx = SimpleNamespace(params={}, workspace_path=str(tmp_path), emit=lambda _event: None, output_slots=[])
     batches = []
     context_module = ModuleType('lazymind.chat.engine.subagent.context')
     context_module.require_context = lambda: ctx
@@ -183,6 +183,7 @@ def test_runtime_wrapper_uses_host_inputs_and_saves_all_declared_outputs(runtime
     path.write_text(json.dumps({'data': seed}))
     for step in ['research_topic', 'literature_review', 'experiment', 'data_analysis', 'write_document', 'peer_review', 'reading_reflection']:
         ctx.params = {'step_id': step, 'remote_inputs': {'seed_pool': str(path)}}
+        ctx.output_slots = [item['material'] for item in state['steps'][step]['outputs']]
         tools.run_paper_step()
         assert {item['key'] for item in batches[-1]} == {
             item['material'] for item in state['steps'][step]['outputs']}

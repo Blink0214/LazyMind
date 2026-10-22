@@ -271,6 +271,16 @@ function normalizePlanSteps(value: unknown): string[] | undefined {
   return value.map((step: string) => step.trim());
 }
 
+function mergeArtifactStreams(current: TaskArtifactStream[] = [], incoming: TaskArtifactStream[] = []): TaskArtifactStream[] {
+  // REST snapshots may omit transient previews or lag live SSE chunks.
+  const streams = new Map(current.map(stream => [stream.stream_id, stream]));
+  incoming.forEach(stream => {
+    const live = streams.get(stream.stream_id);
+    if (!live || stream.chunk_index > live.chunk_index) streams.set(stream.stream_id, stream);
+  });
+  return [...streams.values()];
+}
+
 function stepsToExecutionLog(steps: any[], executionId?: string): TaskLogEntry[] {
   if (!steps || steps.length === 0) return [];
   const entries = steps.flatMap((s): TaskLogEntry[] => {
@@ -438,7 +448,8 @@ export const useTaskCenterStore = create<TaskCenterStore>()((set, get) => ({
       if (idx >= 0) {
         next = list.slice();
         const current = next[idx];
-        const incoming = { ...current, ...task, plan_steps: task.plan_steps ?? current.plan_steps };
+        const incoming = { ...current, ...task, plan_steps: task.plan_steps ?? current.plan_steps,
+          artifact_streams: mergeArtifactStreams(current.artifact_streams, task.artifact_streams) };
         // Prefer the longer execution_log: DB snapshots only have completed steps,
         // while the live SSE stream may have buffered more content in memory.
         if (
@@ -1061,7 +1072,8 @@ export const useTaskCenterStore = create<TaskCenterStore>()((set, get) => ({
               if (task.ordinary) return publicTask(mergeOrdinarySnapshot(current?.ordinary, task.ordinary), conversationId);
               // This response cannot order an execution or log changed after its request began.
               if (current && current !== tasksAtRequest?.get(task.task_id)) return current;
-              return mergeTaskOutputSnapshot(current, { ...task, plan_steps: task.plan_steps ?? current?.plan_steps });
+              return mergeTaskOutputSnapshot(current, { ...task, plan_steps: task.plan_steps ?? current?.plan_steps,
+                artifact_streams: mergeArtifactStreams(current?.artifact_streams, task.artifact_streams) });
             });
             const runs: OrdinaryRunView[] = res?.data?.data?.runs ?? res?.data?.runs ?? [];
             return {

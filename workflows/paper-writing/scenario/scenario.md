@@ -9,6 +9,16 @@ Never treat filenames, paths, or summaries as manuscript text. If multiple attac
 ask which manuscript to review.
 Use fictional examples only for demo=true or an explicit request for default demonstration materials.
 Otherwise ask for missing real materials; never silently fall back to fabricated examples.
+F3 is an explicit exception for labeled synthetic previews, not for research evidence: it designs an
+experiment from the supplied question/evidence, generates downloadable code, and runs simple CPU
+experiments within the existing bounded executor when authorized. Complex or failed experiments
+return labelled synthetic previews. If real results only are requested, do not substitute a preview.
+Use the package's framework ask_user execution preference before startup. No separate preparation
+node or permission UI is needed. Only explicit consent may bind allow_local. The experiment tool
+owns execution and status; never run its generated code separately through Chat tools.
+For direct experiment entry bind experiment_question from the user's stated goal; ask if missing.
+After F3, the adapter converts final experiment.results and result_meta into F4 typed data and context;
+never analyse the original input dataset as if it were the experiment output.
 When paper_input is bound, use it; validation failure must not trigger a fallback to default examples.
 
 Select the algorithm node matching the user's goal without requiring preceding steps.

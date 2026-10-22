@@ -862,15 +862,27 @@ def _tool_call_arguments(tool_call: Any) -> Dict[str, Any]:
     if not isinstance(function, dict) or str(function.get('name') or '') != 'ask_user':
         return {}
     arguments = function.get('arguments')
-    if isinstance(arguments, dict):
-        return arguments
     if isinstance(arguments, str):
         try:
-            parsed = json.loads(arguments)
+            arguments = json.loads(arguments)
         except json.JSONDecodeError:
             return {}
-        return parsed if isinstance(parsed, dict) else {}
-    return {}
+    if not isinstance(arguments, dict):
+        return {}
+    from lazymind.chat.engine.tools.ask_user import AskUserQuestion
+
+    # History keeps the original model arguments, not the validated tool input.
+    # Recognize the same accepted question format when restoring the user's goal.
+    questions = arguments.get('questions')
+    if not isinstance(questions, list):
+        return {}
+    try:
+        return {**arguments, 'questions': [
+            AskUserQuestion.model_validate(question).model_dump(exclude_none=True)
+            for question in questions
+        ]}
+    except ValueError:
+        return {}
 
 
 def _question_fingerprint(value: Any) -> str:
@@ -975,6 +987,24 @@ def _history_startup_ask_index(
         for call in message.get('tool_calls') or []:
             arguments = _tool_call_arguments(call)
             if not arguments:
+                continue
+            # A failed invocation never displayed a card. In particular, old
+            # validation failures must not suppress clarification after recovery.
+            failed = False
+            for reply in history[index + 1:]:
+                if (not isinstance(reply, dict) or reply.get('role') != 'tool'
+                        or reply.get('tool_call_id') != call.get('id')):
+                    continue
+                result = reply.get('content')
+                if isinstance(result, str):
+                    try:
+                        result = json.loads(result)
+                    except (TypeError, ValueError):
+                        continue
+                if isinstance(result, dict) and result.get('ok') is False:
+                    failed = True
+                    break
+            if failed:
                 continue
             for question in arguments.get('questions') or []:
                 if not isinstance(question, dict):

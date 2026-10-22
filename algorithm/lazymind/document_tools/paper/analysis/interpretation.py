@@ -35,7 +35,13 @@ def identifiers(inputs):
         for row in table['rows']:
             names.update(value for value in row if isinstance(value, str))
     facts = json.dumps({k: v for k, v in inputs.items() if k != 'data'}, ensure_ascii=False)
-    names.update(re.findall(r'(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_]*\d[A-Za-z0-9_]*(?![A-Za-z0-9_])', facts))
+    for token in re.findall(r'(?<![A-Za-z0-9_])[A-Za-z0-9_]+(?![A-Za-z0-9_])', facts):
+        if not re.search(r'[A-Za-z_]', token) or not re.search(r'\d', token):
+            continue
+        try:
+            float(token)  # Scientific notation is a number, not a model/method name.
+        except ValueError:
+            names.add(token)
     return sorted((name for name in names if re.search(r'\d', name)), key=len, reverse=True)
 
 
@@ -56,9 +62,10 @@ def validate(value, analysis, numeric_identifiers, language=None):
         keys = answer['key_finding_ids']
         if len(keys) != len(set(keys)) or not set(keys) <= set(ids):
             raise ValueError('关键数值必须是不重复且属于本问题支持证据的结果')
-    texts = [result['summary'], result['mechanism_explanation'], *result['limitations'],
-             *[answer['conclusion'] for answer in result['answers']]]
-    for text in texts:
+    texts = {'summary': result['summary'], 'mechanism_explanation': result['mechanism_explanation'],
+             **{f'limitations[{i}]': text for i, text in enumerate(result['limitations'])},
+             **{f'answers[{i}].conclusion': answer['conclusion'] for i, answer in enumerate(result['answers'])}}
+    for field, text in texts.items():
         if language == 'zh-CN' and not re.search(r'[\u4e00-\u9fff]', text):
             raise ValueError('本轮要求中文分析与结论；summary、每个 conclusion、机制说明和每条局限均须用中文')
         if '[结果:' in text:
@@ -67,8 +74,10 @@ def validate(value, analysis, numeric_identifiers, language=None):
         for name in numeric_identifiers:
             # Do not strip a name inside a longer numeric claim/identifier.
             stripped = re.sub(r'(?<![A-Za-z0-9_])' + re.escape(name) + r'(?![A-Za-z0-9_])', '', stripped)
-        if re.search(r'\d', stripped):
-            raise ValueError('解释中的数值请由 key_finding_ids 交给宿主展示；仅方法/指标标识可保留数字')
+        number = re.search(r'\d+(?:\.\d+)?', stripped)
+        if number:
+            raise ValueError(f'{field} 含未允许的数值 {number.group()!r}；'
+                             '解释中的数值请由 key_finding_ids 交给宿主展示；仅方法/指标标识可保留数字')
     return result
 
 

@@ -13,7 +13,7 @@ export function findWriterArtifactStream(
   slotId: string,
   tasks: SubAgentTask[],
 ): TaskArtifactStream | undefined {
-  if (!WRITER_STREAM_SLOT_IDS.has(slotId) || !stepId) return undefined;
+  if (!stepId) return undefined;
 
   const findStream = (task: SubAgentTask | undefined) => task?.artifact_streams
     ?.slice()
@@ -31,6 +31,8 @@ export function findWriterArtifactStream(
 
   // The session projection can briefly lag task_created. Only use the fallback
   // when one live stream for this exact slot is unambiguous.
+  // Other plugins use exact task ownership; never borrow an unrelated task's preview.
+  if (!WRITER_STREAM_SLOT_IDS.has(slotId)) return undefined;
   const liveStreams = tasks
     .filter((task) => task.status === 'pending' || task.status === 'running')
     .map(findStream)

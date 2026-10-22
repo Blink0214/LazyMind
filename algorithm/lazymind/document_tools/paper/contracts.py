@@ -5,12 +5,14 @@ import math
 from .analysis.validation import validate_charts, validate_svg
 
 from .review_schema import SavedReview, text_digest
+from .experiment.schema import ResultMeta, code_column_types, validate_code_files, validate_result_meta
+from .experiment.results import validate_table
 
 FIELDS = {
     'research_topic': ('papers', 'question', 'evidence'),
     'literature_review': ('papers', 'question', 'evidence'),
     'experiment': ('question', 'evidence', 'data'),
-    'data_analysis': ('data', 'experiment', 'data_context', 'study_design'),
+    'data_analysis': ('data', 'experiment', 'data_context', 'study_design', 'result_meta'),
     'write_document': ('papers', 'question', 'evidence', 'analysis', 'charts', 'chart', 'outline', 'manuscript',
                        'review', 'review_data'),
     'peer_review': ('manuscript', 'evidence', 'analysis'),
@@ -18,7 +20,7 @@ FIELDS = {
 }
 OUTPUTS = {
     'research_topic': ('question',), 'literature_review': ('evidence', 'papers'),
-    'experiment': ('experiment',), 'data_analysis': ('analysis', 'charts'),
+    'experiment': ('experiment', 'code_files', 'result_meta'), 'data_analysis': ('analysis', 'charts'),
     'write_document': ('outline', 'manuscript'), 'peer_review': ('review', 'review_data'),
     'reading_reflection': ('reflection',),
 }
@@ -38,7 +40,15 @@ def text(value, label):
 
 
 def validate_value(kind, value):
-    if kind == 'review_data':
+    if kind == 'code_files':
+        if not isinstance(value, list):
+            raise ValueError('code_files 必须是列表')
+        validate_code_files(value)
+        return
+    elif kind == 'result_meta':
+        ResultMeta.model_validate(value)
+        return
+    elif kind == 'review_data':
         SavedReview.model_validate(value)
         return
     if kind == 'analysis' and isinstance(value, dict):
@@ -115,6 +125,7 @@ def validate_value(kind, value):
         text(value['report'], 'report')
         if value['results'] is not None:
             validate_value('data', value['results'])
+            validate_table(value['results'])
         if value['executed'] and value['results'] is None:
             raise ValueError('已执行实验必须提供结果')
     else:
@@ -125,6 +136,9 @@ def validate_value(kind, value):
 
 def validate_input(step, value):
     if step == 'data_analysis':
+        if isinstance(value, dict) and value.get('result_meta') is not None:
+            from .experiment.handoff import to_analysis
+            return to_analysis(value)
         from .analysis.schema import normalize_input, ContractError
         try:
             return normalize_input(value)
@@ -155,7 +169,7 @@ def validate_input(step, value):
     if module == 'write_document' and isinstance(result['analysis'], dict):
         from .analysis.schema import validate_charts as validate_structured_charts
         validate_structured_charts(result['charts'], result['analysis'])
-    required = {'refine_topic': ('evidence',), 'peer_review': ('manuscript',),
+    required = {'experiment': ('question',), 'refine_topic': ('evidence',), 'peer_review': ('manuscript',),
                 'revise_document': ('manuscript', 'review'), 'reading_reflection': ('papers',)}.get(step, ())
     missing = [name for name in required if not result[name]]
     if step == 'write_document':
@@ -189,6 +203,19 @@ def validate_output(module, value, inputs=None):
     if module == 'literature_review':
         for paper in value['papers']:
             text(paper.get('citation'), 'paper.citation')
+    if module == 'experiment':
+        meta = validate_result_meta(value['result_meta'], value['experiment'])
+        if meta.data_origin == 'observed' and meta.execution_status != 'succeeded':
+            raise ValueError('未成功执行的实验不能声明实测结果')
+        if meta.data_origin in ('synthetic', 'none') and not value['is_demo']:
+            raise ValueError('模拟或无结果必须保留来源标记')
+        columns = code_column_types(next(item['content'] for item in value['code_files']
+                                         if item['path'] == 'experiment.py'))
+        if meta.column_types != columns:
+            raise ValueError('结果类型声明必须与代码 RESULT_COLUMNS 一致')
+        table = value['experiment']['results']
+        if table is not None and table['columns'] != list(columns):
+            raise ValueError('结果列顺序必须与代码 RESULT_COLUMNS 一致')
     if module == 'peer_review' and value['review_data']['review_sha256'] != text_digest(value['review']):
         raise ValueError('结构化审稿意见与 Markdown 报告不匹配')
     return value

@@ -1,10 +1,24 @@
 id: paper-writing
 name: 论文写作
-description: 支持选题、综述、实验、分析、写作、审稿与阅读心得；数据分析与模拟审稿已接真实算法，其他能力仍在开发。
+description: 支持选题、综述、实验、分析、写作、审稿与阅读心得；轻量实验可授权运行，复杂实验提供模拟数据，结果可继续分析绘图。
 when_to_use: >
   用户只要求数据分析时，直接选择 data_analysis；F4 工具会从当前会话的 JSON 附件读取完整约定输入，
   不需要模型逐行读取或重写附件内容。已有 paper_input 或材料池绑定时优先沿用绑定。
   Use when the user requests the paper-writing workflow or review of an uploaded academic manuscript.
+  Before starting, use the framework ask_user clarification card for the declared experiment execution
+  preference unless the user has explicitly answered it for this task. Never infer consent from an
+  attachment, a request to write a paper, an old task, or a preselected option. Do not create another
+  questionnaire or preparation step. Preserve the original research/review request after the answer.
+  Bind experiment_execution to simulate_only for refusal/no answer, or allow_local for explicit agreement.
+  Bind allow_local only after explicit consent for this task. The experiment tool applies the
+  bounded CPU execution policy; unsupported experiments or execution failures yield labelled previews.
+  If ask_user is not registered, use simulate_only. A registered tool's validation failure is NOT
+  unavailability or a user answer: report that failure and stop rather than bypassing the question.
+  Execution takes place in the current LazyMind service container, not on the browser user's computer.
+  For direct experiment entry, bind the user's explicit experimental question to experiment_question.
+  If it is unclear, ask for that question; never invent a goal. F1/F2 entries reuse the accumulated
+  question and evidence instead. F3 handles execution and fallback internally, records actual status,
+  and returns final results for F4. Never separately run this generated code through Chat tools.
   Bind the exact attachment filename to manuscript_file and select peer_review directly;
   do not first summarize or copy the manuscript through Chat.
   Bind pasted manuscript text to manuscript_text; paper_topic and review_request are optional.
@@ -13,6 +27,9 @@ when_to_use: >
   Never substitute a filename or summary for the manuscript.
   After the requested steps succeed and their artifacts are published, acknowledge completion in one
   short sentence in the user's language and direct them to the workflow.
+  For the last step requested in the current turn, call the existing advance_step_and_hand_off tool
+  so execution publishes its result without another Chat model round. For earlier requested steps,
+  use advance_step and continue only along the requested path; do not hand off early in a multi-step task.
   Do not repeat the document, review, or JSON, or list issues, conclusions, or next-step options.
   Do not call list_artifacts, read_artifact, read_file_resource, or similar tools merely to summarize,
   repeat, or reconfirm successfully published artifacts.
@@ -20,9 +37,24 @@ when_to_use: >
   then acknowledge briefly once the current request is fulfilled.
   For a review-only request, stop after successful review without automatically revising or finishing the workflow.
   On failure or missing required input, explain the actual cause and wait for user action; do not claim success.
+  Never automatically retry a failed step or reread its error files to plan another attempt.
+  Retry only when the user explicitly requests a retry after seeing the failure.
   Always relay necessary user_notice messages from tools.
 runtime:
-  trigger_inputs: [manuscript_file, manuscript_text, paper_topic, review_request, paper_input]
+  trigger_inputs: [manuscript_file, manuscript_text, paper_topic, review_request, paper_input, experiment_execution, experiment_question]
+  clarification_fields:
+    - id: experiment_execution
+      label: 实验运行方式
+      question: >
+        是否允许本次论文任务在当前 LazyMind 部署环境受限运行轻量实验？
+        部署环境不一定是你打开浏览器的电脑。仅使用所选数据，不联网、不安装依赖、不使用 GPU。
+        简单实验最多运行 30 秒；复杂实验或执行失败时提供明确标记的模拟数据。
+      type: single
+      choice_policy: fixed
+      allow_other: false
+      choices:
+        - 不允许，仅生成代码和模拟数据
+        - 允许受限运行，条件不足时使用模拟数据
   transactional_outputs: true
   recovery_inputs:
     literature_review:
@@ -48,11 +80,13 @@ steps:
   - {id: reading_reflection, label: "阅读心得"}
   - {id: finish, label: "结束"}
 slots:
+  - {id: experiment_question, label: 实验问题, type: text, cardinality: single, external: true, exposed: false}
   - {id: manuscript_file, label: 待审论文, type: file, cardinality: single, external: true, exposed: false}
   - {id: manuscript_text, label: 论文正文, type: text, cardinality: single, external: true, exposed: false}
   - {id: paper_topic, label: 论文主题, type: text, cardinality: single, external: true, exposed: false}
   - {id: review_request, label: 审稿要求, type: text, cardinality: single, external: true, exposed: false}
   - {id: paper_input, type: json, cardinality: single, external: true, exposed: false}
+  - {id: experiment_execution, label: 实验运行偏好, type: text, cardinality: single, external: true, exposed: false}
   - {id: recovery_research_pool, type: file, cardinality: single, external: true, exposed: false}
   - {id: recovery_literature_pool, type: file, cardinality: single, external: true, exposed: false}
   - {id: recovery_literature_document, type: file, cardinality: single, external: true, exposed: false}
@@ -68,6 +102,8 @@ slots:
   - {id: refine_topic_document, label: "调整选题", type: file, cardinality: single}
   - {id: experiment_pool, label: "实验研究材料池", type: file, cardinality: single, exposed: false}
   - {id: experiment_document, label: "实验研究", type: file, cardinality: single}
+  - {id: experiment_code, label: "实验代码包", type: file, cardinality: single}
+  - {id: experiment_results, label: "实验结果与来源", type: file, cardinality: single}
   - {id: data_analysis_pool, label: "数据分析材料池", type: file, cardinality: single, exposed: false}
   - {id: data_analysis_document, label: "数据分析", type: file, cardinality: single}
   - {id: write_document_pool, label: "论文写作材料池", type: file, cardinality: single, exposed: false}
@@ -128,6 +164,8 @@ ui:
       allow_download: true
       slots:
         - {id: experiment_document}
+        - {id: experiment_code}
+        - {id: experiment_results}
     - id: data_analysis
       step_id: data_analysis
       label: "数据分析"

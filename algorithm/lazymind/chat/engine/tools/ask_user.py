@@ -19,7 +19,9 @@ from __future__ import annotations
 from lazyllm.tools import fc_register
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from lazyllm.tools.agent import ToolExecutionError
 from lazyllm.tools.agent.base import _write_agent_data
@@ -37,6 +39,57 @@ def _normalise_choice(raw: Any) -> str:
     return str(raw).strip()
 
 
+class AskUserQuestion(BaseModel):
+    """Expose the actual UI question fields in the tool's JSON schema."""
+
+    model_config = ConfigDict(extra='forbid', strict=True, str_strip_whitespace=True)
+
+    text: str = Field(min_length=1, description='Question shown to the user')
+    type: Literal['boolean', 'single', 'multiple', 'text'] = 'text'
+    choices: List[str] = Field(default_factory=list, description='Choice labels, not objects')
+    allow_other: bool = True
+    id: Optional[str] = None
+    attachment: Optional[Dict[str, Any]] = None
+
+    @model_validator(mode='before')
+    @classmethod
+    def normalise_model_arguments(cls, raw):
+        """Repair common question/option wrappers before tool argument validation."""
+        if not isinstance(raw, dict):
+            return raw
+        value = dict(raw)
+        uses_options = 'options' in value
+        for alias, canonical in (('question', 'text'), ('options', 'choices')):
+            if alias in value:
+                if canonical in value and value[canonical] != value[alias]:
+                    raise ValueError(f'Conflicting {canonical} and {alias} fields')
+                value[canonical] = value.pop(alias)
+        # Some providers serialize nested lists as {"item": [...]} and boolean
+        # scalars as strings. Decode only these unambiguous wire representations.
+        choices = value.get('choices')
+        if isinstance(choices, dict) and set(choices) == {'item'}:
+            value['choices'] = choices['item']
+        for field in ('allow_other', 'multi_select'):
+            flag = value.get(field)
+            if isinstance(flag, str) and flag.strip().lower() in {'true', 'false'}:
+                value[field] = flag.strip().lower() == 'true'
+        multiple = value.pop('multi_select', None)
+        if multiple is not None and not isinstance(multiple, bool):
+            raise ValueError('multi_select must be a boolean')
+        if uses_options and 'type' not in value:
+            value['type'] = 'multiple' if multiple else 'single'
+        if isinstance(value.get('type'), str):
+            value['type'] = value['type'].strip().lower()
+        # A per-question header is presentation metadata, not its question text.
+        value.pop('header', None)
+        if isinstance(value.get('choices'), list):
+            value['choices'] = [
+                _normalise_choice(item) if isinstance(item, dict) else item
+                for item in value['choices']
+            ]
+        return value
+
+
 def _normalise_questions(raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Validate and normalise the questions list.
 
@@ -47,6 +100,8 @@ def _normalise_questions(raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     normalised = []
     for i, q in enumerate(raw):
+        if isinstance(q, AskUserQuestion):
+            q = q.model_dump(exclude_none=True)
         if not isinstance(q, dict):
             raise ToolExecutionError(
                 f'Question {i} must be a dict, got {type(q).__name__}'
@@ -130,7 +185,7 @@ def _normalise_questions(raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 @fc_register(host_file='NONE')
 def ask_user(
-    questions: List[Dict[str, Any]],
+    questions: List[AskUserQuestion],
     title: Optional[str] = None,
     description: Optional[str] = None,
 ) -> str:
@@ -143,6 +198,7 @@ def ask_user(
     Args:
         questions: Items with `text` and type `boolean`, `single`, `multiple`,
             or `text`. Use one item when asked to question the user one at a time.
+            Example: {"text":"Which mode?","type":"single","choices":["A","B"]}.
             Use `text` without `choices` when useful suggestions are unavailable.
             Otherwise use choice types with a few editable string recommendations;
             "Other" is automatic unless `allow_other=false`. Follow-up questions,
