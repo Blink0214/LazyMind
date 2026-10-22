@@ -35,6 +35,8 @@ describe('findWriterArtifactStream', () => {
     ['outline', 'outline_document'],
     ['write_flat_document', 'flat_draft_document'],
     ['write_document', 'draft_document'],
+    ['write_document', 'write_document_document'],
+    ['revise_document', 'revise_document_document'],
     ['experiment', 'experiment_document'],
     ['experiment', 'experiment_code'],
     ['experiment', 'experiment_results'],
@@ -84,4 +86,19 @@ describe('findWriterArtifactStream', () => {
       [task('prepare-task', 'running', [stream('source_document', 'source-stream')])],
     )).toBeUndefined();
   });
+
+  it.each(['write_document_document', 'revise_document_document'])(
+    'withdraws rejected paper previews for %s, including the live fallback',
+    (slotId) => {
+      const rejected = { ...stream(slotId, 'rejected'), state: 'aborted' as const };
+      const tasks = [task('paper-task', 'running', [rejected])];
+      expect(findWriterArtifactStream(
+        { steps: [{ step_id: 'paper', task_id: 'paper-task' }] } as WorkflowSession,
+        'paper', slotId, tasks,
+      )).toBeUndefined();
+      expect(findWriterArtifactStream(
+        { steps: [] } as unknown as WorkflowSession, 'paper', slotId, tasks,
+      )).toBeUndefined();
+    },
+  );
 });

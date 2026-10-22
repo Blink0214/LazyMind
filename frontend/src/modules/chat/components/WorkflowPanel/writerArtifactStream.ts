@@ -5,7 +5,10 @@ const WRITER_STREAM_SLOT_IDS = new Set([
   'outline_document',
   'flat_draft_document',
   'draft_document',
+  'write_document_document',
+  'revise_document_document',
 ]);
+const PAPER_STREAM_SLOT_IDS = new Set(['write_document_document', 'revise_document_document']);
 
 export function findWriterArtifactStream(
   session: WorkflowSession,
@@ -26,7 +29,11 @@ export function findWriterArtifactStream(
     .reverse();
   for (const step of steps) {
     const stream = findStream(tasks.find((task) => task.task_id === step.task_id));
-    if (stream) return stream;
+    if (stream) {
+      // A rejected paper preview must not replace a previously published manuscript.
+      if (PAPER_STREAM_SLOT_IDS.has(slotId) && stream.state === 'aborted') return undefined;
+      return stream;
+    }
   }
 
   // The session projection can briefly lag task_created. Only use the fallback
@@ -36,6 +43,8 @@ export function findWriterArtifactStream(
   const liveStreams = tasks
     .filter((task) => task.status === 'pending' || task.status === 'running')
     .map(findStream)
-    .filter((stream): stream is TaskArtifactStream => Boolean(stream));
+    .filter((stream): stream is TaskArtifactStream => Boolean(
+      stream && !(PAPER_STREAM_SLOT_IDS.has(slotId) && stream.state === 'aborted'),
+    ));
   return liveStreams.length === 1 ? liveStreams[0] : undefined;
 }
