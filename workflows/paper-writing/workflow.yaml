@@ -26,6 +26,8 @@ runtime:
   transactional_outputs: true
   recovery_inputs:
     literature_review:
+      recovery_literature_pool: literature_review_pool
+      recovery_literature_document: literature_review_document
       recovery_research_pool: refine_topic_pool
       recovery_research_document: refine_topic_document
     peer_review:
@@ -52,6 +54,8 @@ slots:
   - {id: review_request, label: 审稿要求, type: text, cardinality: single, external: true, exposed: false}
   - {id: paper_input, type: json, cardinality: single, external: true, exposed: false}
   - {id: recovery_research_pool, type: file, cardinality: single, external: true, exposed: false}
+  - {id: recovery_literature_pool, type: file, cardinality: single, external: true, exposed: false}
+  - {id: recovery_literature_document, type: file, cardinality: single, external: true, exposed: false}
   - {id: recovery_research_document, type: file, cardinality: single, external: true, exposed: false}
   - {id: recovery_review_pool, type: file, cardinality: single, external: true, exposed: false}
   - {id: recovery_review_document, type: file, cardinality: single, external: true, exposed: false}
