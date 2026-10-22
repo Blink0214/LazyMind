@@ -8,6 +8,58 @@
 
 **F6 当前实现（2026-10-19）：** 已接真实模型调用，一次生成 `ReviewResult`，返回 `review: str`（Markdown）、`review_data: dict`（结构化意见）、`is_demo: bool` 共三个字段。提示词在 `algorithm/lazymind/document_tools/paper/prompts/peer_review_prompt.py`，入口为 `paper/peer_review.py`，共享类型在 `paper/review_schema.py`。F6 调用测试使用真实模型，不用 monkeypatch；格式与排版测试直接调用函数。下文的完整 v2 Review / ContentRef 尚未接入。当前完整样例见 [F6 运行样例](../../../tests/fixtures/paper-writing/peer_review.json)，model_response/output 只是格式示例；不要直接传入 temp/examples 下的目标 v2 对象。
 
+## 当前实验接口
+
+2026-10-22：F3 一次生成方案、代码、执行需求和模拟预览；程序根据本次许可、依赖和 30 秒预算决定是否复用现有受限执行器运行。复杂/未允许/执行失败时交付标记来源的预览，实际成功时使用计算结果。入口 `api.run_algorithm('experiment', inputs, allow_execution=False)`，Runtime 根据 ask_user 回答传入关键字参数；业务 inputs 中不能自行增加授权字段。完整样例见 [examples/experiment.json](examples/experiment.json)，与 tests/fixtures/paper-writing/experiment.json 相同。
+
+目录：F3 内部在 `paper/experiment/`，公共入口为 `run(inputs, *, on_event=None, allow_execution=False)`；executor/worker 接现有 paper/execution，handoff 转换新 F4 输入并保留来源。英文 Prompt 仍在统一的 paper/prompts。生成、预览修正、执行分别有阶段状态，执行不增加模型调用。
+
+| 输入字段 | 类型与要求 |
+| --- | --- |
+| topic | 必填非空 string |
+| request | 可选 string，默认空串 |
+| question | 必填非空 string，来自 F1 或用户明确的实验问题 |
+| evidence | 可选 string/null，累积的 F2 综述与依据，缺失必须说明 |
+| data | 可选 {columns:string[], rows:JSON标量[][]}/null；列名唯一、行列数一致、拒绝 NaN/Infinity |
+
+只接受上述五个字段，不接受任意额外参数。输入不被修改；超出 16000 token 的输入直接报错，不悄悄截断。算法不读取 pool、附件路径或授权记录。
+
+| 输出字段 | 类型与要求 |
+| --- | --- |
+| experiment | executed:bool、plan:string、results:{columns,rows}/null、report:string；executed 由实际执行回执设置；report 为 Markdown |
+| code_files | 恰好四项 {path:string, content:string}：experiment.py、config.json、requirements.txt、README.md；不允许其他路径/重复文件；代码必须声明字面量 RESULT_COLUMNS 并定义 run_experiment(config, input_data)；配置必须 JSON 对象；总计最多 200 KB |
+| result_meta | schema_version:1、execution_status、data_origin、method、reason:string/null、assumptions:string[]、metrics:{column,description,unit:string/null}[]、seed:int/null、column_types:{列名:类型}；execution_log:string、elapsed_seconds:number 为实际执行记录 |
+| is_demo | synthetic/none 为 true；实际仿真仍是 synthetic，须结合 execution_status 区分实际计算和模型示例 |
+
+execution_status 为 not_run/succeeded/failed/timeout；只有 succeeded 对应 executed=true。未运行/失败须说明原因；method 为 empirical/simulation。模型预览最多 200 行/30 列，实际结果最多 10 万行/100 万单元格；流式最终结果只预览前 20 行，下载与 F4 使用全部数据。只要真实结果时不生成兜底预览，实际执行失败后 F4 提示缺少结果。
+
+生成内部增加 execution_requirements={device:cpu/gpu,estimated_seconds:int,requires_network:bool,requires_external_data:bool,reason:string}，及独立 metrics 定义。方案与代码仍一次生成，需求只用于程序判断，实际超时和访问边界由执行器落实。
+
+首次模型输出使用 results.dimensions（column/values）及 results.metrics（column/description/unit/数值 values）；程序从同一组列组装对外 columns/rows 和 result_meta.metrics。内部格式见样例 model_response，不是传给 F4 的格式。
+
+模拟预览的列名、行数、类型或结果元数据不合格时：先用 ExperimentDesign 独立验证方案、说明和代码；这些字段也不合格则立即失败。只有预览/元数据错误才额外调用一次模型，基于代码 AST 读取的 RESULT_COLUMNS 动态建立逐行对象 schema，每行必须含全部且仅含声明列，类型严格、指标名限声明中的数值列。局部返回 rows/metrics/assumptions/seed/method；已有合法 seed（包括 null）及 method 由 schema 固定，不可变更。转换回既有 Preview/F4 格式后再次全量校验，方案和代码不变，模拟假设同步更新。不补空列、不截断数组、不按位置强改列名；修正再次失败即停止。局部输入含 schema 最多 8000 token、结果最多 20 行；不自动全文重试。公开输入输出、文件名和下游契约不变。
+
+代码与结果约束（2026-10-21 收尾）：
+
+- experiment.py 顶层声明一次 `RESULT_COLUMNS = {'trial': 'integer', 'method': 'string', 'absolute_error': 'number'}`。列名非空、无首尾空格且唯一，最多 30 列；类型仅接受 string/integer/number/boolean。代码只定义同步 `run_experiment(config, input_data)`，恰好两个位置参数，无默认值、装饰器、可变参数。平台通过 AST 读取声明和签名，不导入生成代码。
+- 函数返回非空的 `list[dict]`，每条记录恰好包含声明的字段。`config` 是配置对象，`input_data` 是 null 或 `{columns, rows}`，CSV 单元格为字符串，由算法按需求显式解析。记录不接受 null、数字字符串、NaN/Infinity；boolean 不作为 integer/number。
+- 模拟预览的列名及每个单元格类型必须匹配声明；内部按列保存的预览会按 RESULT_COLUMNS 重排列及对应值，不因列顺序不同而失败，也不会只换列名。指标必须为 integer/number，描述和单位不能是空白（无单位用 null）。无预览时保留计划中的列声明，metrics=[]、data_origin=none。
+- 模型生成对象的多余字段在 ExperimentDraft 入口清理（含代码文件、预览维度和指标对象）；有预览时忽略不适用的 no_results_reason，无结果时仍要求非空原因。必填字段、类型、文件白名单及代码签名仍严格检查；对外接口和用户输入不会因此放宽。解析与清理均为本地程序，不调用模型全文重试。
+- 打包层追加公共 `run_experiment.py` 导出器及带具体列名/顺序/类型的 `result_schema.json`。用户检查后运行 `python run_experiment.py`；导出器按声明排列记录，全部通过校验后生成一致的 results.json/results.csv。字段错误会失败，不会把错误记录自动改名或转成数字。
+- F4 入口重新核对结果表、column_types、指标及来源；两份不同的 data/experiment 必须先明确选择数据源，不能静默混用。column_types 是对象，读取时不依赖其 JSON 键顺序；真实列顺序由结果的 columns 数组确定。旧材料无 column_types 时兼容既有表格/数值指标检查，新 F3 不允许省略。
+- 此约束保证结构和类型；任意研究代码的科学正确性仍需具体样例核验，格式合法不等于方法或结论已验证。
+
+运行层：
+
+- 复用 runtime.clarification_fields → ask_user；仅明确允许本次服务容器内运行后绑定 allow_local，未给或无效按 simulate_only。Runtime 读取绑定后传 allow_execution，模型输出不能设置 executed。执行位置为当前 LazyMind Linux 服务容器内的受限子进程。
+- 独立 F3 入口使用 experiment_question 文本槽，不要求用户编写 JSON；缺少目标先补问。经过 F1/F2 时使用当前 question/evidence，不覆盖已确认材料。
+- 发布实验研究.md、实验代码.zip、实验结果.json 及内部材料池。成功执行的 ZIP 包含 results.json/csv；未执行或失败降级使用 preview_results.json/csv。所有文件使用同一最终结果，执行日志有内容时打包 execution.log。
+- F3 使用私有流式回调：阶段状态及模型公开的 reasoning 输出（若提供）进入右侧子任务；方案、代码、模拟结果经既有 artifact_stream 协议进入左侧对应卡片，每个文本 delta 恰好一个 Unicode 字符，由既有 Writer 前端逐帧显示，不再以 512 字块显示。若进入局部修正，更新阶段状态，仅转发 reasoning，不将另一种 schema 的 JSON 追加到首次草稿；校验后替换结果预览。生成中的预览不当作已校验产物；全部校验和保存成功后才发布最终文件，失败会作废预览。原始 JSON 不直接打印到 Chat。
+- 任务 REST 刷新不能清空该任务已接收的瞬时预览；前端按 stream_id/chunk_index 保留最新内容。浏览器整页重载时仍依赖现有流重放/最终文件，不将生成中的不完整 JSON 当正式数据。算法函数签名仍为 run(inputs)，可选 on_event 是运行适配层的回调，不要求实习生处理 SSE 或材料池。
+- ZIP 包含四个算法文件、公共 run_experiment.py、结果 Schema、来源说明、固定未执行警告；有数据时附 input.csv，有模拟结果时附 preview_results.json/csv。预览 CSV 防公式注入；原始 input.csv 保留输入值。不会把业务环境变量、凭证、整个材料池打包。
+- F3→F4：handoff.to_analysis 将结果转为现有 F4.data={columns,column_types,units,rows}，类型映射按列排序，单位按指标匹配；方案/假设/来源写入 data_context。result_meta 留在材料池，不作为 F4 未声明字段透传。F4 现有真实算法执行统计与绘图；产出 limitations/caption 确定性保留来源，再沿用结构化 analysis/charts 交给 F5/F6。
+- 模拟来源也记入原有材料版本链，重新导入带 synthetic 标记的业务输入仍保留演示属性。不另建授权系统，不修改通用 Chat。
+
 ### 当前审稿到修订的交接
 
 | 字段 | 类型 | 用途 |
@@ -52,7 +104,7 @@
 | 研究选题 | research_topic.py | 7 | 2 | question |
 | 调整选题 | research_topic.py | 7 | 2 | question |
 | 文献综述 | literature_review.py | 8 | 3 | evidence、papers |
-| 实验研究 P1 | experiment.py | 8 | 2 | experiment |
+| 实验研究 P1 | experiment/__init__.py | 8 | 2 | experiment |
 | 数据分析 | data_analysis.py | 5 | 3 | analysis、charts |
 | 论文写作 | write_document.py | 13 | 3 | outline、manuscript |
 | 论文修订 | write_document.py | 13 | 3 | outline、manuscript |

@@ -168,9 +168,13 @@ steps:
       - {material: research_topic_document, required: false, transport: path}
       - {material: literature_review_pool, required: false, transport: path}
       - {material: literature_review_document, required: false, transport: path}
+      - {material: experiment_execution, required: false, transport: path}
+      - {material: experiment_question, required: false, transport: path}
     outputs:
       - {material: experiment_pool, required: true}
       - {material: experiment_document, required: true}
+      - {material: experiment_code, required: true}
+      - {material: experiment_results, required: true}
     acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   data_analysis:
     label: "数据分析"

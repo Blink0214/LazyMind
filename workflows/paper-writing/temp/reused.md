@@ -5,6 +5,10 @@
 
 ## 结论
 
+2026-10-22 F3 POC 更新（优先于下方历史说明）：复用新 F4 的 `paper/execution/container.py` 和操作系统隔离能力，不新建 sandbox 服务。`experiment/executor.py` 根据授权和本次生成的执行需求决定是否运行，`worker.py` 调用双参数实验函数；CPU 轻量计算最多 30 秒，复杂、未授权或执行失败时保留模型示例及原因。`handoff.py` 将最终表格适配成 F4 原生 DataTable，保留列顺序、类型、单位和来源。独立生成需求和指标随同一次模型请求产生，不增加分类模型。当前对外接口为 `run(inputs, on_event=None, allow_execution=False)`，运行开关由 Runtime 传入，不采信模型声称的执行成功。真实代码运行的数值仿真仍标注 synthetic，区别于模型未运行的预览，也区别于实测证据。
+
+2026-10-21 F3 接入更新：复用框架 runtime.clarification_fields / ask_user、AutoModel、WriterToolBase 结构化输出构造及 JSON 解析、既有 columns/rows 表格、材料版本链和 Runtime save_artifacts。核心实现统一位于 paper/experiment/：__init__.py 只公开 run(inputs, on_event=...)，algorithm.py 负责生成，schema.py/results.py 负责校验，artifacts.py 负责打包，stream.py 负责流式预览，preview_repair.py 负责模拟预览的一次有界局部修正。英文提示词仍统一位于 paper/prompts/experiment_prompt.py；插件 scripts 仍只有薄调用。旧学术流程没有直接可复用的实验执行器；本轮未复用 DummySandbox 执行代码，也未增加真实运行能力。默认一次模型生成后校验和打包；仅预览的列名/长度/类型错误允许依据代码 RESULT_COLUMNS 建立严格逐行 schema 后修正一次，方案/代码不重生成，JSON 语法修复仍使用已有本地解析器，不调用 Writer 默认全文重试。
+
 2026-10-20 F6 接入更新：新 `document_tools/paper/peer_review.py` 使用公共 `AutoModel(model='llm')`，复用 WriterToolBase 的结构化提示和 JSON 解析。已不再调用其默认全文重试入口：F6 自行汇总格式/摘录错误，只修复出错的字段或意见一次，有效意见保留；修复摘录由代码按原文行号复制，合并后严格校验，内部最多两次模型调用。提示词在 `document_tools/paper/prompts/peer_review_prompt.py`，从旧 peer_review 的检查维度、原文依据和最小修正思路适配，保留来源与非商业许可说明；没有复制五席位、旧槽/工作区、固定修订轮次，也没有反向导入旧脚本。旧 `audit_academic_manuscript` 尚未接入。
 
 真实模型调用、此前浏览器链路及最新局部修复回放已有验证，但不代表审稿质量或最新端到端验收通过；新工作流已删除 prepare 节点，上传论文可直接进入 peer_review。按用户要求删除模型替身 conftest，F6 调用测试使用配置的真实模型；格式校验和排版直接调用对应函数测试。Chat 简短收尾目前只有提示词约束，仍有重复读取报告的问题。商业发布前仍需确认来源授权。
@@ -46,4 +50,10 @@ F1/F2/F6 有大量可参考提示词与约束，但并不是现成的独立 run(
 
 ## 限制
 
-只做代码和自动化检查，没有启动旧论文流程调用真实模型。核心论文模块本轮仍为演示实现。旧论文脚本没有修改，后续接入先从 F5 的共享能力开始；禁止直接从新 document_tools 反向 import workflows/academic_research_pipeline 下的脚本。
+以上旧流程复用调查只做代码和自动化检查，没有启动旧论文流程调用真实模型。后续 F3/F6 已接真实生成，当前接口以 spec.md 开头的实现说明为准。旧论文脚本没有修改；禁止直接从新 document_tools 反向 import workflows/academic_research_pipeline 下的脚本。
+
+F3 结果约束：复用既有 columns/rows 表格和 Writer JSON 解析；标准库 experiment/results.py 同时作为平台校验函数和 ZIP 内 run_experiment.py 使用，避免下载代码另写一份导出规则。生成算法只实现双参数计算函数；类型声明由交接层转换为 F4 的 column_types 数组。旧 workflow 未提供可直接复用的实验执行器；当前复用的是新 F4 的受限进程执行基础设施。
+
+F3 流式展示：复用 Writer 的私有 _stream_sink、DraftMarkdownStreamEventEmitter、Runtime ctx.emit、右侧执行日志及前端产物预览，不新增 Chat 编排分支。F3 文本增量调整为每个 Unicode 字符一个事件，由既有前端逐帧显示；不再使用 512 字块，不修改公共 Writer 默认大小。通用运行层允许工具主动发出的 text/think 实时传递（原始嵌套 JSON 仍过滤）；前端依步骤与任务归属读取任意已声明槽的流。失败快停复用 workflow_step 已声明的 terminal_tools，在 ReAct 下一轮调用模型前检查工具失败，不按 paper-writing ID 特判，也不改变未声明终止工具的普通 Agent。
+
+任务刷新只按同一 task_id 合并预览，stream_id/chunk_index 保留最新 SSE 内容，避免缺少瞬时流的 REST 快照清空左侧。普通公开任务快照逻辑不变。最后一个用户请求步骤优先调用框架既有 advance_step_and_hand_off，前面的步骤继续使用 advance_step；仅改插件说明，不另造调度路径。

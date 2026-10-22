@@ -142,6 +142,34 @@ describe("task center workflow events", () => {
     vi.useRealTimers();
   });
 
+  it("keeps live artifact previews across task refreshes and stale snapshots", async () => {
+    const store = useTaskCenterStore.getState();
+    store.upsertTask("conversation-1", { task_id: "stream-task", status: "running" });
+    store.applyTaskEvent("conversation-1", "stream-task", {
+      type: "artifact_stream_start", slot: "experiment_code", content_type: "text/markdown",
+      stream_id: "code-preview", chunk_index: 1,
+    });
+    store.applyTaskEvent("conversation-1", "stream-task", {
+      type: "artifact_stream", stream_id: "code-preview", chunk_index: 2, delta: "partial code",
+    });
+    requestHarness.listConversationTasks.mockResolvedValue({ data: { tasks: [
+      { task_id: "stream-task", status: "running", steps: [] },
+    ] } });
+    await store.loadConversationTasks("conversation-1");
+    store.upsertTask("conversation-1", { task_id: "stream-task", artifact_streams: [] });
+    let stream = store.getTasks("conversation-1")[0].artifact_streams[0];
+    expect(stream.content).toBe("partial code");
+    store.upsertTask("conversation-1", { task_id: "stream-task", artifact_streams: [
+      { ...stream, chunk_index: 1, content: "stale" },
+    ] });
+    store.applyTaskEvent("conversation-1", "stream-task", {
+      type: "artifact_stream", stream_id: "code-preview", chunk_index: 3, delta: " continued",
+    });
+    stream = store.getTasks("conversation-1")[0].artifact_streams[0];
+    expect(stream.content).toBe("partial code continued");
+    expect(stream.chunk_index).toBe(3);
+  });
+
   it("uses public snapshots in ordinary mode and rejects raw execution events", async () => {
     useTaskCenterStore.setState({ viewMode: "ordinary" });
     requestHarness.listConversationTasks.mockResolvedValue({ data: { data: {

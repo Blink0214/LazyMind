@@ -126,6 +126,8 @@ DRAFT_STREAM_EVENT_TYPES = frozenset({
     'artifact_stream_end',
     'artifact_stream_abort',
     'progress',
+    'text',
+    'think',
 })
 
 # Model runtimes commonly deliver one token (and sometimes one character) per
@@ -964,7 +966,8 @@ def _build_subagent_plan(
             skill_search=None if not inherited_skills else core_skill_search,
             fs=FS if inherited_skills else None,
             skills_dir=skills_dir,
-            extra_stop_condition=make_cancel_stop_condition(),
+            extra_stop_condition=_workflow_stop_condition(
+                terminal_tool_names if str(ctx.agent_type or '') == 'workflow_step' else set()),
             max_retries=(execution_policy.rounds - 1 if execution_policy else
                          max(1, int(_cfg['agentic_expanded_max_rounds']) - 1)),
             expanded_round_limit=execution_policy.rounds if execution_policy else None,
@@ -1136,8 +1139,28 @@ def _terminal_tool_failure(event: Dict[str, Any], terminal_tool_names: set[str])
         if not isinstance(payload, dict):
             return f'{name} failed without a structured result: {payload!r}'
         if payload.get('ok') is False:
-            return f'{name} failed: {payload.get("value") or "tool returned ok=false"}'
+            reason = payload.get('value') or payload.get('msg') or payload.get('error') or 'tool returned ok=false'
+            return f'{name} failed: {reason}'
     return ''
+
+
+def _workflow_stop_condition(terminal_names: set[str]):
+    """Check terminal failures in the producer thread, before another ReAct model round."""
+    cancelled = make_cancel_stop_condition()
+
+    def check(output):
+        cancelled(output)
+        if not terminal_names:
+            return False
+        trace = lazyllm.locals['_lazyllm_agent'].get('workspace', {}).get('tool_call_trace', [])
+        results = [{'name': (item.get('function') or {}).get('name') or item.get('name', ''),
+                    'result': item.get('tool_call_result')} for item in trace if isinstance(item, dict)]
+        error = _terminal_tool_failure({'tag': 'tool_results', 'tool_results': results}, terminal_names)
+        if error:
+            raise RuntimeError(error)
+        return False
+
+    return check
 
 
 def _signal_task_cancel(task_id: str) -> bool:
@@ -1484,6 +1507,12 @@ async def run_subagent_stream(
                     if stream_event.get('type') == 'progress':
                         progress = max(progress, int(stream_event.get('progress') or 0))
                         stream_event['progress'] = progress
+                    if stream_event.get('type') in ('text', 'think'):
+                        kind = stream_event['type']
+                        content = stream_event.get(kind) or ''
+                        if content:
+                            ctx.db.append_step(task_id, step_seq, kind, {'content': content})
+                            step_seq += 1
                     yield _sse(stream_event)
                     continue
 

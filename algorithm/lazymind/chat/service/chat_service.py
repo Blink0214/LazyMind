@@ -699,7 +699,7 @@ def _build_ask_user_tool(runtime_policy: Any = None) -> list:
     SubAgent tool resolution falls back to DEFAULT_TOOLS; ask_user is only
     injected here, into the ChatAgent's all_tools list.
     """
-    from lazymind.chat.engine.tools.ask_user import ask_user
+    from lazymind.chat.engine.tools.ask_user import AskUserQuestion, ask_user
     from lazymind.chat.workflow.workflow_manager import enforce_startup_clarification_policy
 
     if not runtime_policy:
@@ -707,6 +707,7 @@ def _build_ask_user_tool(runtime_policy: Any = None) -> list:
 
     @wraps(ask_user)
     def governed_ask_user(questions, title=None, description=None):
+        questions = [AskUserQuestion.model_validate(q).model_dump(exclude_none=True) for q in questions]
         return ask_user(
             enforce_startup_clarification_policy(questions, runtime_policy),
             title=title,

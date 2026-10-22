@@ -29,6 +29,25 @@ def test_terminal_tool_failure_keeps_structured_error_message():
     assert runner_mod._terminal_tool_failure(event, {'run_paper_step'}) == ''
 
 
+def test_terminal_failure_stops_in_producer_before_another_model_round():
+    import lazyllm
+    original = lazyllm.locals['_lazyllm_agent']
+    try:
+        lazyllm.locals['_lazyllm_agent'] = {'workspace': {'tool_call_trace': [{
+            'function': {'name': 'publish_result'},
+            'tool_call_result': {'ok': False, 'msg': 'invalid result schema'},
+        }]}}
+        with pytest.raises(RuntimeError, match='invalid result schema'):
+            runner_mod._workflow_stop_condition({'publish_result'})({'tool_calls': []})
+        assert runner_mod._workflow_stop_condition({'different_terminal'})({}) is False
+        assert runner_mod._workflow_stop_condition(set())({}) is False
+        lazyllm.locals['_lazyllm_agent']['workspace']['tool_call_trace'][0]['tool_call_result'] = {
+            'ok': True, 'value': {'status': 'completed'}}
+        assert runner_mod._workflow_stop_condition({'publish_result'})({}) is False
+    finally:
+        lazyllm.locals['_lazyllm_agent'] = original
+
+
 def test_workflow_script_tool_is_loaded_from_pinned_revision():
     source = 'def create_list_fixtures():\n    return ["one", "two"]\n'
     response = MagicMock()
@@ -1718,6 +1737,12 @@ def test_workflow_tool_artifact_is_streamed_before_tool_returns(monkeypatch):
                 'tool_calls': [{'id': 'ppt-1', 'name': 'ppt_generate_pages', 'args': {}}],
             }
             context_holder['ctx'].emit({
+                'type': 'text', 'text': 'Generating a result',
+            })
+            context_holder['ctx'].emit({
+                'type': 'think', 'think': 'Checking the provided inputs',
+            })
+            context_holder['ctx'].emit({
                 'type': 'artifact',
                 'slot': 'result',
                 'content_type': 'text',
@@ -1745,6 +1770,8 @@ def test_workflow_tool_artifact_is_streamed_before_tool_returns(monkeypatch):
 
     assert event_types.count('artifact') == 1
     assert event_types.index('artifact') < event_types.index('tool_results')
+    assert event_types.index('text') < event_types.index('tool_results')
+    assert event_types.index('think') < event_types.index('tool_results')
 
 
 def test_run_subagent_stream_emits_task_scoped_source_snapshot(monkeypatch):
