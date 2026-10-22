@@ -4,7 +4,11 @@ Start when the user explicitly requests paper writing or academic manuscript rev
 For uploaded manuscripts, bind the exact attachment filename to manuscript_file and run peer_review directly.
 Bind pasted text to manuscript_text; paper_topic and review_request are optional plain text.
 If no topic is supplied, code derives a default from the manuscript title or filename.
-paper_input supports existing programmatic business inputs only. Users need not supply JSON or pool.json.
+Users need not author JSON or a material pool. For uploaded writing-material JSON, bind its exact attachment filename to paper_input; code reads the complete file.
+The internal paper_input.txt may contain only an attachment reference; its size is not the JSON size. After successful initialization, execute the requested Ready step and let paper code validate the original attachment. Do not inspect small reference files or pass Workflow input resource IDs to read_file_resource.
+Do not transcribe or summarize the JSON. Literal JSON remains supported for programmatic inputs. Use write_document for drafting or ordinary edits;
+use revise_document for review-driven revision. Keep the file's request and pass additions through request_context;
+review_request remains a peer-review requirement.
 Never treat filenames, paths, or summaries as manuscript text. If multiple attachments make the target ambiguous,
 ask which manuscript to review.
 Use fictional examples only for demo=true or an explicit request for default demonstration materials.

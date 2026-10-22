@@ -22,7 +22,12 @@ when_to_use: >
   Bind the exact attachment filename to manuscript_file and select peer_review directly;
   do not first summarize or copy the manuscript through Chat.
   Bind pasted manuscript text to manuscript_text; paper_topic and review_request are optional.
-  Do not ask users for JSON or a material pool; paper_input is only for existing programmatic integrations.
+  For uploaded writing-material JSON, bind its exact attachment filename to paper_input; code reads the complete file. Do not transcribe its contents.
+  A paper_input attachment reference may be stored as paper_input.txt; its size describes the path text, not the JSON.
+  After successful initialization, execute the requested Ready step; the paper code validates the original attachment.
+  Do not inspect the reference merely because it is small, or pass a Workflow input resource_id to read_file_resource.
+  Use write_document for drafting or ordinary edits, and revise_document for review-driven revision.
+  Keep the file's request; pass additions through request_context. review_request is for peer review.
   Ask which manuscript to review only when multiple attachments make the target ambiguous.
   Never substitute a filename or summary for the manuscript.
   After the requested steps succeed and their artifacts are published, acknowledge completion in one

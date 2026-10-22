@@ -1,4 +1,4 @@
-"""Bind a complete F4 input from conversation attachments without LLM transcription."""
+"""Read paper JSON attachments without model transcription for analysis and writing."""
 from __future__ import annotations
 
 import hashlib
@@ -10,10 +10,29 @@ from urllib.parse import urlsplit
 
 import lazyllm
 
-from .schema import ContractError, normalize_input
+from .analysis.schema import ContractError
 
 # Same source-file ceiling as the conversation text-resource reader.
 MAX_SOURCE_BYTES = 100 * 1024 * 1024
+
+
+def describe_input_bindings(resources, bindings):
+    """Explain paper references to the Agent without changing Runtime resources."""
+    source = bindings.get('paper_input')
+    if not isinstance(source, str) or not source.strip() or source.lstrip().startswith(('{', '[')):
+        return resources
+    if Path(urlsplit(source).path).suffix.lower() != '.json' or 'paper_input' not in resources:
+        return resources
+    return {**resources, 'paper_input': {
+        **resources['paper_input'],
+        'binding_kind': 'conversation_attachment_reference',
+        'source_filename': Path(urlsplit(source).path).name,
+        'metadata_scope': 'name, size and content_hash describe the reference text, not the original JSON',
+        'validation_status': 'pending_step_execution',
+        'instruction': ('The paper step reads and validates the complete original attachment. '
+                        'This resource_id is a Workflow input ID, not a read_file_resource target. '
+                        'When the requested step is ready, execute it; do not infer truncation from reference size.'),
+    }}
 
 
 def _json_files(paths):
@@ -68,28 +87,18 @@ def standalone_f4_request(request):
 
 
 
-def retry_request(params, request):
-    """F4 retry commands resume the original requirements instead of replacing them."""
-    def requirement(value):
-        text = str(value or '').strip()
-        if text.rstrip('。.!！').lower() in {'重试', '重新执行', 'retry', 're-run', 'rerun', 'try again'}:
-            return ''
-        if re.fullmatch(r'(?:请重新执行步骤|Please re-run step)\s+[A-Za-z0-9_.:-]+', text, re.I):
-            return ''
-        return text
-    return next((text for value in (request, params.get('user_input'), params.get('launch_user_input'))
-                 if (text := requirement(value))), '')
-
-
 def workflow_input_bindings(bindings, request):
-    """F4 startup imports a catalog reference, never a model's copy of file contents."""
-    if not standalone_f4_request(request) or any(key.endswith('_pool') for key in bindings):
+    """Import a catalog reference for JSON analysis/writing requests."""
+    writing = bool(re.search(r'F5|write_document|写作|写论文|撰写|修改.*稿|\bwrite\b|\bdraft\b', request, re.I))
+    if not (standalone_f4_request(request) or writing) or any(key.endswith('_pool') for key in bindings):
         return bindings
     config = lazyllm.globals.get('agentic_config') or {}
     if not _upload_requested(config, request):
         return bindings
     source = _select_attachment(config, request)
     if source is None:
+        if writing and 'paper_input' not in bindings:
+            return bindings  # Manuscript uploads use the existing manuscript_file entry.
         raise ContractError('MISSING_MATERIAL', 'input.paper_input', '当前会话未找到所要求的 JSON 附件，请检查上传状态')
     # This exact path comes from the Host's catalog, not from the model.
     return {**bindings, 'paper_input': source}
@@ -109,44 +118,44 @@ def _invalid_constant(value):
 
 
 def _bound_reference(path):
-    """Keep real business objects; resolve filename-only scalar bindings in F4."""
+    """Keep real business objects; resolve filename-only scalar bindings."""
     try:
         with Path(path).open('rb') as stream:
             raw = stream.read(MAX_SOURCE_BYTES + 1)
     except OSError as exc:
-        raise ContractError('MISSING_MATERIAL', 'input.paper_input', '无法读取已绑定的 F4 输入') from exc
+        raise ContractError('MISSING_MATERIAL', 'input.paper_input', '无法读取已绑定的论文输入') from exc
     if len(raw) > MAX_SOURCE_BYTES:
         raise ContractError('INPUT_TOO_LARGE', 'input.paper_input', 'JSON 输入超过 100 MiB，请缩小输入')
     try:
         text = raw.decode('utf-8-sig').strip()
     except UnicodeError as exc:
-        raise ContractError('INVALID_INPUT', 'input.paper_input', 'F4 输入必须采用 UTF-8 编码') from exc
+        raise ContractError('INVALID_INPUT', 'input.paper_input', '论文输入必须采用 UTF-8 编码') from exc
     try:
         value = json.loads(text, object_pairs_hook=_unique_fields, parse_constant=_invalid_constant)
     except json.JSONDecodeError as exc:
         # Runtime imports text/json trigger strings verbatim, including filenames.
         if not text or Path(urlsplit(text).path).suffix.lower() != '.json':
             raise ContractError('INVALID_INPUT', 'input.paper_input',
-                                'F4 输入不是有效的 JSON 对象或 JSON 附件引用') from exc
+                                '论文输入不是有效的 JSON 对象或 JSON 附件引用') from exc
         value = text
     except (ValueError, RecursionError) as exc:
-        raise ContractError('INVALID_INPUT', 'input.paper_input', 'F4 输入含重复字段或无效 JSON 值') from exc
+        raise ContractError('INVALID_INPUT', 'input.paper_input', '论文输入含重复字段或无效 JSON 值') from exc
     # Preserve the same artifact-envelope support as the ordinary Runtime adapter.
-    from ..workflow import _unwrap
+    from .workflow import _unwrap
     value = _unwrap(value)
     if isinstance(value, dict):
         return None
     if not isinstance(value, str) or not value.strip() or Path(urlsplit(value).path).suffix.lower() != '.json':
         raise ContractError('INVALID_INPUT', 'input.paper_input',
-                            'F4 输入必须是 JSON 对象，或当前会话中 JSON 附件的精确文件名')
+                            '论文输入必须是 JSON 对象，或当前会话中 JSON 附件的精确文件名')
     return value.strip()
 
 
-def bind_attachment(bound: dict, workspace: str, request: str) -> dict:
+def bind_attachment(bound: dict, workspace: str, request: str, step: str = 'data_analysis') -> dict:
     """Confirmed pools are pinned; an explicit upload request uses original attachment bytes.
 
     Candidates come only from the host's current conversation attachment catalog.
-    Resolve through that catalog, read the complete bytes, validate the F4 spec,
+    Resolve through that catalog, read the complete bytes, validate the business input,
     then freeze a private input before the ordinary Runtime adapter consumes it.
     """
     if any(key.endswith('_pool') for key in bound):
@@ -155,6 +164,10 @@ def bind_attachment(bound: dict, workspace: str, request: str) -> dict:
     if _upload_requested(config, request):
         source = _select_attachment(config, request)
         if source is None:
+            if step == 'write_document' and (
+                'paper_input' not in bound or _bound_reference(bound['paper_input']) is None
+            ):
+                return bound  # Preserve direct programmatic JSON when no upload exists.
             raise ContractError('MISSING_MATERIAL', 'input.paper_input', '当前会话未找到所要求的 JSON 附件，请检查上传状态')
     else:
         reference = _bound_reference(bound['paper_input']) if 'paper_input' in bound else None
@@ -185,11 +198,14 @@ def bind_attachment(bound: dict, workspace: str, request: str) -> dict:
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ContractError('INVALID_INPUT', 'input.paper_input',
                             f'附件 {filename} 不是有效的 UTF-8 JSON：{exc}') from exc
-    from . import trace
+    from .analysis import trace
     trace.save('input-source.json', dict(kind='conversation_attachment', filename=filename,
                                          bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
-    value = normalize_input(value)
-    directory = Path(tempfile.mkdtemp(prefix='f4-input-', dir=workspace))
+    # Validate only the shared business envelope; each algorithm validates its
+    # own projected inputs after the ordinary material-pool initialization.
+    from .workflow import pool_from_business
+    pool_from_business(value)
+    directory = Path(tempfile.mkdtemp(prefix='paper-input-', dir=workspace))
     target = directory / 'paper_input.json'
     target.write_text(json.dumps(value, ensure_ascii=False, allow_nan=False), encoding='utf-8')
     return {**bound, 'paper_input': str(target)}

@@ -42,7 +42,7 @@ func TestPaperGraphAllForwardScenarios(t *testing.T) {
 	}
 	for _, path := range paths {
 		t.Run(strings.Join(path, "-"), func(t *testing.T) {
-			snapshot := RuntimeSnapshot{}
+			snapshot := RuntimeSnapshot{Materials: []MaterialValue{{MaterialID: "paper_input", RevisionID: "input-1", Valid: true}}}
 			steps := append([]string{}, path...)
 			steps = append(steps, "finish")
 			previous := "__start__"
@@ -84,5 +84,22 @@ func TestRecoveryPolicyValidationAndLegacyHash(t *testing.T) {
 		if result.Valid {
 			t.Fatalf("invalid policy accepted: %s", binding)
 		}
+	}
+}
+
+func TestPaperWritingRequiresAnInputSource(t *testing.T) {
+	graph := paperGraph(t, nil)
+	for _, source := range []string{"", "paper_topic", "paper_input", "seed_pool", "literature_review_pool", "data_analysis_pool", "manuscript_text"} {
+		t.Run(source, func(t *testing.T) {
+			snapshot := RuntimeSnapshot{}
+			if source != "" {
+				snapshot.Materials = []MaterialValue{{MaterialID: source, RevisionID: "input-1", Valid: true}}
+			}
+			node := Project(graph, snapshot).Nodes["write_document"]
+			wantReady := source != "" && source != "paper_topic"
+			if (node.Readiness == "ready") != wantReady {
+				t.Fatalf("source %q: %+v", source, node)
+			}
+		})
 	}
 }

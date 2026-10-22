@@ -104,7 +104,7 @@ def replay(monkeypatch, tmp_path):
         'user_id': 'f4-test', 'conversation_id': 'f4-test', 'query': request,
         'files': [str(source)], 'history_files_per_turn': {'1': [str(source)]},
     }
-    from lazymind.document_tools.paper.analysis.attachments import workflow_input_bindings
+    from lazymind.document_tools.paper.attachments import workflow_input_bindings
     slots = ['data_analysis_pool', 'data_analysis_document', 'analysis_chart']
     events = []
     context = SubAgentContext(
@@ -181,7 +181,9 @@ def test_f4_failure_is_not_published_and_can_resume(replay, fault):
     replay.structured.side_effect = [replay.plan, replay.conclusion]
     replay.context.params['retry_hint'] = 'Recovery request for this rerun only: 重试'
     assert workflow.run_paper_step()['status'] == 'completed'
-    saved = workflow._read_bound(str(replay.source.parent / 'data_analysis_pool.json'))
+    saved_path = next(event['value']['path'] for event in reversed(replay.events)
+                      if event['type'] == 'artifact' and event['slot'] == 'data_analysis_pool')
+    saved = workflow._read_bound(saved_path)
     assert saved['history'][-1]['request'] == replay.context.params['user_input']
     assert workflow.material(saved, 'analysis')['content']['findings'][0]['value'] == 2.
 
