@@ -11,7 +11,7 @@ FIELDS = {
     'literature_review': ('papers', 'question', 'evidence'),
     'experiment': ('question', 'evidence', 'data'),
     'data_analysis': ('data', 'experiment', 'data_context', 'study_design'),
-    'write_document': ('papers', 'question', 'evidence', 'analysis', 'chart', 'outline', 'manuscript',
+    'write_document': ('papers', 'question', 'evidence', 'analysis', 'charts', 'chart', 'outline', 'manuscript',
                        'review', 'review_data'),
     'peer_review': ('manuscript', 'evidence', 'analysis'),
     'reading_reflection': ('papers', 'evidence'),
@@ -146,13 +146,13 @@ def validate_input(step, value):
     elif 'mode' in value:
         raise ValueError(f'{step} 不接受 mode')
     for field in fields:
-        item = value.get(field, [] if field == 'papers' else None)
+        item = value.get(field, [] if field in ('papers', 'charts') else None)
         if item is not None:
-            if field == 'analysis' and module != 'data_analysis':
-                text(item, field)  # Preserve the existing downstream input contract.
-            else:
-                validate_value(field, item)
+            validate_value(field, item)
         result[field] = copy.deepcopy(item)
+    if module == 'write_document' and isinstance(result['analysis'], dict):
+        from .analysis.schema import validate_charts as validate_structured_charts
+        validate_structured_charts(result['charts'], result['analysis'])
     required = {'refine_topic': ('evidence',), 'peer_review': ('manuscript',),
                 'revise_document': ('manuscript', 'review'), 'reading_reflection': ('papers',)}.get(step, ())
     missing = [name for name in required if not result[name]]

@@ -323,6 +323,8 @@ plan 可以只给主题生成建议，不产生伪实验结果。execute 不等�
 
 ### F5 论文写作与论文修订
 
+当前骨架接收 F4 的结构化 analysis 和 charts 列表，charts 默认 []；旧版文字 analysis 和单图 chart 字段保留。F5 写作算法目前仍是演示实现，材料传入不代表已实现真实论文生成。
+
 | 输入字段 | 类型 | 条件 |
 | --- | --- | --- |
 | mode | draft / revise | 由步骤决定 |
@@ -356,7 +358,7 @@ word_target 非空时复用旧流程 count_academic_units 的中文字符/英文
 
 ### F6 模拟审稿
 
-当前已实现：`run(inputs)` 接收 topic、request、manuscript、evidence、analysis；后两项为可空文本。
+当前已实现：`run(inputs)` 接收 topic、request、manuscript、evidence、analysis；evidence 为可空文本，analysis 接受 F4 的结构化 Analysis、旧版非空文本或 null。骨架保留结构化内容及来源，F6 阅读这些材料，不重新计算原始数据。
 内部 `ReviewResult` 固定包含非空 summary、issues 列表、limitations 字符串列表。
 每条 issue 固定包含 severity（major/minor/suggestion）、category（method/evidence/analysis/structure/language/citation）、location、quote（非空字符串或 null）、problem、suggestion、action_type（text_revision/needs_material/needs_experiment）。拒绝未知字段；按等级排序后由代码生成 R1、R2 等编号，渲染成单份 Markdown。quote 非空时检查它确实出现在本次稿件；章节归属和重复位置消歧尚待任务 3。
 模型使用现有 AutoModel 与 WriterToolBase 的结构化提示/解析，不操作 pool 或文件，不修改旧 workflow；缺辅助材料会在报告中明确未核验范围。
