@@ -88,11 +88,8 @@ def validate_pool(pool: Any) -> dict:
     if pool['sequence'] != len(pool['history']):
         raise ValueError('sequence 与执行历史长度不一致')
     papers = material(pool, 'papers')
-    if papers and (not isinstance(papers['content'], list) or not all(
-        isinstance(paper, dict) and isinstance(paper.get('id'), str) and paper['id']
-        and isinstance(paper.get('text'), str) and paper['text'] for paper in papers['content']
-    )):
-        raise ValueError('papers 必须是含 id/text 的论文列表')
+    if papers:
+        contracts.validate_value('papers', papers['content'])
     return pool
 
 
@@ -176,14 +173,16 @@ def pool_from_business(value: dict) -> dict:
 
 
 def _conversation_papers(files_by_turn: dict | None) -> list[dict]:
-    """Resolve this conversation's PDFs through the existing file-resource store."""
-    pdf_paths = []
+    """Resolve paper attachments through the existing conversation text resolver."""
+    paths = []
     for turn in sorted(files_by_turn or {}, key=int):
         for raw_path in files_by_turn[turn] or []:
             path = str(raw_path).split('?', 1)[0]
-            if Path(path).suffix.lower() == '.pdf':
-                pdf_paths.append((int(turn), path))
-    if not pdf_paths:
+            if Path(path).suffix.lower() in {
+                '.pdf', '.doc', '.docx', '.pptx', '.txt', '.md', '.markdown', '.tex', '.rst', '.html', '.htm',
+            }:
+                paths.append((int(turn), path))
+    if not paths:
         return []
 
     from lazymind.chat.engine.tools.file_resources.ingest import ingest_pdf_file
@@ -193,22 +192,30 @@ def _conversation_papers(files_by_turn: dict | None) -> list[dict]:
     store = FileResourceStore(workspace_for_request())
     papers = []
     known_ids = set()
-    for turn, path in pdf_paths:
+    for turn, path in paths:
         try:
-            manifest = ingest_pdf_file(path, turn_seq=turn, store=store)
-            if manifest.get('parse_status') != 'ready':
-                raise ValueError('PDF is not ready')
-            file_id = manifest['file_id']
-            if file_id in known_ids:
-                continue
-            resolved = resolve_text_target(file_id, resources_only=True)
-            if resolved.kind != 'file_resource' or resolved.file_id != file_id:
-                raise ValueError('not a parsed PDF')
+            if Path(path).suffix.lower() == '.pdf':
+                manifest = ingest_pdf_file(path, turn_seq=turn, store=store)
+                if manifest.get('parse_status') != 'ready':
+                    raise ValueError('PDF is not ready')
+                file_id = manifest['file_id']
+                if file_id in known_ids:
+                    continue
+                resolved = resolve_text_target(file_id, resources_only=True)
+                if resolved.kind != 'file_resource' or resolved.file_id != file_id:
+                    raise ValueError('not a parsed PDF')
+            else:
+                resolved = resolve_text_target(path, turn=turn, resources_only=True)
             text = Path(resolved.path).read_text(encoding='utf-8').strip()
         except (OSError, ValueError):
             raise MissingMaterials(f'论文附件 {Path(path).name} 无法读取或尚未解析完成，请检查后重试。') from None
         if not text:
             raise MissingMaterials(f'论文附件 {Path(path).name} 没有可用的解析正文，请重新上传。')
+        if re.search(r'\[Attachment truncated after \d+ characters\.\]', text):
+            raise MissingMaterials(f'论文附件 {Path(path).name} 的解析正文被截断，请提供完整材料。')
+        file_id = resolved.file_id or f'upload-{text_digest(text)}'
+        if file_id in known_ids:
+            continue
         known_ids.add(file_id)
         papers.append({'id': file_id, 'title': Path(resolved.display_name).stem or file_id, 'text': text})
     return papers
@@ -243,6 +250,15 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False) -
     if fail:
         raise RuntimeError('[示例] 模拟执行失败；可重试。')
     module = contracts.ALIASES.get(step, step)
+    if module == 'research_topic':
+        contracts.validate_input(step, business_input(step, pool, request))
+        pool = copy.deepcopy(pool)
+        papers = material(pool, 'papers')
+        if papers:
+            prepared = research_topic.prepare_papers(papers['content'])
+            if prepared != papers['content']:
+                add_material(pool, 'papers', prepared, [pool['current']['papers']], papers['source_refs'],
+                             is_demo=papers['mock'])
     relevant = contracts.FIELDS[module]
     inputs = [copy.deepcopy(pool['current'][kind]) for kind in relevant if kind in pool['current']]
     output = run_algorithm(step, business_input(step, pool, request))
@@ -439,7 +455,9 @@ def run_paper_step() -> dict:
         if step == 'research_topic' and 'paper_input' not in bound and not any(
             key.endswith('_pool') for key in bound
         ):
-            papers = _conversation_papers(context.params.get('history_files_per_turn'))
+            papers = research_topic.prepare_papers(
+                _conversation_papers(context.params.get('history_files_per_turn')),
+            )
             if papers and any(item['mock'] for item in pool['materials']):
                 # Real uploaded papers take precedence over a demo marker in the request.
                 pool = pool_from_business({'topic': research_topic.infer_topic(request, papers),

@@ -19,6 +19,8 @@ def mock_f1_model(monkeypatch):
     def model(prompt):
         if '"paper_clues"' in prompt:
             return '{"topic": "证据可追溯性"}'
+        if 'Input materials (JSON):\n' not in prompt:
+            return '论文讨论证据追溯的方法与局限。'
         suffix = '\n\n## 文献反馈与调整依据\n根据综述调整验证路线。' if '"mode": "refine"' in prompt else ''
         return '# 研究选题\n\n## 研究问题\n现有方法能否改善效果？' + suffix
 
@@ -222,7 +224,9 @@ def test_f1_direct_entry_uses_conversation_pdfs_and_publishes_pool(runtime, monk
     outputs = {item['key']: item['value'] for item in batches[-1]}
     pool = tools._read_bound(outputs['research_topic_pool'])
     assert pool['topic'] == '证据可追溯性'
-    assert tools.material(pool, 'papers')['content'] == papers
+    assert tools.material(pool, 'papers')['content'] == [
+        {**paper, 'abstract': '论文讨论证据追溯的方法与局限。'} for paper in papers
+    ]
     assert pool['history'][0]['node'] == 'F1'
     assert '## 研究问题' in tools._read_bound(outputs['research_topic_document'])
 
@@ -284,7 +288,7 @@ def test_f1_pdf_resources_are_scoped_deduplicated_and_parsed(tmp_path, monkeypat
     monkeypatch.setattr(ingest, 'ingest_pdf_file', cached_pdf)
     monkeypatch.setattr(resolver, 'resolve_text_target', lambda file_id, **_kwargs: resolved[file_id])
     papers = tools._conversation_papers({
-        '2': ['/uploads/论文二.pdf', '/uploads/说明.txt'],
+        '2': ['/uploads/论文二.pdf', '/uploads/配置.json'],
         '1': ['/uploads/论文一.pdf'],
         '3': ['/uploads/论文一.pdf'],
     })
@@ -293,6 +297,48 @@ def test_f1_pdf_resources_are_scoped_deduplicated_and_parsed(tmp_path, monkeypat
     ]
     assert calls == [('论文一.pdf', 1), ('论文二.pdf', 2), ('论文一.pdf', 3)]
     assert '/uploads/' not in json.dumps(papers, ensure_ascii=False)
+
+
+@pytest.mark.parametrize('suffix', ['.doc', '.docx', '.pptx', '.txt', '.md', '.markdown', '.tex', '.rst', '.html', '.htm'])
+def test_paper_attachments_reuse_text_resolver_and_content_identity(suffix, tmp_path, monkeypatch):
+    from lazymind.chat.engine.tools.file_resources import ingest, resolver, store
+
+    monkeypatch.setattr(store, 'workspace_for_request', lambda: str(tmp_path))
+    monkeypatch.setattr(ingest, 'ingest_pdf_file', lambda *a, **kw: pytest.fail('non-PDF entered PDF ingestion'))
+    parsed = tmp_path / 'parsed.txt'
+    parsed.write_text('完整论文正文', encoding='utf-8')
+    calls = []
+    def resolve(target, *, turn, resources_only):
+        calls.append((target, turn, resources_only))
+        return SimpleNamespace(file_id=None, path=str(parsed), display_name=Path(target).name)
+    monkeypatch.setattr(resolver, 'resolve_text_target', resolve)
+    path = '/uploads/论文' + suffix
+    papers = tools._conversation_papers({'1': [path], '2': [path]})
+    assert calls == [(path, 1, True), (path, 2, True)]
+    assert papers == [{'id': 'upload-' + tools.text_digest('完整论文正文'), 'title': '论文', 'text': '完整论文正文'}]
+
+
+@pytest.mark.parametrize('body,error', [
+    ('', '没有可用的解析正文'),
+    ('部分正文\n\n[Attachment truncated after 200000 characters.]', '解析正文被截断'),
+    (None, '无法读取或尚未解析完成'),
+])
+def test_invalid_parsed_attachment_stops_before_publication(body, error, runtime, tmp_path, monkeypatch):
+    from lazymind.chat.engine.tools.file_resources import resolver, store
+
+    ctx, batches = runtime
+    monkeypatch.setattr(store, 'workspace_for_request', lambda: str(tmp_path))
+    parsed = tmp_path / 'parsed.txt'
+    if body is not None:
+        parsed.write_text(body, encoding='utf-8')
+    monkeypatch.setattr(resolver, 'resolve_text_target', lambda *a, **kw: SimpleNamespace(
+        file_id=None, path=str(parsed), display_name='论文.docx',
+    ))
+    ctx.params = {'step_id': 'research_topic', 'user_input': '研究主题',
+                  'history_files_per_turn': {'1': ['/uploads/论文.docx']}}
+    with pytest.raises(tools.MissingMaterials, match=error):
+        tools.run_paper_step()
+    assert not batches
 
 
 def test_f1_explicit_and_saved_inputs_do_not_rescan_conversation(runtime, tmp_path, monkeypatch):
