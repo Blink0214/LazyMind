@@ -1,0 +1,464 @@
+{
+  "topic": "合成问答检索中重排序的命中率与延迟权衡",
+  "request": "根据所附合成测试资料生成中文论文提纲与完整新稿。明确材料为人工构造记录，不冒充真实实验。方法以analysis.methods为准，正确区分11.67个百分点和16.67%相对增长，并报告8ms（6.67%）延迟代价；不得声称统计显著或普遍有效。使用chart-001、chart-002、chart-003三张已有SVG，依次呈现总体命中率、平均延迟、分批命中率；正文用稳定图表ID交叉引用，不重绘，不把description拼入图题。在相关工作中先说明质量与延迟必须并列报告，引用[文献:ref-002]；随后说明同一问题集比较和百分点定义，引用[文献:ref-001]；讨论统计限制时再次引用[文献:ref-002]。文献仅支持指标定义和评价原则，不用于背书本研究合成数值。新增引用保留上述占位符，不自行编写序号、参考文献章节或文末列表，由程序按首次引用顺序生成。完整交代摘要、引言、相关工作、方法、结果、讨论、局限和结论，保持所有合成材料与证据边界。",
+  "constraints": {
+    "paper_language": "zh-CN",
+    "word_target": null,
+    "paper_type": "empirical",
+    "citation_style": "GB/T 7714",
+    "focus": []
+  },
+  "papers": [
+    {
+      "id": "ref-001",
+      "title": "检索评估与配对比较说明（合成测试资料）",
+      "text": "本资料由测试作者编写，不是真实发表论文。检索评估应在相同问题集合、相同候选库和相同命中判据下比较方法。命中率为命中问题数除以问题总数；两个命中率相减得到百分点差，不能与相对增长率混用。重复使用同一批问题不等于获得新的独立样本。",
+      "url": null,
+      "authors": [],
+      "year": null,
+      "doi": null,
+      "content_type": "fulltext",
+      "source": "synthetic_test",
+      "truncated": false,
+      "citation": "检索评估与配对比较说明（合成测试资料）[Z]. 合成测试材料，未发表，日期不详。"
+    },
+    {
+      "id": "ref-002",
+      "title": "检索质量与延迟权衡说明（合成测试资料）",
+      "text": "本资料由测试作者编写，不是真实发表论文。增加重排序步骤可能同时改变检索质量与延迟，应并列报告质量指标和计算代价。小规模内部评估结果不能直接推广到其他领域或生产环境。没有配对明细和统计检验时，不应声称差异具有统计显著性。",
+      "url": null,
+      "authors": [],
+      "year": null,
+      "doi": null,
+      "content_type": "fulltext",
+      "source": "synthetic_test",
+      "truncated": false,
+      "citation": "检索质量与延迟权衡说明（合成测试资料）[Z]. 合成测试材料，未发表，日期不详。"
+    }
+  ],
+  "question": "# 研究选题\n\n## 研究问题\n在同一组合成问题上，预设重排序的命中率变化是否伴随延迟代价？\n\n## 研究依据与待验证设想\n只报告命中率不能表达方法的完整代价。\n将命中变化与延迟代价并列呈现；不宣称方法新颖。\n\n## 验证计划\n后续补充逐问题配对明细、外部数据验证和权重消融，本轮未开展。\n\n## 证据状态\n仅依据现有材料提出，仍需进一步检索与验证。",
+  "evidence": {
+    "summary": "以下为两份合成参考资料提供的指标解释与评价原则，不是本研究的实验结果，也不证明重排序有效。",
+    "items": [
+      {
+        "id": "E1",
+        "paper_id": "ref-001",
+        "claim": "命中率差值应以百分点表达。",
+        "quote": "两个命中率相减得到百分点差，不能与相对增长率混用。",
+        "locator": null,
+        "relation": "support"
+      },
+      {
+        "id": "E2",
+        "paper_id": "ref-002",
+        "claim": "质量变化需要与计算代价一起讨论。",
+        "quote": "增加重排序步骤可能同时改变检索质量与延迟，应并列报告质量指标和计算代价。",
+        "locator": null,
+        "relation": "background"
+      }
+    ],
+    "gaps": [
+      "候选文献均为合成说明，不能证明真实学术新颖性。"
+    ],
+    "limitations": [
+      "两份来源均为人工编写的合成测试资料，不是真实发表文献；仅用于验证文献引用链路。",
+      "这些证据支持指标解释和评价原则，不支持本研究的数值结果、统计显著性或外部推广。"
+    ]
+  },
+  "analysis": {
+    "summary": "在这组合成汇总记录中，重排序的命中率由70.00%提高到81.67%，同时平均延迟由120ms增加到128ms；这是描述性质量收益与延迟代价，不构成统计显著性结论。",
+    "data_sha256": "235443ddac78cc7371eb03838e98c2885ac71ef24fe868c88a0af645de6002bd",
+    "row_count": 6,
+    "methods": [
+      "材料性质与设计：人工构造的离线评估记录，不是真实实验运行日志。固定60个合成问答问题，A/B/C三批各20个且互不重叠；两方法比较相同问题及同一候选库，每个问题预设一个相关文档标签。候选库总规模未记录。",
+      "方法定义：基线按向量相似度返回前5条；重排序对前20候选按0.7×归一化向量分数+0.3×归一化关键词匹配分数排序后取前5条。权重为预设值，未调优或消融；未指定具体相似度函数、模型或设备。",
+      "指标定义：前5条中出现预设相关文档计1次命中；按批次和方法记录问题数、命中数与平均请求延迟。",
+      "数据粒度：输入表共6行，为3个批次×2种方法的汇总记录。按method筛选时每组有3条有效记录；Finding.sample_size表示该结论使用的有效表记录数，不是问题数或独立实验次数。两方法涉及同一组60个问题，不能相加为120个独立样本。",
+      "分析口径：按method分组，以sum(hits)/sum(questions)计算总体命中率，以sum(mean_latency_ms×questions)/sum(questions)计算加权平均延迟；比较两组的绝对差和相对变化。未排除记录、填补缺失、去重或转换单位。",
+      "数值保留：计算使用未四舍五入的值，展示保留两位小数。"
+    ],
+    "findings": [
+      {
+        "statement": "基线总体命中率70.00%。",
+        "columns": [
+          {
+            "table_id": "data",
+            "column": "hits"
+          },
+          {
+            "table_id": "data",
+            "column": "questions"
+          },
+          {
+            "table_id": "data",
+            "column": "method"
+          }
+        ],
+        "calculation": "按method=baseline筛选3条记录，sum(hits)/sum(questions)×100 = 42/60×100 = 70。",
+        "value": 70.0,
+        "unit": "%",
+        "sample_size": {
+          "source_rows": [
+            {
+              "table_id": "data",
+              "count": 3
+            }
+          ],
+          "n": 3,
+          "unit": "方法单次记录",
+          "excluded_n": 0
+        },
+        "id": "finding-1",
+        "target_id": "comparison",
+        "kind": "effect",
+        "interval": null,
+        "test": null,
+        "probability": null,
+        "model_id": null
+      },
+      {
+        "statement": "重排总体命中率81.67%。",
+        "columns": [
+          {
+            "table_id": "data",
+            "column": "hits"
+          },
+          {
+            "table_id": "data",
+            "column": "questions"
+          },
+          {
+            "table_id": "data",
+            "column": "method"
+          }
+        ],
+        "calculation": "按method=rerank筛选3条记录，sum(hits)/sum(questions)×100 = 49/60×100 ≈ 81.67。",
+        "value": 81.66666666666667,
+        "unit": "%",
+        "sample_size": {
+          "source_rows": [
+            {
+              "table_id": "data",
+              "count": 3
+            }
+          ],
+          "n": 3,
+          "unit": "方法单次记录",
+          "excluded_n": 0
+        },
+        "id": "finding-2",
+        "target_id": "comparison",
+        "kind": "effect",
+        "interval": null,
+        "test": null,
+        "probability": null,
+        "model_id": null
+      },
+      {
+        "statement": "两方法命中率绝对差为11.67个百分点。",
+        "columns": [
+          {
+            "table_id": "data",
+            "column": "hits"
+          },
+          {
+            "table_id": "data",
+            "column": "questions"
+          },
+          {
+            "table_id": "data",
+            "column": "method"
+          }
+        ],
+        "calculation": "分别按method计算命中率后相减：(49/60−42/60)×100 ≈ 11.67个百分点。",
+        "value": 11.666666666666666,
+        "unit": "百分点",
+        "sample_size": {
+          "source_rows": [
+            {
+              "table_id": "data",
+              "count": 6
+            }
+          ],
+          "n": 6,
+          "unit": "方法单次记录",
+          "excluded_n": 0
+        },
+        "id": "finding-3",
+        "target_id": "comparison",
+        "kind": "effect",
+        "interval": null,
+        "test": null,
+        "probability": null,
+        "model_id": null
+      },
+      {
+        "statement": "命中率相对增长16.67%。",
+        "columns": [
+          {
+            "table_id": "data",
+            "column": "hits"
+          },
+          {
+            "table_id": "data",
+            "column": "questions"
+          },
+          {
+            "table_id": "data",
+            "column": "method"
+          }
+        ],
+        "calculation": "以基线命中率为分母：(49/60−42/60)/(42/60)×100 ≈ 16.67%。",
+        "value": 16.666666666666664,
+        "unit": "%",
+        "sample_size": {
+          "source_rows": [
+            {
+              "table_id": "data",
+              "count": 6
+            }
+          ],
+          "n": 6,
+          "unit": "方法单次记录",
+          "excluded_n": 0
+        },
+        "id": "finding-4",
+        "target_id": "comparison",
+        "kind": "effect",
+        "interval": null,
+        "test": null,
+        "probability": null,
+        "model_id": null
+      },
+      {
+        "statement": "重排序的加权平均延迟比基线增加8ms。",
+        "columns": [
+          {
+            "table_id": "data",
+            "column": "mean_latency_ms"
+          },
+          {
+            "table_id": "data",
+            "column": "questions"
+          },
+          {
+            "table_id": "data",
+            "column": "method"
+          }
+        ],
+        "calculation": "分别按method以questions加权计算mean_latency_ms，两组均值为120ms、128ms；128−120 = 8ms。",
+        "value": 8,
+        "unit": "ms",
+        "sample_size": {
+          "source_rows": [
+            {
+              "table_id": "data",
+              "count": 6
+            }
+          ],
+          "n": 6,
+          "unit": "方法单次记录",
+          "excluded_n": 0
+        },
+        "id": "finding-5",
+        "target_id": "comparison",
+        "kind": "effect",
+        "interval": null,
+        "test": null,
+        "probability": null,
+        "model_id": null
+      },
+      {
+        "statement": "重排序的加权平均延迟相对基线增加约6.67%。",
+        "columns": [
+          {
+            "table_id": "data",
+            "column": "mean_latency_ms"
+          },
+          {
+            "table_id": "data",
+            "column": "questions"
+          },
+          {
+            "table_id": "data",
+            "column": "method"
+          }
+        ],
+        "calculation": "以按questions加权的基线平均延迟为分母：(128−120)/120×100 ≈ 6.67%。",
+        "value": 6.666666666666667,
+        "unit": "%",
+        "sample_size": {
+          "source_rows": [
+            {
+              "table_id": "data",
+              "count": 6
+            }
+          ],
+          "n": 6,
+          "unit": "方法单次记录",
+          "excluded_n": 0
+        },
+        "id": "finding-6",
+        "target_id": "comparison",
+        "kind": "effect",
+        "interval": null,
+        "test": null,
+        "probability": null,
+        "model_id": null
+      }
+    ],
+    "limitations": [
+      "未提供逐问题配对命中明细，不能计算配对检验或推断统计显著性。",
+      "仅有合成内部样本，未做外部数据验证、重复运行、权重消融或置信区间估计。",
+      "模型名称与版本、设备配置、运行时间和逐请求延迟未记录，不得补写；汇总延迟不能推断尾延迟。",
+      "row_count和Finding.sample_size按汇总表记录计数，不代表独立受试者数；本次仅交付既有分析结论给写作步骤，不表示写作模型读取或复算了原始表。"
+    ],
+    "input_sha256": "32157d33d9433ee4e0aeb11959c7ac8e746c2a3a5ffc83fd8329c33625d7bef8",
+    "data_sources": [
+      {
+        "id": "data",
+        "columns": [
+          "batch",
+          "method",
+          "questions",
+          "hits",
+          "mean_latency_ms"
+        ],
+        "row_count": 6,
+        "data_sha256": "09ef15132d2a0b017eabef10547acf42deebad0af940030ed20973fa2b74a9db"
+      }
+    ],
+    "targets": [
+      {
+        "id": "comparison",
+        "question": "两种方法的单次得分差异如何？",
+        "estimand": "单次观测得分差",
+        "scope": "仅当前记录，不推断总体差异",
+        "columns": [
+          {
+            "table_id": "data",
+            "column": "hits"
+          },
+          {
+            "table_id": "data",
+            "column": "questions"
+          },
+          {
+            "table_id": "data",
+            "column": "method"
+          },
+          {
+            "table_id": "data",
+            "column": "mean_latency_ms"
+          }
+        ]
+      }
+    ],
+    "models": [],
+    "diagnostics": [
+      {
+        "id": "replication",
+        "model_id": null,
+        "name": "重复测量",
+        "outcome": "not_checked",
+        "value": null,
+        "threshold": null,
+        "details": "每组仅一次记录，不能进行推断。"
+      }
+    ]
+  },
+  "charts": [
+    {
+      "id": "chart-001",
+      "title": "合成记录中两种方法的总体命中率",
+      "columns": [
+        {
+          "table_id": "data",
+          "column": "method"
+        },
+        {
+          "table_id": "data",
+          "column": "hits"
+        },
+        {
+          "table_id": "data",
+          "column": "questions"
+        }
+      ],
+      "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"720\" height=\"420\" viewBox=\"0 0 720 420\" role=\"img\"><title>Overall hit rate</title><rect width=\"720\" height=\"420\" fill=\"white\"/><g font-family=\"Arial,sans-serif\" font-size=\"14\" fill=\"#0f172a\"><text x=\"70\" y=\"30\" font-size=\"20\">Overall hit rate</text><text x=\"70\" y=\"54\" fill=\"#64748b\">SYNTHETIC DATA | Hit rate (%) | no significance testing</text><path d=\"M70 330.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"335.0\" text-anchor=\"end\">0</text><path d=\"M70 282.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"287.0\" text-anchor=\"end\">20</text><path d=\"M70 234.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"239.0\" text-anchor=\"end\">40</text><path d=\"M70 186.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"191.0\" text-anchor=\"end\">60</text><path d=\"M70 138.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"143.0\" text-anchor=\"end\">80</text><path d=\"M70 90.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"95.0\" text-anchor=\"end\">100</text><rect x=\"308.0\" y=\"162.0\" width=\"54\" height=\"168.0\" fill=\"#64748b\"/><text x=\"335.0\" y=\"152.0\" text-anchor=\"middle\">70.00</text><rect x=\"374.0\" y=\"133.99999999999997\" width=\"54\" height=\"196.00000000000003\" fill=\"#2563eb\"/><text x=\"401.0\" y=\"123.99999999999997\" text-anchor=\"middle\">81.67</text><text x=\"370.0\" y=\"354\" text-anchor=\"middle\">All 60 questions</text><rect x=\"240\" y=\"381\" width=\"16\" height=\"16\" fill=\"#64748b\"/><text x=\"264\" y=\"394\">baseline</text><rect x=\"380\" y=\"381\" width=\"16\" height=\"16\" fill=\"#2563eb\"/><text x=\"404\" y=\"394\">rerank</text></g></svg>",
+      "caption": "合成数据中总体命中率由70%提高至81.67%，提高11.67个百分点（相对提高16.67%）；仅描述本次合成样本，不能推断统计显著性。",
+      "finding_ids": [
+        "finding-1",
+        "finding-2",
+        "finding-3",
+        "finding-4",
+        "finding-5",
+        "finding-6"
+      ]
+    },
+    {
+      "id": "chart-002",
+      "title": "合成记录中两种方法的加权平均延迟",
+      "columns": [
+        {
+          "table_id": "data",
+          "column": "method"
+        },
+        {
+          "table_id": "data",
+          "column": "questions"
+        },
+        {
+          "table_id": "data",
+          "column": "mean_latency_ms"
+        }
+      ],
+      "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"720\" height=\"420\" viewBox=\"0 0 720 420\" role=\"img\"><title>Weighted mean latency</title><rect width=\"720\" height=\"420\" fill=\"white\"/><g font-family=\"Arial,sans-serif\" font-size=\"14\" fill=\"#0f172a\"><text x=\"70\" y=\"30\" font-size=\"20\">Weighted mean latency</text><text x=\"70\" y=\"54\" fill=\"#64748b\">SYNTHETIC DATA | Latency (ms) | no significance testing</text><path d=\"M70 330.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"335.0\" text-anchor=\"end\">0</text><path d=\"M70 282.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"287.0\" text-anchor=\"end\">30</text><path d=\"M70 234.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"239.0\" text-anchor=\"end\">60</text><path d=\"M70 186.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"191.0\" text-anchor=\"end\">90</text><path d=\"M70 138.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"143.0\" text-anchor=\"end\">120</text><path d=\"M70 90.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"95.0\" text-anchor=\"end\">150</text><rect x=\"308.0\" y=\"138.0\" width=\"54\" height=\"192.0\" fill=\"#64748b\"/><text x=\"335.0\" y=\"128.0\" text-anchor=\"middle\">120.00</text><rect x=\"374.0\" y=\"125.19999999999999\" width=\"54\" height=\"204.8\" fill=\"#2563eb\"/><text x=\"401.0\" y=\"115.19999999999999\" text-anchor=\"middle\">128.00</text><text x=\"370.0\" y=\"354\" text-anchor=\"middle\">All 60 questions</text><rect x=\"240\" y=\"381\" width=\"16\" height=\"16\" fill=\"#64748b\"/><text x=\"264\" y=\"394\">baseline</text><rect x=\"380\" y=\"381\" width=\"16\" height=\"16\" fill=\"#2563eb\"/><text x=\"404\" y=\"394\">rerank</text></g></svg>",
+      "caption": "合成数据中加权平均延迟由120 ms增加至128 ms，增加8 ms（6.67%）；未提供重复测量或误差线，不能推断统计显著性。",
+      "finding_ids": [
+        "finding-1",
+        "finding-2",
+        "finding-3",
+        "finding-4",
+        "finding-5",
+        "finding-6"
+      ]
+    },
+    {
+      "id": "chart-003",
+      "title": "三个合成批次的命中率分布",
+      "columns": [
+        {
+          "table_id": "data",
+          "column": "batch"
+        },
+        {
+          "table_id": "data",
+          "column": "method"
+        },
+        {
+          "table_id": "data",
+          "column": "hits"
+        },
+        {
+          "table_id": "data",
+          "column": "questions"
+        }
+      ],
+      "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"720\" height=\"420\" viewBox=\"0 0 720 420\" role=\"img\"><title>Hit rate by batch</title><rect width=\"720\" height=\"420\" fill=\"white\"/><g font-family=\"Arial,sans-serif\" font-size=\"14\" fill=\"#0f172a\"><text x=\"70\" y=\"30\" font-size=\"20\">Hit rate by batch</text><text x=\"70\" y=\"54\" fill=\"#64748b\">SYNTHETIC DATA | Hit rate (%) | no significance testing</text><path d=\"M70 330.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"335.0\" text-anchor=\"end\">0</text><path d=\"M70 282.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"287.0\" text-anchor=\"end\">20</text><path d=\"M70 234.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"239.0\" text-anchor=\"end\">40</text><path d=\"M70 186.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"191.0\" text-anchor=\"end\">60</text><path d=\"M70 138.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"143.0\" text-anchor=\"end\">80</text><path d=\"M70 90.0H680\" stroke=\"#e2e8f0\"/><text x=\"58\" y=\"95.0\" text-anchor=\"end\">100</text><rect x=\"108.0\" y=\"162.0\" width=\"54\" height=\"168.0\" fill=\"#64748b\"/><text x=\"135.0\" y=\"152.0\" text-anchor=\"middle\">70.00</text><rect x=\"174.0\" y=\"138.0\" width=\"54\" height=\"192.0\" fill=\"#2563eb\"/><text x=\"201.0\" y=\"128.0\" text-anchor=\"middle\">80.00</text><text x=\"170.0\" y=\"354\" text-anchor=\"middle\">A</text><rect x=\"308.0\" y=\"174.0\" width=\"54\" height=\"156.0\" fill=\"#64748b\"/><text x=\"335.0\" y=\"164.0\" text-anchor=\"middle\">65.00</text><rect x=\"374.0\" y=\"138.0\" width=\"54\" height=\"192.0\" fill=\"#2563eb\"/><text x=\"401.0\" y=\"128.0\" text-anchor=\"middle\">80.00</text><text x=\"370.0\" y=\"354\" text-anchor=\"middle\">B</text><rect x=\"508.0\" y=\"150.0\" width=\"54\" height=\"180.0\" fill=\"#64748b\"/><text x=\"535.0\" y=\"140.0\" text-anchor=\"middle\">75.00</text><rect x=\"574.0\" y=\"126.0\" width=\"54\" height=\"204.0\" fill=\"#2563eb\"/><text x=\"601.0\" y=\"116.0\" text-anchor=\"middle\">85.00</text><text x=\"570.0\" y=\"354\" text-anchor=\"middle\">C</text><rect x=\"240\" y=\"381\" width=\"16\" height=\"16\" fill=\"#64748b\"/><text x=\"264\" y=\"394\">baseline</text><rect x=\"380\" y=\"381\" width=\"16\" height=\"16\" fill=\"#2563eb\"/><text x=\"404\" y=\"394\">rerank</text></g></svg>",
+      "caption": "合成批次A/B/C的命中率分别由70%/65%/75%变为80%/80%/85%；仅展示分批观测，不能推断统计显著性或总体泛化效果。",
+      "finding_ids": [
+        "finding-1",
+        "finding-2",
+        "finding-3",
+        "finding-4",
+        "finding-5",
+        "finding-6"
+      ]
+    }
+  ],
+  "outline": null,
+  "manuscript": null,
+  "review": null,
+  "selected_issue_ids": []
+}
