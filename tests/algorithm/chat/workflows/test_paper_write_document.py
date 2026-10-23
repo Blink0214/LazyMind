@@ -17,22 +17,6 @@ OUTLINE = '# 方法比较\n\n## 方法\n\n## 结果\n\n## 局限'
 BODY = '仅比较单次得分。新方法得分高 15 分；不能推断统计显著性。'
 
 
-def test_review_location_numbering_and_quote_disambiguation():
-    from lazymind.document_tools.paper.writing.common import resolve_review_target
-    body = '# 论文\n\n## 2 方法\n\n### 2.1 参数\n第一种。\n\n## 3 补充\n\n### 3.1 参数\n第二种。'
-    issue = {'location': '3.1 参数', 'quote': '第二种。'}
-    assert resolve_review_target(issue, body)['heading_path'] == ['论文', '3 补充', '3.1 参数']
-    issue.update(location='参数', quote=None)
-    with pytest.raises(ValueError, match='ambiguous'):
-        resolve_review_target(issue, body)
-    issue.update(location='不存在', quote='第一种。')
-    with pytest.raises(ValueError, match='missing'):
-        resolve_review_target(issue, body)
-    issue.update(location='2 方法', quote='第二种。')
-    with pytest.raises(ValueError):
-        resolve_review_target(issue, body)
-
-
 @pytest.mark.parametrize('language,target', [('zh-CN', None), ('zh-CN', 1000), ('en', 1000)])
 def test_outline_relative_weights_do_not_leak_as_character_instructions(language, target):
     descriptions = ['讨论60个问题与0.7权重（约3字）。', 'Discuss latency (about 2 characters).']
@@ -163,27 +147,12 @@ def test_new_draft_requires_valid_input_outline():
         document.validate_inputs(inputs)
 
 
-def test_review_location_is_resolved_once_during_preparation(revision, monkeypatch):
+def test_missing_review_section_is_preserved_for_public_writer(revision):
     normalized = contracts.validate_input('revise_document', revision)
-    resolve = document.resolve_review_target
-    calls = []
-    def record(issue, source):
-        calls.append(issue['id'])
-        return resolve(issue, source)
-    monkeypatch.setattr(document, 'resolve_review_target', record)
-    document.validate_inputs(normalized)
+    normalized['review_data']['issues'][0].update(location='缺失章节：讨论', quote=None)
     prepared = document.prepare_writer_context(normalized)
-    assert calls == ['R1']
-    assert prepared['selected_issues'][0]['target']['heading_path'] == ['论文', '方法']
-
-
-def test_invalid_review_location_still_fails_before_building_writer_context(revision):
-    normalized = contracts.validate_input('revise_document', revision)
-    normalized['review_data']['issues'][0]['location'] = '不存在'
-    toolkit = Mock()
-    with pytest.raises(ValueError, match='missing or ambiguous'):
-        document.prepare_writer_context(normalized, toolkit=toolkit)
-    toolkit.build_writing_task.assert_not_called()
+    assert prepared['selected_issues'][0]['location'] == '缺失章节：讨论'
+    assert 'target' not in prepared['selected_issues'][0]
 
 
 def test_chart_directory_reuses_one_index_and_keeps_exact_associations(monkeypatch):
@@ -225,12 +194,13 @@ def prepared(issues=None):
                 writing_task={'query': '只修改选中意见', 'meta': {'mode': 'revise', 'review_driven': True}},
                 writing_context={'context_id': 'scope-test'}, charts=[], reference_candidates=[],
                 selected_issues=[dict(id=key, action_type=action,
-                    target={'heading_path': ['论文', section], 'occurrence': 1, 'document_root': False})
+                    location=section, quote=None)
                     for key, section, action in issues])
 
 
 def editor(operations, changes=()):
     return SimpleNamespace(
+        locate_revision_target=Mock(return_value='{}'),
         generate_modify_plan=Mock(return_value=json.dumps({'scope': 'document', 'instructions': operations})),
         generate_string_replace_set=Mock(return_value=json.dumps({'replacements': changes})),
         apply_string_replace=Mock(wraps=WriterRevisionToolkit().apply_string_replace),
@@ -277,34 +247,23 @@ def test_reverse_application_preserves_child_references_when_title_changes():
 def test_review_plan_requires_selected_issue_ids(ids):
     data = prepared()
     with pytest.raises(ValueError, match='selected issue_ids'):
-        revision_entry._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data,
-                              editor([instruction(ids=ids)]), '{}')
-
-
-def test_review_plan_rejects_unrelated_issue_association():
-    data = prepared([('R1', '方法', 'text_revision'), ('R2', '结果', 'text_revision')])
-    with pytest.raises(ValueError, match='unrelated operation'):
-        revision_entry._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data,
-                              editor([instruction(ids=['R1', 'R2'])]), '{}')
+        revision_entry._modify_manuscript(data, {'word_target': None}, Mock(),
+                                          editor=editor([instruction(ids=ids)]))
 
 
 def test_review_plan_requires_every_selected_text_revision():
     data = prepared([('R1', '方法', 'text_revision'), ('R2', '结果', 'text_revision')])
     with pytest.raises(ValueError, match='does not cover all'):
-        revision_entry._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data,
-                              editor([instruction()]), '{}')
+        revision_entry._modify_manuscript(data, {'word_target': None}, Mock(), editor=editor([instruction()]))
 
 
-def test_move_destination_must_also_be_authorized():
-    data = prepared()
+def test_move_ranges_include_public_writer_destination():
+    from lazyllm.tools.writer.data_models.revision import MarkdownModifyPlan
     operation = instruction()
     operation.update(modify_type='move', destination_ref={'heading_path': ['论文', '结果']},
                      destination_scope='section', position='after')
-    with pytest.raises(ValueError, match='exceeds selected issue target'):
-        revision_entry._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data, editor([operation]), '{}')
-    data['selected_issues'].append(prepared([('R2', '结果', 'text_revision')])['selected_issues'][0])
-    operation['meta']['issue_ids'].append('R2')
-    _, ranges, _ = revision_entry._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data, editor([operation]), '{}')
+    plan = MarkdownModifyPlan.model_validate({'scope': 'document', 'instructions': [operation]})
+    ranges = revision_entry._operation_ranges(SOURCE, plan)
     assert [SOURCE[start:end].strip() for start, end in ranges[0]] == ['## 方法\n\n原方法。', '## 结果\n\n原结果。']
 
 
@@ -353,7 +312,6 @@ def test_edits_only_update_manuscript_without_enforcing_old_outline(mode, outlin
     change = replacement(old, new)
     if old == '# 论文':
         operation['content_ref'] = change['content_ref'] = {'heading_path': ['论文']}
-        data['selected_issues'][0]['target'] = {'document_root': True}
     tools = editor([operation], [change])
     tools.locate_revision_target = Mock(return_value='{}')
     quality = Mock()
@@ -438,10 +396,32 @@ def test_new_draft_still_enforces_full_manuscript_length():
 @pytest.mark.parametrize('action', ['needs_material', 'needs_experiment'])
 def test_review_without_executable_edits_stops_before_replacement(action):
     data = prepared([('R1', '方法', action)])
-    tools = Mock()
+    tools = editor([])
     tools.generate_modify_plan.side_effect = ValueError(
         'modify_plan contains no operations for the located revision scope.')
-    with pytest.raises(contracts.MissingMaterials, match='需要补充材料或实验'):
+    with pytest.raises(contracts.MissingMaterials, match='补充材料或实验'):
         revision_entry._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
     tools.generate_string_replace_set.assert_not_called()
+    tools.apply_string_replace.assert_not_called()
+
+
+@pytest.mark.parametrize('action', ['needs_material', 'needs_experiment'])
+def test_pending_issue_can_add_marker_without_claiming_completion(action):
+    data = prepared([('R1', '缺失内容：验证', action)])
+    marker = '原结果。\n\n[待补实验：独立验证尚未完成。]'
+    tools = editor([instruction('结果')], [replacement('原结果。', marker, '结果')])
+    result = revision_entry._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
+    assert result['manuscript'] == SOURCE.replace('原结果。', marker)
+    assert data['selected_issues'][0]['action_type'] == action
+
+
+def test_pending_only_without_writer_target_keeps_manuscript():
+    data = prepared([('R1', '缺少实验', 'needs_experiment')])
+    before = copy.deepcopy(data)
+    tools = editor([])
+    tools.locate_revision_target.side_effect = ValueError('locate_result contains no revision targets.')
+    with pytest.raises(contracts.MissingMaterials, match='待补事项.*稿件未修改'):
+        revision_entry._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
+    assert data == before
+    tools.generate_modify_plan.assert_not_called()
     tools.apply_string_replace.assert_not_called()

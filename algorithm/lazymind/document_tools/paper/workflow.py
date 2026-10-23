@@ -833,9 +833,17 @@ def _run_paper_step(context, stream=None) -> dict:
             {'slot': item['key'], 'filename': Path(item['value']).name}
             for item in artifacts if item['content_type'] == 'file'
         ])
+    final_text = '产物已保存，请在工作流中查看。'
+    if step == 'revise_document':
+        review = material(result['pool'], 'review_data')
+        selected = set(result['pool'].get('selected_issue_ids', []))
+        pending = [issue['id'] for issue in review['content']['issues']
+                   if issue['id'] in selected and issue['action_type'] != 'text_revision'] if review else []
+        if pending:
+            final_text += ' ' + '、'.join(pending) + ' 仍需补充材料或实验；本轮文字修改不代表这些事项已完成。'
     return {
         'status': 'completed', 'step': step, 'saved': saved,
         **({'control': {'next_step': 'write_document'}} if step == 'write_outline' else {}),
         # Stop the node with user-facing text, not a stringified publication receipt.
-        '_agent_control': {'stop': True, 'final_text': '产物已保存，请在工作流中查看。'},
+        '_agent_control': {'stop': True, 'final_text': final_text},
     }

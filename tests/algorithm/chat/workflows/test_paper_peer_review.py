@@ -41,6 +41,9 @@ def test_real_review_reaches_revision_contract(example):
     result = workflow.execute_step('peer_review', pool, '只检查结论是否超出证据')
     assert result['status'] == 'completed'
     assert result['mock'] is False
+    result['pool']['selected_issue_ids'] = [
+        issue['id'] for issue in workflow.material(result['pool'], 'review_data')['content']['issues']
+    ]
     revision = workflow.business_input('revise_document', result['pool'], '')
     assert revision['manuscript'] == example['input']['manuscript']
     assert revision['review'] == workflow.material(result['pool'], 'review')['content']
@@ -161,13 +164,14 @@ def test_edited_report_from_pool_cannot_use_old_structured_advice(example):
     pool['sequence'] = 1
     edited = workflow.pool_from_inputs({'peer_review_pool': pool,
                                        'peer_review_document': output['review'] + '\n编辑后的意见'})
+    edited['selected_issue_ids'] = [output['review_data']['issues'][0]['id']]
     with pytest.raises(ValueError, match='已过期'):
         api.contracts.validate_input('revise_document', workflow.business_input('revise_document', edited))
 
 
 def test_legacy_markdown_only_revision_requires_structured_review(example):
     # F5 now consumes the paired report/review_data produced by F6.
-    with pytest.raises(api.contracts.MissingMaterials, match='review_data'):
+    with pytest.raises(api.contracts.MissingMaterials, match='结构化意见'):
         api.contracts.validate_input('revise_document', {
             **example['input'], 'review': example['output']['review'],
         })

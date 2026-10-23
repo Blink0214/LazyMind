@@ -1,6 +1,6 @@
 """Scoped paper revision using the public Writer revision toolkit."""
 from ..prompts.write_document_prompt import REVIEW_REVISION_INSTRUCTIONS, REVISION_SCOPE_INSTRUCTIONS
-from lazyllm.tools.writer.data_models.revision import LocateResult, MarkdownModifyPlan, StringReplaceSet
+from lazyllm.tools.writer.data_models.revision import MarkdownModifyPlan, StringReplaceSet
 from ...toolkits import WriterCreateToolkit, WriterRevisionToolkit
 from ..publication import validate_chart_references as _validate_chart_references
 from .. import contracts
@@ -10,7 +10,7 @@ import json
 from lazyllm import AutoModel
 import re
 from lazyllm.tools.writer.utils import locate_markdown_paragraph
-from lazyllm.tools.writer.utils.serialization import markdown_section_range, parse_markdown_sections
+from lazyllm.tools.writer.utils.serialization import markdown_section_range
 
 from .common import (
     _heading_signature,
@@ -33,20 +33,35 @@ def resolve_review_issues(request, review):
         raise contracts.MissingMaterials('请明确本轮修改要求，或说明按当前审稿意见修订。')
     if review is None:
         return []
-    raw = str(AutoModel(model='llm')(REVISION_SCOPE_INSTRUCTIONS + _json({'request': request}))).strip()
+    raw = str(AutoModel(model='llm')(REVISION_SCOPE_INSTRUCTIONS + _json({
+        'request': request, 'issues': review['issues'],
+    }))).strip()
     raw = re.sub(r'^(?:<think\b[^>]*>.*?</think>\s*)+', '', raw, flags=re.I | re.S)
     raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw)
     result = json.loads(raw)
-    if not isinstance(result, dict) or set(result) != {'intent'}:
+    if not isinstance(result, dict):
         raise ValueError('Invalid revision intent response')
-    if result['intent'] == 'direct':
-        return []
-    if result['intent'] != 'review':
-        raise contracts.MissingMaterials('请明确直接修改论文，还是按当前完整审稿意见修订；暂不支持选择部分意见。')
+    intent = result.get('intent')
+    if intent in {'direct', 'unclear'} and set(result) == {'intent'}:
+        if intent == 'direct':
+            return []
+        raise contracts.MissingMaterials('请明确本轮修改要求或要采用的审稿意见编号。')
+    if intent != 'review' or result.get('selection') not in {'all', 'subset'}:
+        raise ValueError('Invalid revision intent response')
     issue_ids = [issue['id'] for issue in review['issues']]
-    if not issue_ids:
-        raise contracts.MissingMaterials('当前审稿没有待处理意见，无需按审稿修订；如需其他修改，请说明具体要求。')
-    return issue_ids
+    if result['selection'] == 'all':
+        if set(result) != {'intent', 'selection'}:
+            raise ValueError('Invalid revision intent response')
+        if not issue_ids:
+            raise contracts.MissingMaterials('当前审稿没有待处理意见，无需按审稿修订；如需其他修改，请说明具体要求。')
+        return issue_ids
+    if set(result) != {'intent', 'selection', 'issue_ids'}:
+        raise ValueError('Invalid revision intent response')
+    selected = result['issue_ids']
+    if (not isinstance(selected, list) or not selected
+            or any(not isinstance(key, str) or key not in issue_ids for key in selected)):
+        raise contracts.MissingMaterials('请选择当前审稿报告中有效的意见编号，选择不能为空。')
+    return [key for key in issue_ids if key in selected]
 
 
 def _operation_ranges(source, plan):
@@ -110,60 +125,19 @@ def _bounded_replacements(source, allowed, generated):
     replacements.replacements = [item[2] for item in reversed(located)]
     return replacements.model_dump(), located
 
-def _review_plan(source, task, prepared: dict, editor, context_json):
-    """Use reviewed anchors directly; bind every operation to selected issues.
-
-    This checks generated operations, not the upstream review/hash contract.
-    Quote is evidence for the issue, while target defines its editable extent.
-    """
-    issues = prepared['selected_issues']
-    if not issues:
-        raise ValueError('Review revision requires selected issues; empty is not all.')
-    task['query'] += REVIEW_REVISION_INSTRUCTIONS + _json(issues)
-    # Markdown Writer candidates are headings, not document_root. Expand a
-    # document-level issue into real headings while retaining its original scope.
-    targets = []
-    for issue in issues:
-        refs = ([{'heading_path': path, 'occurrence': occurrence}
-                 for _, path, occurrence, _ in parse_markdown_sections(source)]
-                if issue['target']['document_root'] else [issue['target']])
-        targets.extend({'content_ref': ref, 'reason': _json(issue)} for ref in refs)
-    located = LocateResult(task_id=task.get('task_id'), target_title=False, targets=targets)
-    try:
-        plan = MarkdownModifyPlan.model_validate(json.loads(editor.generate_modify_plan(
-            writing_task_json=_json(task), writer_document_json=source,
-            locate_result_json=located.model_dump_json(), writing_context_json=context_json,
-        )))
-    except ValueError as exc:
-        # Public Writer rejects an empty plan. Translate only this known outcome;
-        # genuine planner errors must still propagate unchanged.
-        if (not any(i['action_type'] == 'text_revision' for i in issues)
-                and str(exc) == 'modify_plan contains no operations for the located revision scope.'):
-            raise contracts.MissingMaterials('审稿意见需要补充材料或实验，未产生可应用的文本修订。') from exc
-        raise
-    bounds = {}
-    for issue in issues:
-        ref = issue['target']
-        bounds[issue['id']] = ((0, len(source)) if ref['document_root'] else markdown_section_range(
-            source, ref['heading_path'], ref['occurrence'],
-        ))
+def _validate_review_plan(plan, issues):
+    """Check selected-issue coverage; public Writer owns manuscript locating."""
+    selected = {issue['id'] for issue in issues}
     covered = set()
-    operation_ranges = _operation_ranges(source, plan)
-    for item, ranges in zip(plan.instructions, operation_ranges):
+    for item in plan.instructions:
         ids = item.meta.get('issue_ids')
-        if not isinstance(ids, list) or not ids or any(not isinstance(key, str) or key not in bounds for key in ids):
+        if (not isinstance(ids, list) or not ids
+                or any(not isinstance(key, str) or key not in selected for key in ids)):
             raise ValueError('Review plan operations must reference selected issue_ids.')
-        if any(not any(bounds[key][0] <= start and end <= bounds[key][1] for key in ids)
-               for start, end in ranges):
-            raise ValueError('Review plan exceeds selected issue target scope.')
-        if any(not any(bounds[key][0] <= start and end <= bounds[key][1] for start, end in ranges)
-               for key in ids):
-            raise ValueError('Review plan associates an issue with an unrelated operation.')
         covered.update(ids)
-    required = {i['id'] for i in issues if i['action_type'] == 'text_revision'}
+    required = {issue['id'] for issue in issues if issue['action_type'] == 'text_revision'}
     if not required <= covered:
         raise ValueError('Review plan does not cover all selected issues.')
-    return plan, operation_ranges, bounds
 
 def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
     """Apply request edits or review-bound edits with the same public toolkit."""
@@ -175,10 +149,12 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
     reviewing = task['meta'].get('review_driven', False)
     editor = editor if editor is not None else WriterRevisionToolkit()
     context_json = _json(prepared['writing_context'])
+    issues = prepared['selected_issues'] if reviewing else []
     if reviewing:
-        report_progress(20, '正在根据当前审稿意见规划修改')
-        plan, operation_ranges, issue_bounds = _review_plan(source, task, prepared, editor, context_json)
-    else:
+        if not issues:
+            raise ValueError('Review revision requires selected issues; empty is not all.')
+        task['query'] += REVIEW_REVISION_INSTRUCTIONS + _json(issues)
+    try:
         report_progress(20, '正在定位修改范围')
         located = editor.locate_revision_target(
             writing_task_json=_json(task), writer_document_json=source,
@@ -189,21 +165,29 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
             writing_task_json=_json(task), writer_document_json=source,
             locate_result_json=located, writing_context_json=context_json,
         )))
-    if reviewing and not plan.instructions and not plan.title_instruction:
-        raise contracts.MissingMaterials('审稿意见需要补充材料或实验，未产生可应用的文本修订。')
+    except ValueError as exc:
+        if (reviewing and not any(i['action_type'] == 'text_revision' for i in issues)
+                and str(exc) in {'modify_plan contains no operations for the located revision scope.',
+                                 'locate_result contains no revision targets.'}):
+            raise contracts.MissingMaterials(
+                '所选意见仍需补充材料或实验，已保留为待补事项；本轮没有可执行的文本修改，稿件未修改。') from exc
+        raise
+    if reviewing:
+        _validate_review_plan(plan, issues)
+        if not plan.instructions and not plan.title_instruction:
+            raise contracts.MissingMaterials('所选意见仍需补充材料或实验，稿件未修改。')
     if plan.title_instruction or not plan.instructions:
         raise ValueError('Writer must return explicit manuscript modification operations.')
     if any(item.visual_instruction for item in plan.instructions):
         raise ValueError('Paper manuscript editing does not generate visual assets.')
-    if not reviewing:
-        operation_ranges = _operation_ranges(source, plan)
+    operation_ranges = _operation_ranges(source, plan)
     allowed = [bounds for ranges in operation_ranges for bounds in ranges]
     report_progress(50, '正在生成修改内容')
     changes, located_changes = _bounded_replacements(source, allowed, json.loads(editor.generate_string_replace_set(
         markdown_document=source, modify_plan_json=plan.model_dump_json(), writing_context_json=context_json,
     )))
     if reviewing:
-        # Every issue needs an actual edit in its associated operations. This is
+        # Every selected text revision needs an edit in its associated operations. This is
         # mechanical coverage, not proof that the semantic problem was solved.
         for issue in prepared['selected_issues']:
             if issue['action_type'] != 'text_revision':
@@ -214,7 +198,6 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
                 replacement.old_string.replace('\r\n', '\n').replace('\r', '\n') !=
                 replacement.new_string.replace('\r\n', '\n').replace('\r', '\n')
                 and _within_range(start, end, allowed)
-                and _within_range(start, end, [issue_bounds[issue['id']]])
                 for start, end, replacement in located_changes
             )
             if not effective:
@@ -240,7 +223,7 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
     return {'manuscript': body, 'is_demo': False}
 
 def run(inputs):
-    """Revise a manuscript from the current request or the complete current review."""
+    """Revise a manuscript from the current request or selected current review issues."""
     report_progress(10, '正在准备修订材料')
     toolkit = WriterCreateToolkit()
     prepared = prepare_writer_context(inputs, toolkit=toolkit)

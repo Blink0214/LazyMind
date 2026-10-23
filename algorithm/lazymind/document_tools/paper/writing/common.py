@@ -19,7 +19,6 @@ from lazyllm.tools.writer.utils.serialization import (
     markdown_section_range,
     parse_markdown_sections,
     parse_markdown_outline_instructions,
-    strip_heading_numbering,
 )
 
 from .. import contracts
@@ -281,9 +280,10 @@ def prepare_writer_inputs(inputs: dict, *, toolkit=None) -> dict:
     if source.get('review_data') is not None:
         review_data = source['review_data']
         issues = {item['id']: item for item in review_data['issues']}
-        selected_issues = [{**issues[key], 'target': resolve_review_target(issues[key], source['manuscript'])}
-                           for key in source['selected_issue_ids']]
-        review = {**review_data, 'issues': selected_issues}
+        selected_issues = [issues[key] for key in source['selected_issue_ids']]
+        # Only selected recommendations enter the revision context. The full report's
+        # summary may contain instructions about unselected issues.
+        review = {'issues': selected_issues, 'limitations': review_data['limitations']}
     # Build the material rules before context creation: replacement generation
     # receives context and plan, but does not receive the writing task directly.
     query = '\n\n'.join((
@@ -485,35 +485,6 @@ def _validate_manuscript(body, signature, charts, constraints, toolkit, context_
     if not report.result.is_passed:
         raise ValueError('Writer consistency check failed: ' + report.result.summary)
     report_progress(95, '全文一致性检查通过')
-
-def resolve_review_target(issue, manuscript):
-    """Resolve a displayed heading and quote uniquely; never widen failed matches."""
-    location = issue['location'].strip()
-    quote = issue['quote']
-    if location.casefold() in {'全文', '全文级', 'document', 'document_root'}:
-        if quote is not None and quote not in manuscript:
-            raise ValueError('Review quote is not in document.')
-        return {'node_id': None, 'placeholder_id': None, 'heading_path': [],
-                'document_root': True, 'occurrence': 1}
-
-    def normalize(title):
-        title = re.sub(r'^#{1,6}\s+', '', title.strip())
-        return strip_heading_numbering(title)
-
-    wanted = [normalize(x) for x in re.split(r'\s*>\s*|\s*/\s*', location)]
-    matches = []
-    for _, path, occurrence, _ in parse_markdown_sections(manuscript):
-        normalized = [normalize(x) for x in path]
-        if normalized[-len(wanted):] != wanted:
-            continue
-        left, right = markdown_section_range(manuscript, path, occurrence)
-        if quote is not None and quote not in manuscript[left:right]:
-            continue
-        matches.append({'node_id': None, 'placeholder_id': None, 'heading_path': path,
-                        'document_root': False, 'occurrence': occurrence})
-    if len(matches) != 1:
-        raise ValueError('Review location + quote must match exactly one section; missing or ambiguous target.')
-    return matches[0]
 
 def validate_inputs(inputs):
     """Writing-specific prerequisites after the shared material contract."""

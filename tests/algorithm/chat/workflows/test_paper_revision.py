@@ -69,7 +69,7 @@ def test_direct_revision_without_review_does_not_call_model(monkeypatch):
 ])
 def test_review_intent_uses_all_current_issues(monkeypatch, intent, expected):
     monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt:
-                        json.dumps({'intent': intent}))
+                        json.dumps({'intent': intent, **({'selection': 'all'} if intent == 'review' else {})}))
     review = {'issues': [{'id': 'R1'}, {'id': 'R2'}]}
     if expected is None:
         with pytest.raises(contracts.MissingMaterials):
@@ -79,12 +79,12 @@ def test_review_intent_uses_all_current_issues(monkeypatch, intent, expected):
 
 
 def test_review_without_issues_does_not_become_direct_revision(monkeypatch):
-    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt: '{"intent":"review"}')
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt: '{"intent":"review","selection":"all"}')
     with pytest.raises(contracts.MissingMaterials, match='没有待处理意见'):
         revise_document.resolve_review_issues('按审稿修订', {'issues': []})
 
 
-def test_intent_model_cannot_supply_issue_selection(monkeypatch):
+def test_intent_model_cannot_supply_selection_without_explicit_mode(monkeypatch):
     monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt:
                         '{"intent":"review","issue_ids":["R1"]}')
     with pytest.raises(ValueError, match='Invalid revision intent'):
@@ -114,7 +114,7 @@ def test_review_version_is_checked_independently_of_intent(monkeypatch, stale):
     # Matching or stale review never leaks into direct editing context.
     direct = workflow.business_input('revise_document', pool, 'Shorten Discussion only.')
     assert direct['review_data'] is None
-    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt: '{"intent":"review"}')
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt: '{"intent":"review","selection":"all"}')
     pool['selected_issue_ids'] = revise_document.resolve_review_issues('按当前审稿修订', review['review_data'])
     if stale:
         with pytest.raises(ValueError, match='STALE_MATERIAL'):
@@ -122,3 +122,141 @@ def test_review_version_is_checked_independently_of_intent(monkeypatch, stale):
     else:
         inputs = contracts.validate_input('revise_document', workflow.business_input('revise_document', pool, '按审稿修订'))
         assert inputs['selected_issue_ids'] == ['R1']
+
+
+@pytest.mark.parametrize('user_request,selection,expected', [
+    ('先改第1、3条，第2条要补实验，先留着', ['R1', 'R3'], ['R1', 'R3']),
+    ('除了R2都改', ['R3', 'R1', 'R1'], ['R1', 'R3']),
+    ('只改语言类意见', ['R3'], ['R3']),
+])
+def test_partial_review_selection_uses_current_report(monkeypatch, user_request, selection, expected):
+    review = {'issues': [{'id': 'R1', 'category': 'structure'},
+                         {'id': 'R2', 'action_type': 'needs_experiment'},
+                         {'id': 'R3', 'category': 'language'}]}
+    prompts = []
+    def model(prompt):
+        prompts.append(prompt)
+        return json.dumps({'intent': 'review', 'selection': 'subset', 'issue_ids': selection})
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: model)
+    assert revise_document.resolve_review_issues(user_request, review) == expected
+    assert user_request in prompts[0] and 'needs_experiment' in prompts[0]
+
+
+@pytest.mark.parametrize('selection', [[], ['R9'], [1], 'R1'])
+def test_invalid_subset_never_becomes_all(monkeypatch, selection):
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt:
+        json.dumps({'intent': 'review', 'selection': 'subset', 'issue_ids': selection}))
+    with pytest.raises(contracts.MissingMaterials):
+        revise_document.resolve_review_issues('只改指定意见', {'issues': [{'id': 'R1'}]})
+
+
+@pytest.mark.parametrize('partial', [False, True])
+@pytest.mark.parametrize('pending_action', ['needs_material', 'needs_experiment'])
+def test_missing_section_and_partial_review_use_shared_writer(monkeypatch, partial, pending_action):
+    """Real F6 output, pool/API adaptation, Writer application and version preservation."""
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from lazymind.document_tools.paper import peer_review
+    from lazymind.document_tools.paper.review_schema import ReviewResult
+    from lazymind.document_tools.toolkits import WriterRevisionToolkit
+
+    issues = [
+        dict(severity='minor', category='structure', location='缺失章节：局限性', quote=None,
+             problem='缺少局限性章节', suggestion='在讨论后新增局限性，说明现有证据有限。', action_type='text_revision'),
+        dict(severity='minor', category='language', location='Methods', quote='Keep methods.',
+             problem='表达不够清晰', suggestion='重写方法说明。', action_type='text_revision'),
+        dict(severity='minor', category='evidence', location='缺失内容：独立验证', quote=None,
+             problem='缺少独立验证', suggestion='待作者补充验证，当前无可执行的文字修改。', action_type=pending_action),
+    ]
+    review = peer_review.build_output(ReviewResult(summary='必须重写方法说明', issues=issues, limitations=[]),
+                                      {'topic': 'Paper', 'manuscript': BODY})
+    pool = workflow.pool_from_business(dict(topic='Paper', manuscript=BODY,
+                                           review=review['review'], review_data=review['review_data']))
+    pool['selected_issue_ids'] = ['R1', 'R3'] if partial else ['R1', 'R2', 'R3']
+    original_review = workflow.material(pool, 'review_data')['content']
+    addition = '\n\n## Limitations\n现有证据有限，尚不能推广到其他场景。'
+    operations = [dict(content_ref={'heading_path': ['Paper', 'Discussion']}, modify_type='create',
+                       position='after', target_scope='section', instruction='新增局限性章节', meta={'issue_ids': ['R1']})]
+    changes = [dict(content_ref={'heading_path': ['Paper', 'Discussion']},
+                    old_string='Shorten this paragraph.', new_string='Shorten this paragraph.' + addition)]
+    if not partial:
+        operations.append(dict(content_ref={'heading_path': ['Paper', 'Methods']}, modify_type='update',
+                               target_scope='section', instruction='澄清方法', meta={'issue_ids': ['R2']}))
+        changes.append(dict(content_ref={'heading_path': ['Paper', 'Methods']},
+                            old_string='Keep methods.', new_string='Clarified methods.'))
+    locate_result = json.dumps({'target_title': False, 'targets': [
+        {'content_ref': operation['content_ref'], 'reason': operation['instruction']} for operation in operations]})
+    shared = WriterRevisionToolkit()
+    editor = SimpleNamespace(
+        locate_revision_target=Mock(return_value=locate_result),
+        generate_modify_plan=Mock(return_value=json.dumps({'scope': 'document', 'instructions': operations})),
+        generate_string_replace_set=Mock(return_value=json.dumps({'replacements': changes})),
+        apply_string_replace=Mock(wraps=shared.apply_string_replace),
+    )
+    monkeypatch.setattr(revise_document, 'WriterRevisionToolkit', lambda: editor)
+    result = workflow.execute_step('revise_document', pool,
+        '先改第1、3条，第2条先留着' if partial else '按全部审稿意见修改，缺实验的先保留')
+    expected = BODY + addition
+    if not partial:
+        expected = expected.replace('Keep methods.', 'Clarified methods.')
+    assert workflow.material(result['pool'], 'manuscript')['content'] == expected
+    assert workflow.material(pool, 'manuscript')['content'] == BODY
+    assert workflow.material(result['pool'], 'review_data')['content'] == original_review
+    assert workflow.material(result['pool'], 'review_data')['content']['issues'][2]['action_type'] == pending_action
+    locating = editor.locate_revision_target.call_args.kwargs
+    assert '缺失章节：局限性' in locating['writing_task_json']
+    assert editor.generate_modify_plan.call_args.kwargs['locate_result_json'] == locate_result
+    if partial:
+        assert '重写方法说明' not in locating['writing_context_json']
+        assert '重写方法说明' not in locating['writing_task_json']
+        assert 'R2' not in json.dumps(operations)
+    assert editor.apply_string_replace.called
+
+
+@pytest.mark.parametrize('selected', [['R1'], ['R1', 'R2']])
+def test_revision_publication_reports_only_selected_pending_work(tmp_path, monkeypatch, selected):
+    import lazyllm
+    from lazymind.chat.engine.subagent.context import SubAgentContext, set_context
+    from lazymind.document_tools.paper import peer_review
+    from lazymind.document_tools.paper.review_schema import ReviewResult
+    review = peer_review.build_output(ReviewResult.model_validate({
+        'summary': 'Revise discussion', 'limitations': [], 'issues': [
+            dict(severity='minor', category='language', location='Discussion', quote='Shorten this paragraph.',
+                 problem='Verbose', suggestion='Shorten', action_type='text_revision'),
+            dict(severity='minor', category='evidence', location='Missing validation', quote=None,
+                 problem='Missing validation', suggestion='Author must run validation', action_type='needs_experiment'),
+        ]}), {'topic': 'Paper', 'manuscript': BODY})
+    pool = workflow.pool_from_business(dict(topic='Paper', manuscript=BODY,
+        review=review['review'], review_data=review['review_data']))
+    path = tmp_path / 'review-pool.json'
+    path.write_text(json.dumps(pool))
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt:
+        json.dumps({'intent': 'review', 'selection': 'subset', 'issue_ids': selected}))
+    monkeypatch.setattr(revise_document, 'run', lambda inputs:
+        {'manuscript': BODY.replace('Shorten this paragraph.', 'Shortened.'), 'is_demo': False})
+    previous = lazyllm.globals.get('subagent_ctx')
+    events = []
+    slots = ['revise_document_pool', 'revise_document_document']
+    set_context(SubAgentContext(
+        task_id='review-pending', conversation_id='paper-test', agent_type='workflow_step',
+        objective='Revise selected issues', params={
+            'step_id': 'revise_document', 'remote_inputs': {'peer_review_pool': str(path)},
+            'current_user_input': '修改所选意见，待补实验先留着',
+            'output_slot_types': {slot: 'file' for slot in slots},
+        }, workspace_path=str(tmp_path), input_slots=['peer_review_pool'], output_slots=slots,
+        db=None, emit=events.append,
+    ))
+    try:
+        result = workflow.run_paper_step()
+        assert result['status'] == 'completed'
+        final = result['_agent_control']['final_text']
+        assert ('R2 仍需补充材料或实验' in final) == ('R2' in selected)
+        saved = next(e['value']['path'] for e in events if e.get('slot') == 'revise_document_pool'
+                     and e['type'] == 'artifact')
+        persisted = workflow._read_bound(saved)
+        assert workflow.material(persisted, 'review_data')['content'] == review['review_data']
+    finally:
+        if previous is None:
+            lazyllm.globals.pop('subagent_ctx', None)
+        else:
+            lazyllm.globals['subagent_ctx'] = previous
