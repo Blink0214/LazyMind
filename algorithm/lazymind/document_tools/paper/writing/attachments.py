@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from lazyllm import AutoModel
+from lazyllm.tools.writer.tools.base import _WriterJsonFormatter
 
 from ..contracts import MissingMaterials
 
@@ -40,9 +41,7 @@ Respect the user's explicit file descriptions. Do not infer completed experiment
     response = str(AutoModel(model='llm')(prompt + json.dumps({
         'request': request, 'files': [{'filename': item['filename'], 'preview': item['text'][:12000]}
                                     for item in documents]}, ensure_ascii=False))).strip()
-    response = re.sub(r'^(?:<think\b[^>]*>.*?</think>\s*)+', '', response, flags=re.I | re.S)
-    response = re.sub(r'^```(?:json)?\s*|\s*```$', '', response)
-    roles = json.loads(response)
+    roles = _WriterJsonFormatter()(response)
     if (not isinstance(roles, list) or len(roles) != len(documents)
             or any(role not in {'outline', 'paper', 'materials', 'manuscript'} for role in roles)):
         raise ValueError('附件用途识别失败，请明确哪些文件是大纲、文献或写作材料后重试。')

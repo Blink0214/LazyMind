@@ -42,7 +42,10 @@ type WorkflowStepParams struct {
 	StepID      string `json:"step_id"`
 	SessionID   string `json:"session_id"`
 	UserInput   string `json:"user_input"`
-	// LaunchUserInput remains fixed while UserInput carries the current turn.
+	// LaunchUserInput remains fixed. CurrentUserInput is the actual turn input
+	// (also the launch text on cold start); empty means no new turn requirement.
+	// UserInput may fall back to launch intent, including during recovery.
+	// Consumers must not treat cold-start current input as a material override.
 	LaunchUserInput  string `json:"launch_user_input,omitempty"`
 	CurrentUserInput string `json:"current_user_input,omitempty"`
 	IsColdStart      bool   `json:"is_cold_start"`
@@ -106,11 +109,13 @@ type WorkflowStepParams struct {
 // asMap serialises the params into the generic map expected by subagent.RunRequest.Params.
 func (p WorkflowStepParams) asMap() map[string]any {
 	m := map[string]any{
-		"workflow_id":   p.WorkflowID,
-		"step_id":       p.StepID,
-		"session_id":    p.SessionID,
-		"user_input":    p.UserInput,
-		"is_cold_start": p.IsColdStart,
+		"workflow_id":        p.WorkflowID,
+		"step_id":            p.StepID,
+		"session_id":         p.SessionID,
+		"user_input":         p.UserInput,
+		"launch_user_input":  p.LaunchUserInput,
+		"current_user_input": p.CurrentUserInput,
+		"is_cold_start":      p.IsColdStart,
 	}
 	if p.WorkflowMode != "" {
 		m["workflow_mode"] = p.WorkflowMode
@@ -554,11 +559,13 @@ func launchWorkflowAttempt(
 		params.HistoryFilesPerTurn = historyFilesFromParentAgentic(params.ParentAgenticConfig)
 	}
 	rawParamsMap := map[string]any{
-		"workflow_id":   workflowID,
-		"step_id":       stepID,
-		"session_id":    sessionID,
-		"user_input":    params.UserInput,
-		"is_cold_start": isCold,
+		"workflow_id":        workflowID,
+		"step_id":            stepID,
+		"session_id":         sessionID,
+		"user_input":         params.UserInput,
+		"launch_user_input":  params.LaunchUserInput,
+		"current_user_input": params.CurrentUserInput,
+		"is_cold_start":      isCold,
 	}
 	refOrID := params.WorkflowRef
 	if refOrID == "" {

@@ -92,7 +92,7 @@ interface WriterMarkdownTargetBinding {
   level?: number;
   signature: string;
   outlineInstructionLine?: string;
-  paperChartsLine?: string;
+  paperChartsLines?: string[];
 }
 
 interface WriterMarkdownImageTarget {
@@ -185,6 +185,7 @@ function writerMarkdownTargetBindings(
   let fenceCharacter = '';
   let fenceLength = 0;
   let currentHeadingIndex: number | undefined;
+  let chartHeadingIndex: number | undefined;
 
   markdown.split(/\r?\n/).forEach((line, lineIndex) => {
     const fence = line.match(/^\s*(`{3,}|~{3,})/);
@@ -210,8 +211,8 @@ function writerMarkdownTargetBindings(
       return;
     }
     if (PAPER_CHARTS_LINE_RE.test(trimmed)) {
-      if (currentHeadingIndex !== undefined) {
-        bindings[currentHeadingIndex].paperChartsLine = trimmed;
+      if (chartHeadingIndex !== undefined) {
+        (bindings[chartHeadingIndex].paperChartsLines ??= []).push(trimmed);
       }
       return;
     }
@@ -239,6 +240,7 @@ function writerMarkdownTargetBindings(
         signature: `${heading[1].length}:${heading[2]?.trim() ?? ''}`,
       });
       currentHeadingIndex = bindings.length - 1;
+      chartHeadingIndex = currentHeadingIndex;
     } else {
       currentHeadingIndex = undefined;
       const image = writerMarkdownImageTarget(trimmed);
@@ -383,7 +385,7 @@ export function protectWriterMarkdownAnchors(
       const previousTarget = previous.find(
         (item) => item.anchorId === assignment.anchorId && item.type === 'heading',
       );
-      const sidecars = [previousTarget?.outlineInstructionLine, previousTarget?.paperChartsLine]
+      const sidecars = [previousTarget?.outlineInstructionLine, ...(previousTarget?.paperChartsLines ?? [])]
         .filter((line): line is string => Boolean(line));
       if (sidecars.length) insertAfter.set(target.lineIndex, sidecars.join('\n'));
     }

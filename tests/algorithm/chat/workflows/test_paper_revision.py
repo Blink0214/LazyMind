@@ -38,6 +38,20 @@ def test_direct_business_input_omits_historical_review():
     assert inputs['manuscript'] == BODY
 
 
+@pytest.mark.parametrize('step', ['peer_review', 'revise_document'])
+def test_updated_research_materials_do_not_block_existing_manuscript(step):
+    import copy
+    pool = workflow.pool_from_business({'topic': 'Paper', 'evidence': 'Original evidence'})
+    original_evidence = copy.deepcopy(pool['current']['evidence'])
+    workflow.add_material(pool, 'manuscript', BODY, [original_evidence], [])
+    workflow.add_material(pool, 'evidence', 'Additional verified evidence', [original_evidence], [])
+    before = copy.deepcopy(pool)
+    inputs = contracts.validate_input(step, workflow.business_input(step, pool, 'Use the updated evidence.'))
+    assert inputs['manuscript'] == BODY
+    assert inputs['evidence'] == 'Additional verified evidence'
+    assert pool == before
+
+
 def test_initial_direct_revision_restores_launch_request_only_without_pool():
     pool = workflow.pool_from_business({'topic': 'Paper', 'manuscript': BODY})
     params = {'step_id': 'revise_document', 'user_input': 'Shorten Discussion only.'}
@@ -60,6 +74,19 @@ def test_revision_keeps_existing_outline_material_version(monkeypatch):
 def test_direct_revision_without_review_does_not_call_model(monkeypatch):
     monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: pytest.fail('unnecessary scope model'))
     assert revise_document.resolve_review_issues('只缩短讨论段落', None) == []
+
+
+@pytest.mark.parametrize('selected', ['R1', 'R9'])
+def test_revision_intent_uses_writer_parser_and_keeps_selection_validation(monkeypatch, selected):
+    response = json.dumps({'intent': 'review', 'selection': 'subset', 'issue_ids': [selected]})
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt:
+                        '<think>selection</think>\n```json\n' + response + '\n```')
+    review = {'issues': [{'id': 'R1'}]}
+    if selected == 'R1':
+        assert revise_document.resolve_review_issues('只改 R1', review) == ['R1']
+    else:
+        with pytest.raises(contracts.MissingMaterials):
+            revise_document.resolve_review_issues('只改 R1', review)
 
 
 @pytest.mark.parametrize('intent,expected', [

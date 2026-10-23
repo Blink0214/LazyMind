@@ -267,6 +267,9 @@ func TestExecuteStaleStepPreservesLaunchIntent(t *testing.T) {
 	if params["user_input"] != "写一篇克苏鲁小说" {
 		t.Fatalf("user_input=%v, want launch intent", params["user_input"])
 	}
+	if params["current_user_input"] != "回退到大纲，需要包含二级标题" || params["launch_user_input"] != "写一篇克苏鲁小说" {
+		t.Fatalf("recovery lost current or launch input: %#v", params)
+	}
 	if params["retry_hint"] != "Recovery request for this rerun only: 回退到大纲，需要包含二级标题" {
 		t.Fatalf("retry_hint=%v, want current recovery request", params["retry_hint"])
 	}
@@ -295,6 +298,9 @@ func TestExecuteFreshStepKeepsCurrentInput(t *testing.T) {
 	}
 	if params["user_input"] != "当前请求" {
 		t.Fatalf("user_input=%v, want current input", params["user_input"])
+	}
+	if params["current_user_input"] != "当前请求" || params["launch_user_input"] != "原始请求" {
+		t.Fatalf("transition lost current or launch input: %#v", params)
 	}
 	if _, exists := params["retry_hint"]; exists {
 		t.Fatalf("fresh execution unexpectedly received retry_hint=%v", params["retry_hint"])

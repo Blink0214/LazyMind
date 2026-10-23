@@ -147,38 +147,14 @@ def seed_pool() -> dict:
     return validate_pool(pool)
 
 
-def validate_manuscript_sources(pool: dict) -> None:
-    """Do not silently review an existing manuscript against unrelated newer research."""
-    manuscript = material(pool, 'manuscript')
-    if not manuscript:
-        return
-    indexed = {(item['id'], item['version']): item for item in pool['materials']}
-    seen = set()
-    pending = [manuscript]
-    while pending:
-        item = pending.pop()
-        key = (item['id'], item['version'])
-        if key in seen:
-            continue
-        seen.add(key)
-        research = [indexed[(ref['id'], ref['version'])] for ref in item['derived_from']
-                    if indexed[(ref['id'], ref['version'])]['kind'] in {'papers', 'evidence', 'analysis', 'charts'}]
-        if research:
-            for source in research:
-                if pool['current'].get(source['kind']) != {'id': source['id'], 'version': source['version']}:
-                    raise ValueError('STALE_MATERIAL: 稿件关联研究材料已变更，请明确重新绑定或重新写作')
-            return
-        pending.extend(indexed[(ref['id'], ref['version'])] for ref in item['derived_from']
-                       if indexed[(ref['id'], ref['version'])]['kind'] == 'manuscript')
-
-
 def business_input(step: str, pool: dict, request: str = '') -> dict:
     module = contracts.ALIASES.get(step, step)
     value = {'topic': pool['topic'], 'request': request}
     if module in contracts.CONSTRAINED_MODULES:
         value['constraints'] = copy.deepcopy(pool.get('constraints', {}))
     if step in {'peer_review', 'revise_document'}:
-        validate_manuscript_sources(pool)
+        # New research materials may inform the existing manuscript. Review freshness
+        # is checked against manuscript/report digests by the revision contract.
         from .publication import validate_chart_references, figure_catalog
         manuscript, charts = material(pool, 'manuscript'), material(pool, 'charts')
         if manuscript:
@@ -538,7 +514,12 @@ def _runtime_request(params: dict) -> tuple[str, str]:
     instruction = str(params.get('retry_hint') or params.get('runtime_instruction') or '').strip()
     # Core restores launch intent in user_input on rewind; the new request is in retry_hint.
     recovery = instruction.partition('Recovery request for this rerun only:')[2].strip()
-    if 'current_user_input' in params:
+    if params.get('step_id') == 'data_analysis':
+        # Before PR #83 Core did not expose current_user_input to algorithms.
+        # Keep that F4 contract; Writer independently consumes the new field.
+        values = (recovery, params.get('user_input'), params.get('launch_user_input'))
+        request = next((text for value in values if (text := _business_request(value))), '')
+    elif 'current_user_input' in params:
         request = str(params['current_user_input'] or recovery or '').strip()
     elif contracts.ALIASES.get(params.get('step_id'), params.get('step_id')) in contracts.CURRENT_REQUEST_MODULES:
         request = recovery
@@ -611,6 +592,17 @@ def _pool_from_entry(value: dict, request: str, *, fallback_topic: str = '') -> 
 
 def _step_request(step: str, pool: dict, params: dict, bound: dict | None = None) -> str:
     """Keep requirements step-scoped, while restoring saved requirements on retry."""
+    if step == 'data_analysis':
+        request, instruction = _runtime_request({**params, 'step_id': step})
+        recovery = instruction.partition('Recovery request for this rerun only:')[2].strip()
+        if _business_request(recovery):
+            return request
+        # Restore the pre-PR input contract: only recovery can override materials.
+        previous = ''
+        if recovery:
+            previous = next((_business_request(item.get('request')) for item in reversed(pool['history'])
+                             if item['node'] == STEP_NODE[step] and _business_request(item.get('request'))), '')
+        return previous or _business_request(pool.get('request')) or request
     bound = bound if bound is not None else params.get('remote_inputs', {})
     current, instruction = _runtime_request(params)
     current = _business_request(current)

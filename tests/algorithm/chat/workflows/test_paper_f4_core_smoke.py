@@ -247,6 +247,9 @@ def test_json_attachment_binding_stays_in_analysis(tmp_path, monkeypatch):
     source = tmp_path / 'data.json'
     value = {'topic': 'Analysis', 'data': {'columns': ['score'], 'column_types': ['number'],
              'units': [None], 'rows': [[1], [2], [3]]}}
+    value.update(request='只分析附件中的得分',
+                 papers=[{'id': 'SRC-001', 'title': '测试来源', 'text': '虚构测试材料'}],
+                 evidence='[SRC-001] 测试证据')
     source.write_text(json.dumps(value))
     lazyllm.globals['agentic_config'] = {'history_files_per_turn': {'1': [str(source)]}}
     assert attachments.workflow_input_bindings({}, '根据上传附件写论文') == {}
@@ -262,3 +265,8 @@ def test_json_attachment_binding_stays_in_analysis(tmp_path, monkeypatch):
     assert json.loads(Path(bound['paper_input']).read_text()) == value
     pool = workflow.initialize_pool(bound, '分析数据')
     assert workflow.material(pool, 'data')['content']['rows'] == [[1], [2], [3]]
+    request = workflow._step_request('data_analysis', pool, {'user_input': '启动请求和实验授权问答'})
+    assert request == value['request']
+    writing = workflow.business_input('write_outline', pool, value['request'])
+    assert writing['papers'] == value['papers']
+    assert writing['evidence'] == value['evidence']

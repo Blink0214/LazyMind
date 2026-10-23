@@ -7,6 +7,19 @@ from lazymind.document_tools.paper.writing import write_outline
 from lazymind.document_tools.paper.writing.attachments import select_files
 
 
+@pytest.mark.parametrize('payload', ['["paper", "materials"]', '["paper"]', '["unknown", "materials"]'])
+def test_attachment_roles_use_writer_parser_and_keep_role_validation(monkeypatch, payload):
+    from lazymind.document_tools.paper.writing import attachments
+    monkeypatch.setattr(attachments, 'AutoModel', lambda **kw: lambda prompt:
+                        '<think>classification</think>\n```json\n' + payload + '\n```')
+    documents = [{'filename': name, 'text': 'Source text'} for name in ('paper.md', 'notes.md')]
+    if payload == '["paper", "materials"]':
+        assert attachments.classify_markdown(documents, 'Use the sources') == ['paper', 'materials']
+    else:
+        with pytest.raises(ValueError, match='附件用途识别失败'):
+            attachments.classify_markdown(documents, 'Use the sources')
+
+
 def test_latest_attachment_batch_does_not_mix_old_outline():
     assert select_files({'history_files_per_turn': {'1': ['old.md'], '2': ['new.md', 'chart.svg']}}) == ['new.md', 'chart.svg']
     assert select_files({'history_files_per_turn': {'1': ['old.md'], '2': ['unsupported.zip']}}) == []

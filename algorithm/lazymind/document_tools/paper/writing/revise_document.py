@@ -8,7 +8,7 @@ import copy
 from ..runtime_events import current_events, report_progress
 import json
 from lazyllm import AutoModel
-import re
+from lazyllm.tools.writer.tools.base import _WriterJsonFormatter
 from lazyllm.tools.writer.utils import locate_markdown_paragraph
 from lazyllm.tools.writer.utils.serialization import markdown_section_range
 
@@ -36,9 +36,7 @@ def resolve_review_issues(request, review):
     raw = str(AutoModel(model='llm')(REVISION_SCOPE_INSTRUCTIONS + _json({
         'request': request, 'issues': review['issues'],
     }))).strip()
-    raw = re.sub(r'^(?:<think\b[^>]*>.*?</think>\s*)+', '', raw, flags=re.I | re.S)
-    raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw)
-    result = json.loads(raw)
+    result = _WriterJsonFormatter()(raw)
     if not isinstance(result, dict):
         raise ValueError('Invalid revision intent response')
     intent = result.get('intent')

@@ -63,6 +63,7 @@ func TestLaunchWorkflowAttemptCreatesTaskCenterRowAtomically(t *testing.T) {
 		WorkflowStepParams{
 			WorkflowID: "ppt-workflow", StepID: "analyze_requirements",
 			IsColdStart: true, WorkflowMode: "dynamic", Capabilities: []string{"web_search"},
+			UserInput: "只修改第3、7、9条", CurrentUserInput: "只修改第3、7、9条", LaunchUserInput: "请审稿",
 		},
 		nil, nil, nil, nil, false, false,
 	)
@@ -89,6 +90,9 @@ func TestLaunchWorkflowAttemptCreatesTaskCenterRowAtomically(t *testing.T) {
 		t.Fatalf("decode params: %v", err)
 	}
 	capabilities, _ := params["capabilities"].([]any)
+	if params["current_user_input"] != "只修改第3、7、9条" || params["launch_user_input"] != "请审稿" {
+		t.Fatalf("current selection or launch intent missing from persisted task: %#v", params)
+	}
 	if len(capabilities) != 1 || capabilities[0] != "web_search" {
 		t.Fatalf("capabilities not persisted: %#v", params)
 	}
