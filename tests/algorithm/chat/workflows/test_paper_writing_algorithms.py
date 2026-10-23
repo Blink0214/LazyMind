@@ -10,11 +10,18 @@ ROOT = Path(__file__).resolve().parents[4]
 PACKAGE = ROOT / 'workflows/paper-writing'
 EXAMPLES = ROOT / 'tests/fixtures/paper-writing'
 from lazymind.document_tools.paper import api
+from lazymind.document_tools.paper import reading_reflection
 from lazymind.document_tools.paper import research_topic
 from lazymind.document_tools.paper import workflow as tools
 
 TOPIC_MARKDOWN = '# 研究选题\n\n## 研究问题\n现有方法能否改善效果？\n\n## 证据状态\n尚待核验。'
 REFINED_TOPIC_MARKDOWN = TOPIC_MARKDOWN + '\n\n## 文献反馈与调整依据\n根据综述调整验证路线。'
+REFLECTION_MARKDOWN = ('# 阅读心得\n\n## 阅读范围\n本次阅读 P1 与 P2。\n\n## 核心理解与比较\n'
+                       '两篇论文分别关注证据组织与引用核验。[P1] [P2]\n\n## 启发与局限\n'
+                       '当前结论仅基于所提供材料。')
+SINGLE_REFLECTION_MARKDOWN = ('# 阅读心得\n\n## 阅读范围\n本次阅读 P1。\n\n## 核心理解\n'
+                              '论文讨论证据组织。[P1]\n\n## 启发与局限\n'
+                              '当前结论仅基于所提供材料。')
 
 
 @pytest.fixture
@@ -25,7 +32,13 @@ def mock_topic_model(monkeypatch):
     ))
 
 
-@pytest.mark.usefixtures('mock_topic_model')
+@pytest.fixture
+def mock_reflection_model(monkeypatch):
+    monkeypatch.setattr(reading_reflection, 'AutoModel',
+                        lambda **_kwargs: lambda _prompt: REFLECTION_MARKDOWN)
+
+
+@pytest.mark.usefixtures('mock_topic_model', 'mock_reflection_model')
 @pytest.mark.parametrize('step', list(tools.STEP_NODE))
 def test_independent_algorithm_contract(step):
     example = json.loads((EXAMPLES / (step + '.json')).read_text())
@@ -39,7 +52,7 @@ def test_independent_algorithm_contract(step):
     assert not {'pool', 'current', 'history', 'schema', 'remote_inputs'} & example['input'].keys()
 
 
-@pytest.mark.usefixtures('mock_topic_model')
+@pytest.mark.usefixtures('mock_topic_model', 'mock_reflection_model')
 @pytest.mark.parametrize('step,fields', [
     ('research_topic', {}), ('literature_review', {}),
     ('data_analysis', {'data': {'columns': ['score'], 'rows': [[1]]}}),
@@ -136,8 +149,6 @@ def test_paper_contract_rejects_metadata_without_content(fields):
         tools.pool_from_business({'topic': 'T', 'papers': [{'id': 'P1', 'title': '论文', **fields}]})
 
 
-
-
 @pytest.mark.parametrize('source,expected', [
     ('## Abstract\nA study.\n## Introduction\nBody.', 'A study.'),
     ('Abstract: A study.\nKeywords: retrieval', 'A study.'),
@@ -217,6 +228,32 @@ def test_f1_paper_chunks_use_full_prompt_budget_without_losing_text(monkeypatch)
     assert all(len(research_topic._note_prompt(chunk, paper)) <= chunk_limit for chunk in chunks)
 
 
+@pytest.mark.parametrize('texts,limit,expected', [
+    ([], 4, []), (['a'], 3, [['a']]),
+    (['a', 'b', 'c'], 6, [['a', 'b'], ['c']]),
+    (['a', 'b', 'c'], 5, [['a'], ['b'], ['c']]),
+])
+def test_paper_budget_groups_preserve_order_and_count_prompt_overhead(texts, limit, expected, monkeypatch):
+    monkeypatch.setattr(research_topic, 'estimate_tokens', len)
+    before = list(texts)
+    groups = research_topic.group_texts_by_prompt_budget(
+        texts, lambda source: f'[{source}]', limit, overflow_message='输入超预算',
+    )
+    assert groups == expected
+    assert [text for group in groups for text in group] == texts == before
+
+
+def test_paper_budget_helpers_preserve_caller_errors_and_empty_input(monkeypatch):
+    monkeypatch.setattr(research_topic, 'estimate_tokens', len)
+    for function, source in [(research_topic.split_text_by_prompt_budget, 'a'),
+                             (research_topic.group_texts_by_prompt_budget, ['a'])]:
+        with pytest.raises(ValueError, match='指定的预算错误'):
+            function(source, lambda text: f'[{text}]', 2, overflow_message='指定的预算错误')
+    assert research_topic.split_text_by_prompt_budget(
+        '', lambda text: f'[{text}]', 2, overflow_message='指定的预算错误',
+    ) == []
+
+
 def test_f1_prompt_limit_uses_active_model_budget_and_128k_fallback(monkeypatch):
     import lazyllm
     from lazymind.chat.engine.agent_runtime.budget import build_context_budget
@@ -285,6 +322,214 @@ def test_f1_rejects_invalid_model_output_without_publishing(invalid, monkeypatch
     assert pool == before
 
 
+@pytest.mark.parametrize('fields,expected', [
+    ({'text': '全文'}, {'text': '全文'}),
+    ({'abstract': '摘要'}, {'abstract': '摘要'}),
+    ({'text': '全文', 'abstract': '摘要'}, {'text': '全文'}),
+    ({'text': ' ', 'abstract': '摘要'}, {'abstract': '摘要'}),
+])
+@pytest.mark.parametrize('user_request', ['总结阅读启发', '结合我的研究方向：证据可追溯性'])
+def test_f7_single_paper_uses_chinese_markdown_prompt_without_evidence(fields, expected, user_request, monkeypatch):
+    prompts = []
+    monkeypatch.setattr(reading_reflection, 'AutoModel', lambda **_kwargs: lambda prompt: (
+        prompts.append(prompt) or SINGLE_REFLECTION_MARKDOWN
+    ))
+    inputs = {'topic': '证据组织', 'request': user_request,
+              'papers': [{'id': 'P1', 'title': '论文一', **fields}]}
+    before = copy.deepcopy(inputs)
+    result = tools.run_algorithm('reading_reflection', inputs)
+    model_input = json.loads(prompts[0].split('Input materials (JSON):\n', 1)[1])
+    assert result == {'reflection': SINGLE_REFLECTION_MARKDOWN, 'is_demo': False}
+    assert inputs == before
+    assert len(prompts) == 1
+    assert model_input['papers'] == [{'id': 'P1', 'title': '论文一', **expected}]
+    assert model_input['request'] == user_request
+    assert model_input['evidence'] is None
+    assert 'Exactly one paper is provided' in prompts[0]
+    assert 'Return only one Markdown document written in Chinese' in prompts[0]
+    assert 'do not claim access to any content outside the input' in prompts[0]
+    assert 'Missing details in an abstract do not prove' in prompts[0]
+    assert 'A generic request to generate a reflection is not a research direction' in prompts[0]
+    assert 'Prioritize explicitly stated research interests' in prompts[0]
+
+
+def test_f7_multiple_papers_uses_f2_evidence_as_supporting_context(monkeypatch):
+    prompts = []
+    monkeypatch.setattr(reading_reflection, 'AutoModel', lambda **_kwargs: lambda prompt: (
+        prompts.append(prompt) or REFLECTION_MARKDOWN
+    ))
+    evidence = '# 文献综述\nP1 讨论组织，P2 讨论核验。'
+    result = tools.run_algorithm('reading_reflection', {
+        'topic': '证据可追溯性', 'request': '比较两种方法',
+        'papers': [
+            {'id': 'P1', 'title': '论文一', 'text': '研究证据组织。'},
+            {'id': 'P2', 'title': '论文二', 'abstract': '研究引用核验。'},
+        ],
+        'evidence': evidence,
+    })
+    model_input = json.loads(prompts[0].split('Input materials (JSON):\n', 1)[1])
+    assert result == {'reflection': REFLECTION_MARKDOWN, 'is_demo': False}
+    assert model_input['evidence'] == evidence
+    assert 'text' in model_input['papers'][0] and 'abstract' in model_input['papers'][1]
+    assert 'Multiple papers are provided' in prompts[0]
+    assert 'optional evidence field is a literature review' in prompts[0]
+    assert 'Do not concatenate paper-by-paper summaries' in prompts[0]
+    assert 'experimental conditions are comparable' in prompts[0]
+    assert 'state the evidence scope for each paper, including mixed inputs' in prompts[0]
+
+
+@pytest.mark.parametrize('source_field', ['text', 'abstract'])
+def test_f7_long_paper_condenses_without_mutating_source_pool(source_field, monkeypatch):
+    paper = {'id': 'P1', 'title': '长论文', source_field: ''.join(
+        f'<!-- page:{page} -->\n第{page}页材料。' + '核心论点、方法、结果与局限。' * 190 + '\n'
+        for page in range(1, 5)
+    )}
+    papers = [paper, {'id': 'P2', 'title': '另一篇论文', 'abstract': '另一篇摘要'}]
+    pool = tools.pool_from_business({'topic': '研究主题', 'papers': papers})
+    before = copy.deepcopy(pool)
+    prompts = []
+    monkeypatch.setattr(reading_reflection, '_prompt_token_limit', lambda: 5000)
+    monkeypatch.setattr(reading_reflection, 'estimate_tokens', len)
+    monkeypatch.setattr(research_topic, 'estimate_tokens', len)
+
+    def model(prompt):
+        prompts.append(prompt)
+        if 'Input materials (JSON):\n' in prompt:
+            return SINGLE_REFLECTION_MARKDOWN
+        note_input = json.loads(prompt.split('\n', 1)[1])
+        return f'[{note_input["paper_id"]}] 核心论点与局限。'
+
+    monkeypatch.setattr(reading_reflection, 'AutoModel', lambda **_kwargs: model)
+    result = tools.execute_step('reading_reflection', pool)
+    final_input = json.loads(prompts[-1].split('Input materials (JSON):\n', 1)[1])
+    assert len(prompts) > 2
+    assert all(len(prompt) <= 5000 for prompt in prompts)
+    assert [item['id'] for item in final_input['papers']] == ['P1', 'P2']
+    kind = 'full-text' if source_field == 'text' else 'abstract-only'
+    assert f'Reading notes derived from {kind}' in final_input['papers'][0][source_field]
+    assert '[P1]' in final_input['papers'][0][source_field]
+    assert '[P2]' in final_input['papers'][1]['abstract']
+    note_inputs = [json.loads(prompt.split('\n', 1)[1]) for prompt in prompts[:-1]]
+    assert all(item['source_kind'] == ('full_text' if source_field == 'text' else 'abstract')
+               for item in note_inputs if item['paper_id'] == 'P1')
+    assert result['document'] == SINGLE_REFLECTION_MARKDOWN
+    assert pool == before
+    assert tools.material(result['pool'], 'papers')['content'] == papers
+
+
+@pytest.mark.parametrize('inputs,error', [
+    ({'papers': [{'id': 'P1', 'title': '论文', 'text': '全文'}]}, 'topic'),
+    ({'topic': 'T', 'papers': []}, '缺少材料'),
+    ({'topic': 'T', 'papers': [{'id': 'P1', 'title': '论文', 'abstract': '', 'text': None}]}, '摘要或全文'),
+])
+def test_f7_invalid_inputs_stop_before_model(inputs, error, monkeypatch):
+    monkeypatch.setattr(reading_reflection, 'AutoModel', lambda **_: pytest.fail('invalid input reached model'))
+    with pytest.raises(ValueError, match=error):
+        tools.run_algorithm('reading_reflection', inputs)
+
+
+def test_f7_chunks_preserve_source_and_use_complete_prompt_budget(monkeypatch):
+    paper = {'id': 'P1', 'title': '论文', 'text': ''}
+    source = '\n  <!-- page:1 -->\n' + '  原文带空白和换行。\r\n' * 30 + '\n<!-- page:2 -->\n尾部  '
+    monkeypatch.setattr(research_topic, 'estimate_tokens', len)
+    full_limit = len(reading_reflection._note_prompt(source, 'T', '阅读要求', paper))
+    assert reading_reflection._paper_chunks(source, 'T', '阅读要求', paper, full_limit) == [source]
+    overhead = len(reading_reflection._note_prompt('', 'T', '阅读要求', paper))
+    chunks = reading_reflection._paper_chunks(source, 'T', '阅读要求', paper, overhead + 80)
+    assert len(chunks) > 1
+    assert ''.join(chunks) == source
+    assert all(len(reading_reflection._note_prompt(chunk, 'T', '阅读要求', paper)) <= overhead + 80
+               for chunk in chunks)
+    with pytest.raises(ValueError, match='片段提示超出'):
+        reading_reflection._paper_chunks(source, 'T', '阅读要求', paper, overhead)
+
+
+def test_f7_notes_over_400_tokens_merge_by_complete_prompt_budget(monkeypatch):
+    paper = {'id': 'P1', 'title': '论文', 'text': '原文'}
+    summary = '中' * 1600
+    assert reading_reflection.estimate_tokens(summary) > 400
+    monkeypatch.setattr(reading_reflection, 'estimate_tokens', len)
+    monkeypatch.setattr(research_topic, 'estimate_tokens', len)
+    limit = len(reading_reflection._note_prompt('', 'T', '要求', paper)) + 3500
+    monkeypatch.setattr(reading_reflection, '_paper_chunks', lambda *_: [f'chunk-{i}' for i in range(5)])
+    merged_sizes = []
+
+    def model(prompt):
+        assert len(prompt) <= limit
+        source = json.loads(prompt.split('\n', 1)[1])['source']
+        if source.startswith('chunk-'):
+            return '<think>分析</think>\n' + summary
+        merged_sizes.append(source.count(summary))
+        return '合并后的阅读笔记'
+
+    monkeypatch.setattr(reading_reflection, 'AutoModel', lambda **_: model)
+    result = reading_reflection._condensed_papers([paper], 'T', '要求', limit)
+    assert result[0]['text'].endswith('合并后的阅读笔记')
+    assert max(merged_sizes) == 2
+    assert paper['text'] == '原文'
+
+
+@pytest.mark.parametrize('note,error', [
+    ('', '阅读笔记为空'), ('<think>未结束', '思考内容未闭合'),
+    ('中' * 5000, '超出合并输入预算'), ('中' * 2500, '无法在输入预算内继续合并'),
+])
+def test_f7_note_failures_are_bounded(note, error, monkeypatch):
+    paper = {'id': 'P1', 'title': '论文', 'text': '原文'}
+    monkeypatch.setattr(reading_reflection, 'estimate_tokens', len)
+    monkeypatch.setattr(research_topic, 'estimate_tokens', len)
+    limit = len(reading_reflection._note_prompt('', 'T', '', paper)) + 3500
+    monkeypatch.setattr(reading_reflection, '_paper_chunks', lambda *_: ['chunk-1', 'chunk-2'])
+    calls = []
+    monkeypatch.setattr(reading_reflection, 'AutoModel',
+                        lambda **_: lambda prompt: calls.append(prompt) or note)
+    with pytest.raises(ValueError, match=error):
+        reading_reflection._condensed_papers([paper], 'T', '', limit)
+    assert len(calls) <= 2
+    assert paper['text'] == '原文'
+
+
+def test_f7_oversized_note_prompt_is_not_sent(monkeypatch):
+    monkeypatch.setattr(reading_reflection, 'AutoModel', lambda **_: pytest.fail('oversized prompt sent'))
+    with pytest.raises(ValueError, match='超出模型输入预算'):
+        reading_reflection._condense('正文', 'T', '', {'id': 'P1', 'title': '论文', 'text': '正文'}, 1)
+
+
+def test_f7_final_budget_includes_evidence_after_condensing(monkeypatch):
+    monkeypatch.setattr(reading_reflection, '_prompt_token_limit', lambda: 5000)
+    monkeypatch.setattr(reading_reflection, 'estimate_tokens', len)
+    monkeypatch.setattr(research_topic, 'estimate_tokens', len)
+    calls = []
+
+    def model(prompt):
+        assert len(prompt) <= 5000
+        assert 'Input materials (JSON):\n' not in prompt
+        calls.append(prompt)
+        return '[P1] 阅读笔记'
+
+    monkeypatch.setattr(reading_reflection, 'AutoModel', lambda **_: model)
+    inputs = {'topic': 'T', 'papers': [{'id': 'P1', 'title': '论文', 'abstract': '摘要'}],
+              'evidence': '综述' * 3000}
+    before = copy.deepcopy(inputs)
+    with pytest.raises(ValueError, match='提炼后仍超出'):
+        tools.run_algorithm('reading_reflection', inputs)
+    assert len(calls) == 1
+    assert inputs == before
+
+
+@pytest.mark.parametrize('invalid', [
+    '', '```\n# 阅读心得\n```', '## 阅读心得\n内容', '<think>未完成',
+])
+def test_f7_rejects_invalid_model_output_without_publishing(invalid, monkeypatch):
+    monkeypatch.setattr(reading_reflection, 'AutoModel', lambda **_kwargs: lambda _prompt: invalid)
+    pool = tools.pool_from_business({'topic': 'T', 'papers': [
+        {'id': 'P1', 'title': '论文', 'text': '论文内容'},
+    ]})
+    before = copy.deepcopy(pool)
+    with pytest.raises(ValueError, match='阅读心得输出'):
+        tools.execute_step('reading_reflection', pool)
+    assert pool == before
+
+
 def test_f2_feedback_refines_f1_question_without_overwriting_evidence(monkeypatch):
     old_question = '# 旧选题\n\n## 研究问题\n原方法能否改善效果？'
     papers = [{'id': 'P1', 'title': '论文一', 'abstract': '原有摘要'}]
@@ -339,7 +584,7 @@ def test_one_real_algorithm_replacement_preserves_storage_and_next_input(monkeyp
     assert tools.material(result['pool'], 'evidence')['content'] == '# 新综述\n根据新选题完成'
 
 
-@pytest.mark.usefixtures('mock_topic_model')
+@pytest.mark.usefixtures('mock_topic_model', 'mock_reflection_model')
 @pytest.mark.parametrize('path', [
     ['research_topic', 'literature_review', 'refine_topic', 'literature_review'],
     ['literature_review', 'write_document', 'peer_review', 'revise_document', 'peer_review'],
