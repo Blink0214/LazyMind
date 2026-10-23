@@ -12,9 +12,7 @@ from matplotlib.text import Text
 
 
 def paper_axes(ax, title, xlabel, ylabel, grid):
-    marker = title.split()[0] if title else ''
-    marker = marker if len(marker) == 3 and marker[0] == '(' and marker[2] == ')' and marker[1].isalpha() else ''
-    ax.set_title(marker, fontsize=9, pad=6, fontweight='normal')
+    ax.set_title(title, fontsize=9, pad=6, fontweight='normal')
     ax.set_xlabel(xlabel, labelpad=3.5)
     ax.set_ylabel(ylabel, labelpad=4)
     for side, spine in ax.spines.items():
@@ -41,6 +39,12 @@ def configure(style):
     base, selected = profile['base'], profile['styles'][style]
     plt.rcParams.update({**base['rc'], **selected.get('rc', {}),
                          'pdf.fonttype': 42, 'ps.fonttype': 42, 'svg.fonttype': 'none'})
+    fonts = {font.name for font in font_manager.fontManager.ttflist}
+    fallback = next((name for name in ('Noto Serif CJK SC', 'Noto Serif CJK JP',
+                                      'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Arial Unicode MS')
+                     if name in fonts), None)
+    if fallback:
+        plt.rcParams['font.family'] = [*plt.rcParams['font.serif'], fallback]
     return base
 
 

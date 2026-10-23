@@ -97,11 +97,14 @@ def draw_heatmap(ax, values, row_labels, column_labels, title, xlabel, ylabel,
     return image
 
 
-def draw_point_intervals(ax, summaries, methods, categories, colors, edges, markers, title, xlabel, xlim):
+def draw_point_intervals(ax, summaries, methods, categories, colors, edges, markers, title, xlabel, xlim,
+                         category_styles):
     """Verified [estimate, low, high] triples; null endpoints mean a point without an interval."""
     if (not methods or len(set(methods)) != len(methods)
             or any(len(style) != len(methods) for style in [colors, edges, markers])):
         raise ValueError('Every distinct method needs its own supplied appearance; do not truncate groups')
+    if category_styles is not None and len(category_styles) != len(categories):
+        raise ValueError('Category appearance requires one identity per category')
     paper_axes(ax, title, xlabel, '', False)
     offsets = np.linspace(-.22, .22, len(methods)) if len(methods) > 1 else [0]
     for method, color, edge, marker, offset in zip(methods, colors, edges, markers, offsets):
@@ -120,11 +123,17 @@ def draw_point_intervals(ax, summaries, methods, categories, colors, edges, mark
             raise ValueError('Do not crop uncertainty intervals')
         error = np.full((2, len(estimate)), np.nan)
         error[:, interval] = np.vstack([estimate[interval] - low[interval], high[interval] - estimate[interval]])
-        ax.errorbar(estimate[observed], (np.arange(len(categories)) + offset)[observed],
-                    xerr=error[:, observed] if interval.any() else None, fmt=marker,
-                    markersize=3.7, markerfacecolor=color, markeredgecolor=edge,
-                    markeredgewidth=.5, ecolor=edge, elinewidth=.85,
-                    capsize=2, capthick=.65, label=method, zorder=3)
+        groups = [(np.flatnonzero(observed), method, color, edge, marker)]
+        if category_styles is not None:
+            groups = [(np.array([i]), style['artist_label'] if len(methods) == 1 else method,
+                       style['color'], style['edge'], style['marker'] if len(methods) == 1 else marker)
+                      for i, style in enumerate(category_styles) if observed[i]]
+        for indices, name, face, outline, shape in groups:
+            ax.errorbar(estimate[indices], (np.arange(len(categories)) + offset)[indices],
+                        xerr=error[:, indices] if interval[indices].any() else None, fmt=shape,
+                        markersize=3.7, color=face, markerfacecolor=face, markeredgecolor=outline,
+                        markeredgewidth=.5, ecolor=outline, elinewidth=.85,
+                        capsize=2, capthick=.65, label=name, zorder=3)
     ax.set_yticks(np.arange(len(categories)), categories)
     ax.set_ylim(len(categories) - .55, -.55)
     ax.set_xlim(xlim)
@@ -326,6 +335,9 @@ def draw_violin(ax, series, methods, colors, edges, title, ylabel):
 
 def draw_colorbar(fig, image, ax, label, ticks):
     """Keep the colorbar vector, with an explicit axis separate from the data panel."""
+    if ax is image.axes or ax.figure is not fig or image.axes.figure is not fig:
+        raise ValueError('draw_colorbar requires a dedicated colorbar axis in the same figure; '
+                         'pass the colorbar axis, not the heatmap data axis')
     ax.set_gid('paper-colorbar')
     cb = fig.colorbar(image, cax=ax, ticks=ticks)
     cb.set_label(label, fontsize=7.5, labelpad=4)

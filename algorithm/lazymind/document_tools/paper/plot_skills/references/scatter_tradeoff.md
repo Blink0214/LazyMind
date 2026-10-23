@@ -13,3 +13,18 @@ Do not connect configurations as a time series, fit/smooth a trend without a sta
 create quartile bars implying matched budgets, compute t-SNE, or add a broken axis just
 because a source example had one. Use specialized styles only when the actual question
 and measurements require them.
+
+A fixed configuration may serve as a descriptive x coordinate when that relationship
+answers the research question. In the verified-summary interface expose it with a
+descriptive mean and no interval; repeated copies do not supply independent replication
+or uncertainty in the configuration. Pair it with performance from the same group/scope.
+Label which configuration belongs to which method, retain its unit, and avoid causal
+claims about the configuration's independent effect when it is confounded with method.
+
+In the prepared F4 interface, data_mapping names the x mean metric in category_column,
+its group identity in series_column and scope facets. value_labels supplies both
+actual metric names. The host pairs verified x/y means by identical complete scopes.
+When original row identities also match, it adds faint measured coordinate pairs and
+any separately verified marginal intervals. Fixed configurations have no invented
+intervals. Do not redraw these layers or imply a fitted relationship or joint
+confidence region. Short scope labels remain inside; full titles remain external.

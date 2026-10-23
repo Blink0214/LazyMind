@@ -63,6 +63,7 @@ def apply_updates(plan, response, issues):
         raise ValueError('局部修复必须只返回 updates 列表')
     job_issues = [item for item in issues if 'job_id' in item]
     local_figures = {item['figure_id'] for item in issues if 'figure_id' in item}
+    language_figures = {item['figure_id'] for item in issues if item.get('field') == 'display_language'}
     allowed = {(item['job_id'], item['field']) for item in job_issues}
     by_issue = {(item['job_id'], item['field']): item for item in job_issues}
     whole_jobs = {job_id for job_id, field in allowed if field is None}
@@ -149,7 +150,8 @@ def apply_updates(plan, response, issues):
             raise ValueError('图表修复不能删除结果或改变原始来源')
         if identifier in local_figures and identifier not in affected_figures and any(
             figure.get(key) != figures[identifier].get(key)
-            for key in figure.keys() | figures[identifier].keys() if key != 'data_mapping'
+            for key in figure.keys() | figures[identifier].keys()
+            if key not in ({'data_mapping', 'title', 'caption'} if identifier in language_figures else {'data_mapping'})
         ):
             raise ValueError('映射字段修复不能改变图型、研究目的或其他图表字段')
         seen.add(identifier)

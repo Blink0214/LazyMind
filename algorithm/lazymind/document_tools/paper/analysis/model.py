@@ -58,7 +58,7 @@ EVERY t test, correlation_test=true job, OLS or beta job, and EVERY paired compa
 The host copies the cited source text into design_evidence; omit that text rather than rewriting or translating it.
 Choose entries that actually support the observation unit/dependence/pairing. An ID alone does not establish
 independence or make an unsupported test valid. A seed name alone does not prove pairing.
-Omit unit: the host inherits source units for means/differences, derives coefficient units, uses count for counts
+Omit unit: the host inherits source units for means, derives difference/coefficient units, uses count for counts
 and dimensionless null for correlation/probability. No numeric conversion is performed. An explicit conflicting
 unit is an error. A default null is not a request to erase an available source unit.
 Each job returns ONE scalar estimate with its interval/test, not a grouped result or a table.
@@ -140,15 +140,71 @@ actual analysis. Include assumptions/choices in methods and limitations. Multipl
 Target columns must include the actual response, other correlation variable, predictor and trials-count columns.
 Model formulas describe assumptions and symbolic relationships, not posterior parameters guessed from previews.
 Jobs sharing one posterior model must use identical observations; different scopes need different model IDs.
-Figures are OPTIONAL. Use [] unless a useful requested figure can be drawn from verified per-job results. Figure
-titles are returned only in Chart.title, never drawn on the canvas. Put panel descriptions in caption,
-and use only (a)/(b) identifiers on the image; retain meaningful axis labels and units.
+Figures are publication evidence, not a dump of calculations. Plan from the paper's questions/hypotheses and the
+evidence needed to assess them; never decide the desired conclusion before verification. Coverage comes before count.
+ALL chart text must be English, even when the request, report or source data is Chinese. Return English titles,
+captions, value_label/value_labels and category_label. For non-English source category, cohort, method or unit
+display text, supply data_mapping.display_labels={exact_source_text: English_label}. Translate display text only;
+never rename source columns, filters, finding IDs, numeric values or group/color identities. Preserve proper names
+with their established English spelling. This chart-language rule is separate from the analysis report language.
+1. Account for EVERY requested substantive dimension and comparison, including requested resources and conditions.
+   For each decide whether a figure, table or text supplies adequate evidence. Do not silently omit a dimension or
+   replace a requested relationship with an unexplained list of values in a caption. If evidence is unavailable,
+   disclose that specific limitation rather than inventing observations or a mechanism.
+2. Each figure's instructions identify its research question, supporting finding_ids, the judgment the figure will
+   help assess, its intended main/supporting role, and why it needs a separate figure or can share panels. Before
+   estimates are verified these are evidence purposes, not asserted positive results. A new title alone does not
+   make two views distinct. Absolute levels, paired effects, resource tradeoffs and scope boundaries can each need
+   their own evidence; retain them when they answer distinct questions.
+3. Do not optimize for fewer figures, a minimum quota or a sample figure count. Combining panels is optional, not
+   a default instruction. Keep separate figures when they carry distinct conclusions or merging harms final-size
+   readability; merge only closely related evidence with a clear common message. Do not mechanically create mean
+   AND all-pairs effect charts for every numeric column. Preserve secondary evidence in a table/supporting figure
+   when useful, not automatically in prose. Never discard adverse or uncertain comparisons to simplify the story.
+   Do not assume a focal method from its score or name. Keep all findings in the analysis even when not plotted.
+4. A tradeoff scatter may pair two verified means ONLY with identical group/filter scope, observation set and
+   missing policy. This is a descriptive comparison of configurations, not a correlation/causal model of group means.
+   A fixed configuration is a legitimate descriptive x coordinate when the question concerns its performance tradeoff.
+   For that coordinate use a descriptive mean job with interval_level=null to expose the verified configuration value,
+   not a fictitious estimate of configuration uncertainty. Repetition of that value is not independent replication.
+   A caption/table is appropriate for configuration alone; it is not automatically sufficient for a requested
+   configuration-performance relationship. Identify each value with its actual method/configuration and unit.
+5. Readability matters at the supplied final physical size: use categories for conditions, series for comparisons,
+   and facets for independent scopes. Do not put repeated schema fields or long two-line scope/comparison strings
+   on every tick. For differences the derived coordinate 'comparison' contains the FULL ordered subtraction from
+   actual filters, so series_column='comparison' can share a short condition axis and an explicit comparison legend.
+   Alternatively facet by the real condition. finding_id is a last resort for unrelated estimands, not a default axis.
+  A point-interval figure may also put comparison on the category axis and the cohort/dataset on series:
+  row color then identifies the ordered contrast, while marker shape identifies the cohort. This compact layout
+  can share aligned rows across related metrics without repeating long scope labels.
+Figures are optional; use [] if a useful supported figure cannot be drawn. Do not force unsupported quantities.
+When original repeated observations are available, show their spread faintly behind verified means/intervals
+when it helps assess robustness. The host binds mean samples and within-key paired differences from original
+scopes; it never expands summaries into samples. These overlays need no extra statistical jobs or separate
+distribution figure. Host-managed compact notes explain dots, estimates, intervals and actual valid n.
+Automatic overlays apply only to point_interval and scatter_tradeoff, not grouped bars, lines or matrices.
+Box/violin/distribution styles already represent samples; do not add a second sample layer to them.
+Return the full figure title only in Chart.title and explanations in caption. Keep short data-scope labels such as
+'(a) <actual cohort>' on panels: these identify the data, not the figure's overall title. Axis labels/units remain.
 finding_ids name jobs. Do not promise raw trajectories/embeddings from aggregate findings. Choose an installed style
 from the catalog; custom requires base_style. Figure columns remain original ColumnRefs. No invented uncertainty.
-For point_interval, bar_grouped_hatch, line_confidence_band and line_training_curve, declare data_mapping once:
+For point_interval, bar_grouped_hatch, line_confidence_band, line_training_curve and scatter_tradeoff, declare data_mapping once:
 It is required for these styles; the host does not infer omitted axes, series or facets.
 series_column is the qualified grouping coordinate or null, category_column is the qualified category/x coordinate,
 facets lists additional coordinates that must remain separate, and xscale is linear or log (confidence curves only).
+Supply concise, human-readable value_label (short quantity noun phrase, without units, paired/test terminology,
+subtraction descriptions or figure titles) and category_label when needed. The host adds difference/unit semantics.
+When selected findings contain several metrics, supply value_labels={actual_job_column_or_qualified_ref: short_quantity_name}
+for EVERY metric; each resulting panel then has its own correct quantity and unit. Do not mix their numerical scales.
+For scatter_tradeoff select exactly TWO mean metrics: category_column names the x metric (not an equality-filter
+coordinate), the other metric is y; series_column and facets still name actual grouping coordinates. value_labels
+names BOTH metrics. Include every x/y mean job for each intended group with identical complete observation scopes.
+The host may overlay original x/y pairs and verified marginal mean intervals when their observation identities
+match exactly. This is not a fitted distribution or a joint confidence region. Aggregate-only coordinates remain
+summary points. A third numeric annotation needs a separately supplied and verified quantity.
+Absolute differences of values recorded as percent have unit pp (percentage points), with no numeric rescaling.
+Keep the original metric meaning and scale; do not rename a score as accuracy,
+convert units, or infer a metric's preferred direction. These display labels never replace source column references.
 Use table_id.column for selected filters and baseline.table_id.column for baseline filters. A contrast across
 baselines typically uses baseline.data.method as series and data.task as category; use the ACTUAL table/column names.
 For an ungrouped scalar use category_column='finding_id'. Numeric trajectories require numeric category coordinates.
@@ -187,6 +243,9 @@ For unit use the issue's expected unit exactly, with no numeric conversion. Name
 filters or methods. design_evidence is host-derived and read-only; repair its references, never its text.
 If an issue has figure_id, use figure_updates, not updates. Include EVERY requested figure mapping repair;
 copy its existing figure and change ONLY data_mapping. Use available_dimensions in the issue to resolve ambiguity.
+For field=display_language, you may also translate that figure's title and caption into English; keep every
+statistical scope, finding ID, chart type and source reference unchanged. Add display_labels for source text;
+never translate the actual filter values or source column identifiers.
 For paired contrasts, distinguish selected and baseline identities; never pool or discard competing baseline results.
 With no requested figure repairs, omit figure_updates unless a whole-job replacement affects that figure.
 For field=null, repair only that invalid job and return value as a nonempty LIST of replacement job objects.

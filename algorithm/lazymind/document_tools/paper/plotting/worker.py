@@ -12,16 +12,112 @@ import sys
 import traceback
 
 
+def draw_bound_observations(axis, panel, style):
+    """Overlay original values after validating model/native geometry; never invent samples."""
+    import numpy as np
+
+    arguments = panel['arguments']
+    layers = panel.get('observations', [])
+    for layer in layers:
+        values = np.asarray(layer['values'], dtype=float)
+        jitter = np.random.default_rng(0).uniform(-.055, .055, len(values))
+        if style == 'scatter_tradeoff':
+            x, y = values.T  # Both observed numeric coordinates remain untouched.
+            mean, intervals = layer['mean'], layer['intervals']
+            errors = [(None if interval is None else
+                       [[mean[i]-interval['lower']], [interval['upper']-mean[i]]])
+                      for i, interval in enumerate(intervals)]
+            if any(interval is not None for interval in intervals):
+                axis.errorbar(*mean, xerr=errors[0], yerr=errors[1], fmt='none',
+                              ecolor=layer['color'], elinewidth=.85, capsize=2, zorder=3)
+        elif style == 'point_interval':
+            count = len(arguments['methods'])
+            offsets = np.linspace(-.22, .22, count) if count > 1 else [0]
+            x, y = values, layer['category_index'] + offsets[layer['series_index']] + jitter
+        else:
+            continue
+        artist = axis.scatter(x, y, s=7, c=layer['color'], alpha=.24, edgecolors='none',
+                              zorder=1.5,
+                              label='_nolegend_')
+        artist.set_gid('paper-observations')
+
+
+def fit_observation_footer(figure, note, font_size):
+    """Compact measured label/legend/note stack, with physical gaps and no font shrinking."""
+    if not note:
+        return None
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    width, height = figure.bbox.width, figure.bbox.height
+    gap, pad = figure.dpi * 1.8/25.4, figure.dpi * 1.5/25.4
+    positions = [axis.get_window_extent(renderer).frozen() for axis in figure.axes]
+    labels = [axis.get_tightbbox(renderer) for axis in figure.axes]
+    bottom, top = min(box.y0 for box in labels), max(box.y1 for box in labels)
+    # Wrap at measured final width; never truncate a note or shrink its type to fit.
+    text = figure.text(.5, 0, '', ha='center', va='top', fontsize=font_size, color='#626873')
+    lines, line = [], ''
+    for word in note.split():
+        trial = (line+' '+word).strip()
+        if line and renderer.get_text_width_height_descent(trial, text.get_fontproperties(), False)[0] > width-2*pad:
+            lines.append(line)
+            line = word
+        else:
+            line = trial
+    text.set_text('\n'.join([*lines, line]))
+    note_height = text.get_window_extent(renderer).height
+    legends = list(figure.legends)
+    boxes = [legend.get_window_extent(renderer).frozen() for legend in legends]
+    legend_height = max([box.height for box in boxes] + [0])
+    note_top = bottom-gap-legend_height-(gap if legends else 0)
+    extra = max(0, pad-(note_top-note_height))
+    new_height = top+extra+pad
+    figure.set_size_inches(figure.get_figwidth(), new_height/figure.dpi, forward=False)
+    for axis, box in zip(figure.axes, positions):
+        axis.set_position([box.x0/width, (box.y0+extra)/new_height, box.width/width, box.height/new_height])
+    for legend, box in zip(legends, boxes):
+        legend.set_loc('upper center')
+        legend.borderaxespad = 0
+        legend.set_bbox_to_anchor(((box.x0+box.x1)/2/width, (bottom+extra-gap)/new_height),
+                                 transform=figure.transFigure)
+    text.set_y((note_top+extra)/new_height)
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    note_box = text.get_window_extent(renderer)
+    legend_boxes = [legend.get_window_extent(renderer) for legend in legends]
+    axis_bottom = min(axis.get_tightbbox(renderer).y0 for axis in figure.axes)
+    separator = max([box.y1 for box in legend_boxes] + [note_box.y1])
+    to_mm = 25.4/figure.dpi
+    if axis_bottom-separator < gap-.5 or any(box.y0-note_box.y1 < gap-.5 for box in legend_boxes):
+        raise ValueError('统计说明与轴标签或图例重叠，请保留物理间距')
+    for item in [text, *legends]:
+        box = item.get_window_extent(renderer)
+        if box.x0 < 0 or box.y0 < 0 or box.x1 > figure.bbox.width or box.y1 > figure.bbox.height:
+            raise ValueError('统计说明或图例超出导出画布')
+    return dict(axis_to_footer_mm=(axis_bottom-separator)*to_mm,
+                legend_to_note_mm=min([box.y0-note_box.y1 for box in legend_boxes] + [gap])*to_mm,
+                font_size=font_size, outer_whitespace_trimmed=True)
+
+
 def prepared_call_guard(namespace, payload):
-    """Verify actual native calls retain every host-bound number, identity and range."""
+    """Verify bound native arguments and their final data artists, allowing appearance edits."""
     if payload['spec'].get('data_contract', {}).get('prepared_view_version') != 1:
         return lambda figure: None
+    from matplotlib.collections import LineCollection, PolyCollection, PathCollection
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Rectangle
+
     panels = copy.deepcopy(payload['table']['figure']['panels'])
     name = payload['spec']['style_contract']['native_template']
     native = namespace[name]
     signature = inspect.signature(native)
     used, axes = set(), set()
     states = []
+
+    def appearance(axis):
+        fields = ('color', 'facecolor', 'edgecolor', 'marker', 'markerfacecolor', 'markeredgecolor', 'hatch')
+        return [(artist, [(field, copy.deepcopy(getattr(artist, 'get_' + field)())) for field in fields
+                          if hasattr(artist, 'get_' + field) and hasattr(artist, 'set_' + field)])
+                for artist in [*axis.patches, *axis.lines, *axis.collections]]
 
     def plain(value):
         if isinstance(value, dict):
@@ -32,11 +128,40 @@ def prepared_call_guard(namespace, payload):
             return plain(value.tolist())
         return value
 
+    def plotted_state(axis):
+        # Snapshot native display geometry, after any declared template transformation.
+        # Blended-transform reference lines (e.g. axvline) are not observations.
+        artists = []
+        for item in [*axis.patches, *axis.lines, *axis.collections]:
+            transform = (item.get_data_transform() if isinstance(item, Rectangle) else
+                         item.get_offset_transform() if isinstance(item, PathCollection) else item.get_transform())
+            if transform != axis.transData:
+                continue
+            if isinstance(item, Rectangle):
+                values = item.get_patch_transform().get_matrix()
+            elif isinstance(item, Line2D):
+                values = item.get_xydata()
+            elif isinstance(item, LineCollection):
+                values = [item.get_segments(), item.get_offsets()]
+            elif isinstance(item, PolyCollection):
+                values = [[path.vertices for path in item.get_paths()], item.get_offsets()]
+            elif isinstance(item, PathCollection):
+                values = [[path.vertices for path in item.get_paths()], item.get_offsets()]
+            else:
+                continue
+            artists.append([id(item), item.get_visible(), item.get_label(), values])
+        style = payload['spec'].get('style')
+        categories = (axis.xaxis if style == 'bar_grouped_hatch'
+                      else axis.yaxis if style == 'point_interval' else None)
+        groups = ([categories.get_ticklocs(), [t.get_text() for t in categories.get_ticklabels()]]
+                  if categories is not None else None)
+        return json.dumps(plain([artists, [(id(c), c.get_label()) for c in axis.containers], groups]),
+                          allow_nan=True)
+
     def guarded(*args, **kwargs):
         bound = dict(signature.bind(*args, **kwargs).arguments)
         axis = bound.pop('ax')
         title = bound.pop('title', '')
-        title = title if isinstance(title, str) and re.fullmatch(r'\([A-Za-z]\)', title) else ''
         actual = plain(bound)
         match = next((i for i, panel in enumerate(panels) if i not in used and actual == plain(
             {key: value for key, value in panel['arguments'].items() if key != 'title'})), None)
@@ -47,8 +172,11 @@ def prepared_call_guard(namespace, payload):
             raise ValueError('Prepared panel scopes need separate axes; do not overlay different quantities')
         used.add(match)
         axes.add(id(axis))
+        title = panels[match]['arguments'].get('title', '')
         result = native(ax=axis, title=title, **bound)
-        states.append((axis, axis.get_xlim(), axis.get_ylim(), axis.get_xscale(), axis.get_yscale()))
+        states.append((axis, axis.get_xlim(), axis.get_ylim(), axis.get_xscale(), axis.get_yscale(),
+                       plotted_state(axis), [(text, text.get_text()) for text in axis.texts], title,
+                       appearance(axis), (axis.get_xlabel(), axis.get_ylabel()), panels[match]))
         return result
 
     namespace[name] = guarded
@@ -56,16 +184,53 @@ def prepared_call_guard(namespace, payload):
     def complete(figure=None):
         if len(used) != len(panels):
             raise ValueError('Draw every prepared panel exactly once; selected findings cannot be omitted')
-        for axis, xlim, ylim, xscale, yscale in states:
+        for axis, xlim, ylim, xscale, yscale, data, texts, title, styles, labels, panel in states:
             if ((figure is not None and axis not in figure.axes) or axis.get_xlim() != xlim
                     or axis.get_ylim() != ylim or axis.get_xscale() != xscale or axis.get_yscale() != yscale):
                 raise ValueError('Keep prepared numeric/category axis limits and scales; do not crop or reverse them')
+            if (plotted_state(axis) != data
+                    or any(text not in axis.texts or text.get_text() != value for text, value in texts)):
+                raise ValueError('Final plotted data differs from the verified native output; keep bar heights, '
+                                 'points, interval endpoints and group labels unchanged; edit appearance only')
+            axis.set_title(title)  # Host-owned panel identity must survive presentation-code edits.
+            axis.set_xlabel(labels[0])
+            axis.set_ylabel(labels[1])
+            for artist, attributes in styles:
+                for field, value in attributes:
+                    getattr(artist, 'set_' + field)(value)
+            if payload['spec']['style'] in ('point_interval', 'scatter_tradeoff'):
+                if axis.get_legend() is not None:
+                    axis.get_legend().remove()
+                comparisons = panel['comparisons']
+                methods = panel['arguments'].get('methods', panel['arguments'].get('labels'))
+                if comparisons or len(methods) > 1:
+                    handles, names = axis.get_legend_handles_labels()
+                    handles = dict(zip(names, handles))
+                    display = ([f'{comparisons[name][0]} - {comparisons[name][1]}' for name in methods]
+                               if comparisons else [panel['series_labels'][name] for name in methods])
+                    axis.legend([handles[name] for name in methods], display, loc='upper right',
+                                fontsize=payload['spec']['style_contract']['rc']['legend.fontsize'])
+                if panel['quantity']['operation'] in ('difference', 'paired_difference', 'paired_t', 'welch_t'):
+                    for line in list(axis.lines):
+                        if (line.get_transform() == axis.get_xaxis_transform()
+                                and all(value == 0 for value in line.get_xdata())):
+                            line.remove()
+                    axis.axvline(0, color='#888888', linestyle='--', linewidth=.65,
+                                 zorder=0, label='_nolegend_')
+            draw_bound_observations(axis, panel, payload['spec']['style'])
+            legend = axis.get_legend()
+            if legend is not None:
+                for text in legend.get_texts():
+                    text.set_text(panel['series_labels'].get(text.get_text(), text.get_text()))
+        if figure is not None and payload['spec']['style'] in ('point_interval', 'scatter_tradeoff'):
+            for legend in list(figure.legends):
+                legend.remove()  # Shared, fully labelled legends are fitted from the host-owned axis legends.
 
     return complete
 
 
-def apply_title_policy(figure, spec):
-    """Titles belong to Chart.title/caption; retain only subplot letters on the canvas."""
+def apply_title_policy(figure, spec, panel_titles=()):
+    """Remove prose figure titles; retain verified short panel scopes and subplot letters."""
     removed = [spec.get('title', '')]
     if figure._suptitle is not None:
         removed.append(figure._suptitle.get_text())
@@ -73,8 +238,10 @@ def apply_title_policy(figure, spec):
     for axis in figure.axes:
         for artist in (axis._left_title, axis.title, axis._right_title):
             title = artist.get_text()
+            if title and title in panel_titles:
+                continue
             removed.append(title)
-            match = re.match(r'^\s*(\([A-Za-z]\))(?:\s|$)', title)
+            match = re.match(r'^\s*(\((?:[A-Za-z]|\d+)\))(?:\s|$)', title)
             artist.set_text(match.group(1) if match else '')
     titles = {' '.join(text.split()) for text in removed if text.strip()}
     for text in [*figure.texts, *(text for axis in figure.axes for text in axis.texts)]:
@@ -189,7 +356,7 @@ def apply_quantity_semantics(figure, spec):
                       fontsize=7, color='#505050', va='center', ha='center', clip_on=False)
 
 
-def fit_paper_layout(figure, spec):
+def fit_paper_layout(figure, spec, panel_density=()):
     """Fit final-size labels and exterior legends using actual font bounds, without a vision model."""
     from matplotlib.text import Text
     from matplotlib.collections import LineCollection
@@ -207,6 +374,12 @@ def fit_paper_layout(figure, spec):
     axes.sort(key=lambda axis: axis.get_position().x0)
     if max(axis.get_position().y0 for axis in axes) - min(axis.get_position().y0 for axis in axes) > .05:
         raise ValueError('当前论文布局适配器要求同一行面板，请为多行布局选择明确的版式')
+    if spec.get('style') == 'point_interval' and len(axes) > 1:
+        categories = [label.get_text() for label in axes[0].get_yticklabels()]
+        for axis in axes[1:]:
+            if categories == [label.get_text() for label in axis.get_yticklabels()]:
+                axis.tick_params(axis='y', labelleft=False, left=False)
+                axis.spines['left'].set_visible(False)
     figure.canvas.draw()
     renderer = figure.canvas.get_renderer()
     width, height = figure.bbox.width, figure.bbox.height
@@ -251,6 +424,28 @@ def fit_paper_layout(figure, spec):
 
     overhangs = []
     for axis, box in zip(axes, positions):
+        wrap(axis.xaxis.label, box.width)
+        wrap(axis.yaxis.label, box.height if axis.yaxis.label.get_rotation() % 180 == 90 else box.width)
+        if spec.get('style') == 'point_interval':
+            for label in axis.get_yticklabels():
+                wrap(label, width * .42 / len(axes))
+        if spec.get('style') == 'heatmap_matrix':
+            ticks = axis.get_xticks()
+            centers = axis.transData.transform([(tick, 0) for tick in ticks])[:, 0]
+            cell_width = min(np.abs(np.diff(centers)), default=box.width)
+            labels = axis.get_xticklabels()
+            for label in labels:
+                wrap(label, cell_width * .9)
+            # Fixed tick formatters restore their original strings during draw. Persist the
+            # whitespace-only display change without changing cell positions or identities.
+            axis.set_xticks(ticks, [label.get_text() for label in labels])
+            if any(label.get_window_extent(renderer).width > cell_width * .9 for label in labels):
+                for label in axis.get_xticklabels():
+                    label.set_rotation(40)
+                    label.set_rotation_mode('anchor')
+                    label.set_ha('right')
+    figure.canvas.draw()
+    for axis, box in zip(axes, positions):
         labels = bounds([*axis.get_xticklabels(), *axis.get_yticklabels(), axis.xaxis.label, axis.yaxis.label])
         overhangs.append((max([box.x0 - b.x0 for b in labels] + [0]),
                           max([b.x1 - box.x1 for b in labels] + [0]),
@@ -265,7 +460,13 @@ def fit_paper_layout(figure, spec):
     panel_width = (width - left - right - sum(gaps)) / len(axes)
     if panel_width < 95 * figure.dpi / 100:
         raise ValueError('类别文字过长，当前栏宽无法容纳；请使用双栏画布或明确的短标签，不能缩小字体')
-    bottom = max(min(box.y0 for box in positions), max(h[2] for h in overhangs) + pad)
+    for axis in axes:
+        wrap(axis.xaxis.label, panel_width)
+    figure.canvas.draw()
+    bottom = max(min(box.y0 for box in positions), max(
+        [box.y0 - label.y0 for axis, box in zip(axes, positions)
+         for label in bounds([*axis.get_xticklabels(), *axis.get_yticklabels(),
+                              axis.xaxis.label, axis.yaxis.label])] + [0]) + pad)
     x = left
     for i, (axis, box) in enumerate(zip(axes, positions)):
         axis.set_position([x / width, bottom / height, panel_width / width, (box.y1 - bottom) / height])
@@ -295,7 +496,8 @@ def fit_paper_layout(figure, spec):
                                 if np.allclose(to_rgba(candidate.lines[0].get_markeredgecolor()),
                                                handle.get_colors()[0])]
                     if matching:
-                        handles[index] = matching[0]
+                        named = [candidate for candidate in matching if candidate.get_label() == labels[index]]
+                        handles[index] = named[0] if named else matching[0]
         styles = []
         for handle in handles:
             if isinstance(handle, ErrorbarContainer):
@@ -346,7 +548,10 @@ def fit_paper_layout(figure, spec):
                     if text.get_visible() and text.get_text()] + [0])
     data_top = min(min(box.y1 for box in positions), ceiling - adornment - pad)
     minimum = 34 / 25.4 * figure.dpi
-    if data_top - bottom < minimum:
+    compact_points = spec.get('style') == 'point_interval' and bool(panel_density)
+    if compact_points:
+        minimum = max(20, max(rows * max(6, series * 3 + 2) for rows, series in panel_density)) / 25.4 * figure.dpi
+    if data_top - bottom < minimum or compact_points:
         extra = minimum - (data_top - bottom)
         figure.set_size_inches(figure.get_figwidth(), (height + extra) / figure.dpi)
         height += extra
@@ -369,6 +574,11 @@ def fit_paper_layout(figure, spec):
     renderer = figure.canvas.get_renderer()
     clipped = []
     hidden_ticks = off_view_tick_labels()
+    for axis in axes:
+        for ticks in (axis.get_xticklabels(), axis.get_yticklabels()):
+            boxes = bounds(ticks)
+            if any(a.overlaps(b) for i, a in enumerate(boxes) for b in boxes[i + 1:]):
+                raise ValueError('相邻刻度标签重叠；请增加有效绘图区、旋转短标签或重新组织类别/分面，不能缩小字体')
     for text in figure.findobj(Text):
         if text not in hidden_ticks and text.get_visible() and text.get_text().strip():
             box = text.get_window_extent(renderer)
@@ -386,6 +596,7 @@ def apply_appearance(figure, spec):
     from matplotlib.container import BarContainer
     from matplotlib.collections import PathCollection
     from matplotlib.patches import PathPatch
+    from matplotlib import rcParams
     from matplotlib.text import Text
 
     contract = spec.get('style_contract', {})
@@ -397,7 +608,7 @@ def apply_appearance(figure, spec):
     palette = contract['bar_colors']
     component_colors = {}
     for text in figure.findobj(Text):
-        text.set_fontfamily(rc.get('font.family', 'serif'))
+        text.set_fontfamily(rcParams['font.family'])
     if figure._suptitle is not None:
         figure._suptitle.set_fontsize(rc['axes.titlesize'])
         figure._suptitle.set_fontweight(rc['axes.titleweight'])
@@ -452,6 +663,8 @@ def apply_appearance(figure, spec):
 
         containers = [c for c in axis.containers if isinstance(c, BarContainer) and c.patches]
         for index, container in enumerate(containers):
+            if spec.get('data_contract', {}).get('prepared_view_version') == 1:
+                continue  # The guarded native call already enforces series/category identity, including numeric axes.
             tick_labels = (axis.get_yticklabels() if container.orientation == 'horizontal'
                            else axis.get_xticklabels())
             labels = [t.get_text() for t in tick_labels]
@@ -528,7 +741,7 @@ def apply_appearance(figure, spec):
                 text.set_fontproperties(font_manager.FontProperties(
                     fname=path, size=text.get_fontsize(), weight=text.get_fontweight()))
             elif bold:
-                text.set_fontfamily([contract['bold_font_family'], 'serif'])
+                text.set_fontfamily([contract['bold_font_family'], *rcParams['font.family']])
 
 
 def render(payload: dict) -> dict:
@@ -546,7 +759,8 @@ def render(payload: dict) -> dict:
     import numpy as np
 
     fonts = {font.name for font in font_manager.fontManager.ttflist}
-    family = next((name for name in ('Noto Sans CJK SC', 'Noto Sans CJK JP', 'Arial Unicode MS')
+    family = next((name for name in ('Noto Serif CJK SC', 'Noto Serif CJK JP',
+                                     'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Arial Unicode MS')
                    if name in fonts), 'DejaVu Sans')
     rc = {'font.family': ['DejaVu Sans', family], 'font.size': 9}
     rc.update(payload['spec'].get('style_contract', {}).get('rc', {}))
@@ -555,22 +769,38 @@ def render(payload: dict) -> dict:
         rc['axes.prop_cycle'] = matplotlib.cycler(color=palette)
     # Serif Latin text remains serif; CJK falls back per glyph rather than replacing the entire font family.
     if rc['font.family'] == 'serif':
-        rc['font.serif'] = [*rc.get('font.serif', ['STIXGeneral', 'DejaVu Serif']), family]
+        # A generic 'serif' resolves to one font; per-glyph fallback needs explicit families.
+        rc['font.family'] = [*rc.get('font.serif', ['STIXGeneral', 'DejaVu Serif']), family]
     # Vector glyph paths preserve the selected font even on a viewer without STIX/CJK installed.
     rc.update({'svg.fonttype': 'path', 'pdf.fonttype': 42, 'text.usetex': False, 'axes.unicode_minus': False,
                'svg.hashsalt': payload['data_sha256']})
     with plt.rc_context(rc):
         namespace = {}
+        locked_spec = copy.deepcopy(payload['spec'])
+        locked_view = copy.deepcopy(payload['table'].get('figure', {}))
+        panel_titles = tuple(panel['arguments'].get('title', '')
+                             for panel in payload['table'].get('figure', {}).get('panels', []))
+        panel_density = [(len(panel['arguments'].get('categories', [])),
+                          len(panel['arguments'].get('methods', [])))
+                         for panel in payload['table'].get('figure', {}).get('panels', [])]
         with contextlib.redirect_stdout(sys.stderr):
             exec(compile(payload['code'], '<generated-plot>', 'exec'), namespace)
             verify_prepared_calls = prepared_call_guard(namespace, payload)
             figure = namespace['draw'](payload['table'], payload['statistics'], payload['spec'])
+            if (locked_spec.get('data_contract', {}).get('prepared_view_version') == 1
+                    and (payload['spec'] != locked_spec or payload['table'].get('figure', {}) != locked_view)):
+                raise ValueError('Keep host-owned data/spec unchanged; edit figure presentation only')
             verify_prepared_calls(figure)
         if not isinstance(figure, Figure) or not figure.axes:
             raise ValueError('draw 必须返回包含坐标轴的 Matplotlib Figure')
         width, height = figure.get_size_inches()
         if not 1 <= width <= 20 or not 1 <= height <= 20:
             raise ValueError('画布宽高必须在 1..20 英寸之间')
+        if contract.get('version') == 'paper-v1':
+            # Reflow at the actual paper width; never shrink fonts when a model adds panels.
+            maximum = contract['layout']['two_inches'][0]
+            if width > maximum:
+                figure.set_size_inches(maximum, height, forward=False)
         if not any(ax.has_data() for ax in figure.axes):
             raise ValueError('图表没有数据图元')
         for axis in figure.axes:
@@ -582,8 +812,12 @@ def render(payload: dict) -> dict:
         validate_correlation_heatmaps(figure, payload['spec'])
         apply_quantity_semantics(figure, payload['spec'])
         apply_appearance(figure, payload['spec'])
-        apply_title_policy(figure, payload['spec'])
-        layout_checks = fit_paper_layout(figure, payload['spec'])
+        apply_title_policy(figure, payload['spec'], panel_titles)
+        layout_checks = fit_paper_layout(figure, payload['spec'], panel_density)
+        footer_checks = fit_observation_footer(figure, payload['table'].get('figure', {}).get('observation_note', ''),
+                                               contract.get('note_font_size', 6.2))
+        if footer_checks and layout_checks is not None:
+            layout_checks['footer'] = footer_checks
         for text in figure.findobj(Text):
             text.set_usetex(False)
         output = {}
@@ -606,7 +840,9 @@ def render(payload: dict) -> dict:
                               for text in axis.texts],
                     'spines': {side: spine.get_visible() for side, spine in axis.spines.items()},
                     'x_ticks': [t.get_text() for t in axis.get_xticklabels()],
+                    'y_ticks': [t.get_text() for t in axis.get_yticklabels()],
                     'x_label': axis.get_xlabel(), 'y_label': axis.get_ylabel(),
+                    'x_label_size': axis.xaxis.label.get_fontsize(), 'y_label_size': axis.yaxis.label.get_fontsize(),
                     'error_segments': [np.asarray(segment).tolist() for c in axis.collections
                                        if isinstance(c, LineCollection) for segment in c.get_segments()],
                     'legend': axis.get_legend() is not None,
@@ -624,6 +860,7 @@ def render(payload: dict) -> dict:
                                'x': np.asarray(line.get_xdata()).tolist(), 'y': np.asarray(line.get_ydata()).tolist()}
                               for line in axis.lines],
                     'collections': [{'label': c.get_label(), 'colors': c.get_facecolors().tolist(),
+                                     'gid': c.get_gid(), 'alpha': c.get_alpha(),
                                      'offsets': c.get_offsets().tolist()}
                                     for c in axis.collections if isinstance(c, PathCollection)],
                     'numeric_fields': [{'kind': type(c).__name__, 'values': np.ma.asarray(c.get_array()).tolist(),

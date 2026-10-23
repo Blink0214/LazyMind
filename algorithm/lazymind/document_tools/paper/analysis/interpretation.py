@@ -147,7 +147,13 @@ Write summary as one or two qualitative sentences. Each conclusion is ONE focuse
 sentences answering that research question, including scope and material qualifications. Mechanism explanation
 is one or two sentences; keep limitations concise and distinct. Detailed methods and every scalar result remain
 in separate tables/trace. Do not repeat result-by-result explanations or the same caveats throughout the text.
-Answer the original research question rather than listing numbers. Distinguish statistical evidence about zero
+Answer the original research question rather than listing numbers.
+Organize the argument around the supported substantive judgments, not a repeated list of metric rankings or test
+names. State conditional reversals, adverse results and performance/resource compromises when present. Treat fixed
+configuration facts separately from stochastic estimates; neither a small figure count nor many panels establishes
+that the paper's evidence is complete. Do not invent a mechanism, general superiority or generalization claim to
+give the figures a stronger story. This interpretation is grounded in verified results, not a prespecified outcome.
+Distinguish statistical evidence about zero
 from whether the stated practical improvement/cost standard is met. Use only standards in input facts; if absent,
 say practical importance cannot be established. Consider the actual interval endpoints as well as the estimate.
 Counts are non-null record counts, not means or automatically independent sample sizes. Per-group means and paired

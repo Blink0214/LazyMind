@@ -12,7 +12,7 @@ from .schema import (
 )
 from .views import materialize
 from .plan_repair import PlanRepairError, material_claim
-from .plan_bindings import evidence_catalog, bind_job_columns, bind_job_fields, bind_figure_mapping
+from .plan_bindings import evidence_catalog, bind_job_columns, bind_job_fields, bind_figure_mapping, bind_figure_language
 
 
 class Filter(Object):
@@ -52,6 +52,10 @@ class FigureMapping(Object):
     category_column: Text
     facets: list[Text] = Field(default_factory=list)
     xscale: Literal['linear', 'log'] = 'linear'
+    value_label: Text | None = None
+    value_labels: dict[str, Text] = Field(default_factory=dict)
+    category_label: Text | None = None
+    display_labels: dict[str, Text] = Field(default_factory=dict)
 
 
 class FigurePlan(Object):
@@ -160,6 +164,7 @@ def validate_plan(value, inputs):
             raise ValueError('结果图须引用实际计算任务')
         refs_exist(figure['columns'], sources, 'plan.figures.columns')
         missing.extend(bind_figure_mapping(figure, jobs, sources))
+        missing.extend(bind_figure_language(figure, jobs))
     if missing:
         raise PlanRepairError(missing, plan=plan)
     return plan

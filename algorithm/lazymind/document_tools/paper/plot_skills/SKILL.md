@@ -26,9 +26,49 @@ A missing combination is unknown, not a measured zero. Do not expand aggregate
 findings into artificial observations or obtain checkpoint intervals from a whole-run
 summary. Estimate statistics in the analysis stage and draw the verified results.
 
+For point-interval and tradeoff figures with repeated measurements, prefer faint
+original-observation overlays behind verified estimates when spread is relevant.
+Do not automatically add distribution dots to bars, lines, heatmaps or other styles;
+box/violin/distribution figures already have their own sample encoding.
+The prepared workflow binds exact mean
+samples, within-key paired differences and matched tradeoff coordinate pairs. Keep
+the host's overlays unchanged; do not sample synthetic clouds, fit an unrequested
+density, or add statistical jobs merely to display existing observations. If the
+original observations cannot be matched to the estimate, keep the summary-only view.
+The host adds a short statistical note and fits exterior legends below the axes,
+using measured 1.8 mm gaps and small outer margins. Do not add duplicate footer
+text, reserve a large blank strip, or edit data/spec to disable layout fitting.
+
 Choose the number of figures from the distinct questions supported by the data.
-There is no prescribed figure count. Combine complementary panels when useful, and
+Use English for all chart labels, legends, notes, external titles and captions.
+Translate source names through display aliases only; preserve original data keys,
+filter values, numerical measurements and stable group identities.
+There is no prescribed publication figure count or minimum quota in this skill. Do not optimize
+for fewer figures. Combine panels only when they share a clear scientific message and
+remain readable at final size; keep distinct conclusions separate when appropriate, and
 give each figure an independent specification suitable for parallel generation.
+Before selecting the collection, account for each requested research question: show it,
+or explain why its evidence belongs in a table/text. Each figure's instructions state
+its distinct question and why its geometry helps answer it. Do not automatically make
+a means plot and all-pairs effect plot for every numeric variable. Keep secondary
+comparisons in the complete result table when they add little to the figure narrative.
+For each candidate, state the research question, supporting evidence, the judgment it
+helps assess, its main/supporting role, and why it should stand alone or share panels.
+Before results are verified, plan the evidence needed to evaluate the hypothesis;
+do not assume a favorable conclusion. After verification, the narrative must preserve
+conditional reversals, adverse effects and uncertainty. A larger number of panels is
+not a substitute for coverage, and a compact figure set is not automatically better.
+Tradeoff questions need a direct view of commensurate performance/resource coordinates
+when available, not only separate one-variable bars. Summary x/y values must describe
+the same observation set and scope; group means do not establish a population correlation.
+Fixed design/configuration values can be coordinates in a descriptive tradeoff when
+the research question calls for them. Identify each with its actual group and unit;
+do not estimate their uncertainty from repeated copies. Merely listing configuration
+numbers in a caption does not explain their relationship to measured performance.
+State the distinct question each figure answers. Prefer directly relevant verified comparisons over a repeated
+plot for every numeric column; fixed configuration values can remain in a table or caption. Reuse a geometry
+when appropriate rather than forcing visual variety. In prepared figures, retain the host's category identities,
+subplot identifiers and panel-to-scope caption key, even when the model supplies a rewritten caption.
 
 ## Select a supported representation
 
@@ -111,9 +151,13 @@ using the method palette merely to make every figure look alike.
 
 ## Return interpretable, verifiable outputs
 
-Return the figure title in `charts[].title` and its explanation in
-`charts[].caption`. On-canvas helper title arguments contain only an empty string
-or panel identifiers such as `(a)` and `(b)`. Describe each panel in the caption.
+Return the full figure title in `charts[].title` and its explanation in
+`charts[].caption`. Short verified scope labels such as `(a) <cohort>` belong on
+the corresponding panel; an isolated `(a)` must not make the data scope unknowable.
+Do not repeat `dataset:` or other schema prefixes on every row. Use a compact
+condition axis with comparison series/legend, or clear scope facets. Internal result
+IDs are provenance, never audience-facing tick labels. Multi-metric panels need an
+explicit short name and correct unit for every metric, not one generic value label.
 Axis names, units, legends, scientific annotations and justified direction cues
 remain on the figure.
 

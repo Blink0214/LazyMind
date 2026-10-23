@@ -96,7 +96,7 @@ class PlotSkills:
             'scales, data filtering, statistics and chart geometry in the generated code.',
             'Legend position adapts to actual data. Do not copy a reference corner when it covers observations.',
             'Return the figure title in Chart.title and panel descriptions in caption. '
-            'Do not draw titles or captions on the canvas; only (a)/(b) subplot identifiers are allowed.',
+            'Keep the full title/caption outside the image. Retain host-provided short scope labels on panels.',
         ]
         return result
 
@@ -148,7 +148,9 @@ class PlotSkills:
             'call draw_colorbar on the dedicated colorbar axis so it stays vector. '
             'Do not use constrained layout together with these margins. '
             'Native grouped bars and point intervals have legends fitted outside the observations; '
-            'identical legends share a top strip. Other styles follow their selected reference. '
+            'identical legends share a top strip unless host-bound observations use the compact statistical footer. '
+            'The host handles original-observation overlays and notes; do not duplicate them. '
+            'Other styles follow their selected reference. '
             'Titles/captions are returned as metadata, never drawn. Pass an empty string or only (a)/(b) '
             'to native title arguments. Put panel descriptions in caption. '
             'Read series_colors, series_edges, series_markers, series_line_styles and series_sizes '

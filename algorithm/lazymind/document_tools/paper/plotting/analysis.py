@@ -21,12 +21,19 @@ from ..execution.threads import ThreadPoolExecutor
 from ..analysis import trace as diagnostics
 
 
+AXES_GUIDANCE = '''For every plt.subplots call use squeeze=False, then axes = axes.ravel().
+axes[i] is always one Axes, including a single panel. Pass axes[i], never the axes array, to native helpers.
+'''
+
+
 BOUND_GUIDANCE = {
     'bar_grouped_hatch': '''Use grid['values'] as data_dict, grid['methods'] as labels and grid['bar_colors'] as colors.
 Use range(len(grid['categories'])) for x_positions, total_w=.78, xlim=(-.56,len(grid['categories'])-.44),
 benchmarks=grid['categories'], y_limits=grid['bar_limits'], legend_anchor=layout['legend_anchor'].
 Use // hatch only for an explicitly requested focal method; otherwise empty hatches and best_method=None.
-If intervals are requested, use supplied endpoints at actual bar centers; move existing value labels above them.''',
+Pass intervals={name: [triple[1:] for triple in triples] for name, triples in grid['summaries'].items()}.
+The helper draws those verified endpoints and places value labels above them; do not add duplicate whiskers.
+For one categorical series use grid['category_styles']; for separate series pass category_styles=None.''',
     'point_interval': '''Use grid['summaries'], grid['methods'], grid['categories'],
 grid['colors'], grid['edges'] and grid['markers'].
 For arithmetic differences use grid['difference_limits'], then call label_difference_axis with grid['comparisons'].
@@ -46,6 +53,10 @@ It is a verified rectangle, not a full symmetric correlation matrix. Other corre
 quantity_semantics.matrices, leaving uncomputed cells NA. Never invent a diagonal or additional correlations.
 Choose the matching style_contract.heatmap_layouts entry: figsize=tuple(entry['inches']),
 fig.add_axes(entry['panel']) and fig.add_axes(entry['colorbar']). These keys are not figsize/axes/cbar.
+Bind ax = fig.add_axes(entry['panel']) and colorbar_ax = fig.add_axes(entry['colorbar']).
+After image = draw_heatmap(ax, ...), call draw_colorbar(fig, image, colorbar_ax, label, ticks).
+Never pass ax as the colorbar axis: that would overwrite the data panel. The host fits long English
+column labels to their measured cell width without shrinking fonts; keep the exact supplied names.
 Call draw_colorbar with label EXACTLY 'Pearson r' or 'Spearman rho'. For other matrix values use the declared
 quantity semantics and one allowed colormaps[mode][0] string. Color does not encode statistical significance.''',
 }
@@ -53,7 +64,7 @@ quantity semantics and one allowed colormaps[mode][0] string. Color does not enc
 
 def generate_bound_code(table, analysis, spec, reference, previous, error):
     """Ask for scientific presentation code, with host-owned identity binding and a small API."""
-    prompt = CODE_INSTRUCTION + NATIVE_FUNCTION_GUIDANCE + '''Implement draw(data, statistics, spec) -> Figure for ONLY this planned figure.
+    prompt = CODE_INSTRUCTION + NATIVE_FUNCTION_GUIDANCE + AXES_GUIDANCE + '''Implement draw(data, statistics, spec) -> Figure for ONLY this planned figure.
 Return the executable source directly and an accurate caption in the optional text block. 只做合理推理，不要过度思考。
 The host validates findings, scopes, dimensions, intervals and group identity, and preloads the native functions.
 Use result_grid(data, metric, series_column, category_column, where) -> dict for data mapping; do not implement readers,
@@ -74,16 +85,18 @@ Native function signatures below are authoritative. Call them directly; do not r
 Use data['metadata']['result_records'] only for an uncommon mapping not covered by result_grid.
 No statistics/inference, file/network access, random data, rcParams setup, top-level calls, decorators or default
 arguments. All three draw arguments are dictionaries. Imports/functions/literal constants only at top level.
-For one panel: layout=spec['style_contract']['layout']; plt.subplots(figsize=tuple(layout['single_inches'])),
-then fig.subplots_adjust(**layout['single_panel']). For two use plt.subplots(1,2,figsize=tuple(layout['two_inches']))
-and layout['two_panels']. Finalize margins before native calls; the renderer fits native legends outside observations.
-Titles are metadata only: Chart.title is returned separately. Draw no overall or panel titles; do not call
-suptitle or add title text with fig.text/ax.text. Pass '' or only '(a)'/'(b)' to native title arguments.
-Put panel descriptions in caption; retain axis labels, units, legends and scientific annotations.
+For one panel use plt.subplots(1,1,figsize=tuple(layout['single_inches']),squeeze=False),
+where layout=spec['style_contract']['layout'], then fig.subplots_adjust(**layout['single_panel']).
+For two use plt.subplots(1,2,figsize=tuple(layout['two_inches']),squeeze=False) and layout['two_panels'].
+Finalize margins before native calls; the renderer fits native legends outside observations.
+Titles are metadata only: Chart.title is returned separately. Draw no overall figure title; do not call
+suptitle or add title text with fig.text/ax.text. Use the host's short scope label for prepared panels; otherwise pass '' or a subplot identifier.
+Keep short scope labels on panels and explanations in caption; retain axis names, units and legends.
 Keep fonts/styles unchanged. Use native appearance
 from grid identities, with display_labels for legend text. Preserve every selected finding and its sign/units.
 Captions state actual interval meaning, n/missing handling and synthetic-data status. No unsupported significance
 claims, causal claims, extra panels, changed endpoints or invented observations.
+Use English for all visible chart text and any returned caption, including repair responses.
 ''' + BOUND_GUIDANCE[spec['style']] + '\n'
     if previous:
         prompt += REPAIR_INSTRUCTION + 'A repair response may also include the corrected caption.\n'
@@ -119,7 +132,7 @@ def generate_code(table, analysis, spec, reference, previous, error):
             and table.get('metadata', {}).get('result_records')):
         return generate_bound_code(table, analysis, spec, reference, previous, error)
     native_guidance = NATIVE_FUNCTION_GUIDANCE if spec.get('style') != 'custom' else ''
-    prompt = CODE_INSTRUCTION + native_guidance + '''Include an accurate figure caption in the optional text block.
+    prompt = CODE_INSTRUCTION + native_guidance + AXES_GUIDANCE + '''Include an accurate figure caption in the optional text block.
 只做合理推理，不要过度思考。
 Use only task-relevant reasoning; do not overthink. Return the executable source directly.
 Implement draw(data, statistics, spec) -> Figure.
@@ -162,7 +175,8 @@ For paper-v1 native styles, the host loads the reviewed template functions uncha
 data-mapping helpers only; call the supplied native function with its exact signature. Do not redefine or modify
 template helpers, add local imports inside them, or replace their palette/interval logic.
 For two panels: layout = spec['style_contract']['layout'];
-fig, axes = plt.subplots(1, 2, figsize=tuple(layout['two_inches'])); fig.subplots_adjust(**layout['two_panels']).
+fig, axes = plt.subplots(1, 2, figsize=tuple(layout['two_inches']), squeeze=False);
+axes = axes.ravel(); fig.subplots_adjust(**layout['two_panels']).
 two_inches and two_panels are siblings, not nested. Finalize size and margins before native helper calls.
 For native bar helpers, legend_anchor is layout['legend_anchor'], NOT style_contract['legend_anchor'].
 For draw_paired_panel with positive bars, ylim=(0,max(1.0,1.2*max(actual_values_and_interval_uppers)))
@@ -186,9 +200,9 @@ above each supplied interval upper endpoint; do not leave a duplicate label at t
 Reserve a separate top strip for a compact horizontal legend when all categories have tall bars. Legends must
 cover no bars, interval whiskers or labels. Keep long explanatory captions in the separate caption, outside the canvas.
 The renderer places native bar/point legends outside the data area and fits margins to the final font metrics.
-Titles are metadata only: Chart.title is returned separately. Draw no overall or panel titles; do not call
-suptitle or add title text with fig.text/ax.text. Pass '' or only '(a)'/'(b)' to native title arguments.
-Put panel descriptions in caption; retain axis labels, units, legends and scientific annotations. Do not shrink fonts.
+Titles are metadata only: Chart.title is returned separately. Draw no overall figure title; do not call
+suptitle or add title text with fig.text/ax.text. Use the host's short scope label for prepared panels; otherwise pass '' or a subplot identifier.
+Keep short scope labels on panels and explanations in caption; retain axis names, units and legends. Do not shrink fonts.
 spec.style_contract.quantity_semantics comes from VERIFIED findings. For posterior parameter means its
 reference_values are thresholds on the horizontal probability axis, not categorical y positions. The host draws
 these vertical references; do not add your own threshold line or annotation. For posterior-event heatmaps the
@@ -239,7 +253,7 @@ do not claim p values or tests when finding.test is null. User-designated focal 
 
 def generate_prepared_code(table, spec, reference, previous, error):
     """The model arranges the figure; the host supplies every native data/axis argument."""
-    prompt = CODE_INSTRUCTION + NATIVE_FUNCTION_GUIDANCE + '''Implement draw(data, statistics, spec) -> Figure for this planned figure.
+    prompt = CODE_INSTRUCTION + NATIVE_FUNCTION_GUIDANCE + AXES_GUIDANCE + '''Implement draw(data, statistics, spec) -> Figure for this planned figure.
 Use task-relevant reasoning only. Return source directly, optionally with an accurate caption.
 data['figure'] is paper.figure.v1: points contain verified estimate/interval.low/interval.high and provenance;
 panels contain the complete arguments for the supplied native function. Do not read statistics or other data keys.
@@ -247,23 +261,34 @@ For EVERY panel call the native function as native_function(ax, **panel['argumen
 Use the actual native_api function name, not the placeholder native_function. Do not rebuild, replace, mutate,
 filter, average or hardcode those arguments. The host verifies native calls against the original bound data.
 The arguments already include the correct numeric/category axes, labels, unit, intervals, colors and markers.
+Category appearances are identity-bound too: pass through category_styles when supplied. Keep the host's short
+panel scope labels unchanged; they are different from the full external figure title. Do not add a redundant Estimate legend
+when the category ticks already identify all groups. A legend is needed when several series share the categories.
 No result_grid call or result_records parsing is needed or available. Missing intervals remain absent, never zero.
 You choose the Matplotlib panel arrangement, using the supplied paper layout and native functions unchanged.
-For one panel use layout=spec['style_contract']['layout'], plt.subplots(figsize=tuple(layout['single_inches']))
-and fig.subplots_adjust(**layout['single_panel']); for two use layout['two_inches'] and layout['two_panels'].
-For more panels arrange a grid with readable final-size fonts; never truncate the panel list to two.
+For one panel use layout=spec['style_contract']['layout']; fig, axes = plt.subplots(1,1,figsize=tuple(layout['single_inches']),squeeze=False);
+axes = axes.ravel(); fig.subplots_adjust(**layout['single_panel']); for two use layout['two_inches'] and layout['two_panels'].
+For more panels do not multiply the paper width by the panel count. Keep layout.two_inches[0] as the maximum width; use readable spacing without shrinking fonts. Never truncate the panel list.
 Place all panels. Keep their finding scopes distinct; do not add or drop panels. No statistical computation,
-file/network access, rcParams changes, dynamic reflection or example data. No overall or panel title text;
-titles are separate metadata. Explain panel scopes and actual interval kind/level in the caption.
-For point_interval contrasts, use panel['comparisons'] with label_difference_axis(ax, comparisons, None, None)
-and its returned full subtraction labels for the legend. The helper draws the zero reference. Never label only
-the baseline. Keep the prepared x label and axis range. Only add direction cues when explicitly supported.
+file/network access, rcParams changes, dynamic reflection or example data. The full figure title is separate metadata. Keep the host-provided short scope labels, which identify
+the data in each panel. Explain interval kind/level in the caption.
+For prepared point_interval/scatter_tradeoff figures the HOST creates the authoritative series legends. For differences,
+it also creates the zero reference from verified
+metadata. Do NOT call label_difference_axis, construct comparison dictionaries, add a legend or add zero lines.
+Row categories already name their actual scopes/comparisons when no separate series was planned. Keep the prepared
+short quantity/unit label unchanged; full figure titles and explanations belong only in title/caption fields.
+The HOST also draws any original-observation overlays, verified tradeoff intervals and a compact statistical footer.
+Do not draw extra dots, recompute samples, add footer text, reserve a blank footer strip or alter data/spec.
+All visible chart text must be English. Keep the supplied English display labels; do not copy Chinese request,
+report or raw column text onto the canvas. Full English figure titles/captions remain external metadata.
 ''' + (REPAIR_INSTRUCTION if previous else '')
     compact = figure_spec(spec, table)
     for field in ('rc', 'rules', 'series_colors', 'bar_series_colors', 'series_edges', 'series_markers',
                   'series_line_styles', 'series_sizes', 'quantity_semantics'):
         compact['style_contract'].pop(field, None)
-    payload = dict(data={'figure': table['figure']}, spec=compact, native_api=native_interface(reference, spec),
+    drawing_view = {**table['figure'], 'panels': [{key: value for key, value in panel.items() if key != 'observations'}
+                                               for panel in table['figure']['panels']]}
+    payload = dict(data={'figure': drawing_view}, spec=compact, native_api=native_interface(reference, spec),
                    execution_rules={'allowed_imports': sorted(ALLOWED_IMPORTS),
                                     'forbidden_names': sorted(FORBIDDEN),
                                     'forbidden_attributes': sorted(FORBIDDEN_ATTRIBUTES)},
@@ -293,7 +318,7 @@ def prepare_figures(analysis, figures, inputs=None, jobs=None):
                                   'column_indices': {c: i for i, c in enumerate(bound['columns'])}},
                 'style_contract': bind_series(skills.style_contract(figure['style'], figure['base_style']),
                                               figure['finding_ids'])}
-        spec['style_contract'], context = bind_context(spec['style_contract'], inputs, selected_jobs)
+        spec['style_contract'], context = bind_context(spec['style_contract'], inputs, jobs or selected_jobs)
         spec['style_contract']['quantity_semantics'] = figure_semantics(selected, selected_jobs, analysis['findings'])
         bound['metadata'].update(context)
         view = result_view(selected, selected_jobs, inputs, spec['style_contract'], context)

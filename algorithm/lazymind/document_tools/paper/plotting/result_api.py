@@ -66,6 +66,8 @@ def result_grid(data, metric, series_column, category_column, where) -> dict:
     xpad = max((max(x) - min(x)) * .04, .01) if numeric_x else None
     return dict(methods=methods, display_labels=[item['display_label'] for item in series],
                 categories=[item['display_label'] for item in categories], x=x,
+                category_styles=[{key: item[key] for key in ('artist_label', 'color', 'bar_color', 'edge', 'marker')}
+                                 for item in categories if 'color' in item],
                 summaries=summaries, values=values, curves=curves, comparisons=comparisons,
                 colors=[item['color'] for item in series], bar_colors=[item['bar_color'] for item in series],
                 edges=[item['edge'] for item in series], markers=[item['marker'] for item in series],

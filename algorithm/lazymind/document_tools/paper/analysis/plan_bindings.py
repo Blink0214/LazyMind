@@ -3,6 +3,39 @@ import hashlib
 import json
 import re
 
+from ..plotting.labels import result_unit, CJK, english_display, display_name
+
+
+def bind_figure_language(figure, jobs):
+    """Request local display repairs instead of changing data to obtain English labels."""
+    mapping = figure.get('data_mapping') or {}
+    aliases = mapping.get('display_labels', {})
+    missing = [field for field in ('title', 'caption') if CJK.search(figure[field])]
+    labels = [mapping.get(key) for key in ('value_label', 'category_label')]
+    labels += list(mapping.get('value_labels', {}).values()) + list(aliases.values())
+    missing.extend(label for label in labels if label and CJK.search(label))
+    if mapping:
+        source_labels = []
+        for identifier in figure['finding_ids']:
+            job = jobs[identifier]
+            if not mapping.get('value_label') and job['column'] not in mapping.get('value_labels', {}):
+                source_labels.append(display_name(job['column']))
+            if job.get('unit'):
+                source_labels.append(job['unit'])
+            for field in ('filters', 'baseline_filters'):
+                for rule in job[field]:
+                    source_labels.append(str(rule['value']))
+                    if mapping.get('category_column') == 'finding_id':
+                        source_labels.append(display_name(rule['column']))
+        if figure['style'] in ('bar_grouped_hatch', 'line_confidence_band', 'line_training_curve'):
+            source_labels.append(mapping.get('category_label') or
+                                 display_name(mapping['category_column'].split('.', 1)[-1]))
+        missing.extend(text for text in source_labels if CJK.search(english_display(text, aliases)))
+    return ([dict(figure_id=figure['id'], field='display_language',
+                  message='All chart titles/captions and visible labels must be English. Repair title/caption '
+                          'and data_mapping labels only; supply display_labels for these source texts: '
+                          + ', '.join(dict.fromkeys(missing)))] if missing else [])
+
 
 def evidence_catalog(inputs):
     entries = []
@@ -59,6 +92,7 @@ def expected_unit(job, tables):
         return 'count'
     table = tables[job['table_id']]
     response = table['units'][table['columns'].index(job['column'])]
+    response = result_unit(operation, response)
     if operation != 'ols_coefficient' or job['coefficient'] == 'intercept' or response is None:
         return response
     column = job['coefficient']
@@ -97,10 +131,11 @@ def bind_figure_mapping(figure, jobs, sources):
     """Qualify a unique alias; ambiguous selected/baseline axes require a local model repair."""
     mapping = figure.get('data_mapping')
     requires_mapping = figure['style'] in {
-        'point_interval', 'bar_grouped_hatch', 'line_confidence_band', 'line_training_curve'
+        'point_interval', 'bar_grouped_hatch', 'line_confidence_band', 'line_training_curve', 'scatter_tradeoff'
     }
     if not mapping and not requires_mapping:
         return []
+    from ..plotting.labels import comparison_coordinate
     rows, dimensions = [], {'finding_id'}
     for identifier in figure['finding_ids']:
         job = jobs[identifier]
@@ -111,6 +146,10 @@ def bind_figure_mapping(figure, jobs, sources):
                     column = (job['table_id'] + '.' + rule['column'] if job['table_id'] in sources
                               else rule['column'])
                     row[prefix + column] = rule['value']
+        if job['operation'] in ('difference', 'paired_t', 'paired_difference', 'welch_t'):
+            contrast = comparison_coordinate(row, job)
+            if contrast:
+                row['comparison'] = contrast[0]
         dimensions.update(row)
         rows.append((job, row))
     if not mapping:
@@ -118,6 +157,17 @@ def bind_figure_mapping(figure, jobs, sources):
                      message='该图表必须明确 data_mapping 的系列、类别和分面；只补全映射，不修改统计任务或图型',
                      available_dimensions=sorted(dimensions))]
     errors = []
+    metrics = {job['column'] for job, _ in rows}
+
+    def metric_name(name):
+        candidates = {job['column'] for job, _ in rows
+                      if name in (job['column'], job['table_id'] + '.' + job['column'])}
+        return next(iter(candidates)) if len(candidates) == 1 else name
+
+    labels = {metric_name(name): value for name, value in mapping.get('value_labels', {}).items()}
+    mapping['value_labels'] = labels
+    if set(labels) - metrics or (len(metrics) > 1 and set(labels) != metrics):
+        errors.append('多指标图须为每个实际指标提供 value_labels 短名称；不能共用模糊的数值轴名称')
 
     def resolve(value):
         if value is None or value in dimensions:
@@ -135,9 +185,17 @@ def bind_figure_mapping(figure, jobs, sources):
         return value
 
     mapping['series_column'] = resolve(mapping['series_column'])
-    mapping['category_column'] = resolve(mapping['category_column'])
+    scatter = figure['style'] == 'scatter_tradeoff'
+    mapping['category_column'] = (metric_name(mapping['category_column']) if scatter else
+                                  resolve(mapping['category_column']))
     mapping['facets'] = [resolve(value) for value in mapping['facets']]
-    keys = [mapping['category_column'], *mapping['facets']]
+    keys = [*mapping['facets']] if scatter else [mapping['category_column'], *mapping['facets']]
+    if scatter and (len(metrics) != 2 or mapping['category_column'] not in metrics):
+        errors.append('权衡图需要两个实际指标；category_column 指定横轴指标，另一个为纵轴；用 value_labels 标注两者')
+    contrasts = [row.get('comparison') for _, row in rows if row.get('comparison')]
+    if (mapping['category_column'] == 'finding_id' and mapping['series_column'] is None
+            and not mapping['facets'] and len(contrasts) != len(set(contrasts))):
+        errors.append('同一比较跨条件重复，不能展开为冗长的 finding_id 行标签；用 comparison 系列与实际条件类别，或按条件分面')
     if mapping['series_column']:
         keys.append(mapping['series_column'])
     if len(set(keys)) != len(keys):

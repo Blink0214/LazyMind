@@ -4,6 +4,8 @@ import json
 
 from ..analysis.schema import table_map
 from .style_profiles import bind_series
+from .labels import comparison_coordinate
+from .observations import bind_observations
 
 
 APPEARANCE = ('series_colors', 'bar_series_colors', 'series_edges', 'series_markers',
@@ -138,13 +140,25 @@ def bind_context(contract, inputs, jobs):
             unambiguous = all(result[name].get(label) == result[name][key]
                               for name in APPEARANCE if name in result)
             group['artist_labels'].append(label if unambiguous else key)
+    contrast_order = []
+    for job in jobs:
+        if job['operation'] not in ('difference', 'paired_t', 'paired_difference', 'welch_t'):
+            continue
+        coordinates = {prefix + (job['table_id'] + '.' + rule['column'] if job['table_id'] in tables
+                                  else rule['column']): rule['value']
+                       for field, prefix in [('filters', ''), ('baseline_filters', 'baseline.')]
+                       for rule in job[field] if rule['operator'] == 'eq'}
+        contrast = comparison_coordinate(coordinates, job)
+        if contrast and contrast[0] not in contrast_order:
+            contrast_order.append(contrast[0])
     scopes = {job['id']: {key: copy.deepcopy(job[key]) for key in
               ('table_id', 'column', 'operation', 'filters', 'baseline_filters', 'pair_by')} for job in jobs}
     for job in jobs:
         if job['operation'] in ('pearson', 'spearman'):
             scopes[job['id']].update(other_column=job['other_column'],
                                      missing_policy=job['missing_policy'], correlation_test=job['correlation_test'])
-    return result, dict(source_groups=groups, finding_scopes=scopes, user_request=inputs['request'],
+    return result, dict(source_groups=groups, finding_scopes=scopes, comparison_order=contrast_order,
+                        user_request=inputs['request'],
                         source_description=(inputs.get('data_context') or {}).get('description', ''))
 
 
@@ -208,21 +222,51 @@ def result_view(findings, jobs, inputs, contract, context):
         record = {key: copy.deepcopy(value) for key, value in finding.items()
                   if key not in ('statement', 'columns', 'calculation')}
         record.update(metric=job['column'], operation=job['operation'], coordinates=coordinates,
+                      definition={key: job[key] for key in ('coefficient', 'other_column', 'threshold', 'operator')
+                                  if job.get(key) is not None and
+                                  (key != 'operator' or job.get('threshold') is not None)},
                       comparisons=comparisons,
                       scope={key: copy.deepcopy(job[key]) for key in
-                             ('table_id', 'filters', 'baseline_filters', 'pair_by')})
+                             ('table_id', 'filters', 'baseline_filters', 'pair_by')},
+                      missing_policy=job.get('missing_policy', 'error'))
+        observations = bind_observations(finding, job, tables)
+        if observations:
+            record['observations'] = observations
+        contrast = comparison_coordinate(coordinates, job) if comparisons else None
+        if contrast:
+            coordinates['comparison'] = contrast[0]
+            comparisons['comparison'] = contrast[1]
+            observed.setdefault('comparison', [])
+            if contrast[0] not in observed['comparison']:
+                observed['comparison'].append(contrast[0])
         records.append(record)
     for ref, values in observed.items():
         source_ref = ref.removeprefix('baseline.')
         source = next((group for group in context['source_groups']
                        if group['table_id'] + '.' + group['column'] == source_ref), None)
-        ordered = [value for value in source['values'] if value in values] if source else values
-        appearance = bind_series(contract, ordered)
+        universe = (context['comparison_order'] if ref == 'comparison' else
+                    source['values'] if source else values)
+        ordered = [value for value in universe if value in values]
+        appearance = bind_series(contract, universe)
         items = []
         for value in ordered:
             label = str(value)
+            if ref == 'comparison':
+                pair = next(row['comparisons'][ref] for row in records if row['coordinates'].get(ref) == value)
+                label = f'{pair[0]} - {pair[1]}'
+                # Appearance follows a contrast identity, not either individual method.
             artist = source['artist_labels'][source['values'].index(value)] if source else label
-            style = {field: contract.get(field, {}).get(artist, appearance[field][label]) for field in APPEARANCE}
+            style = {field: (appearance[field][str(value)] if ref == 'comparison' else
+                             contract.get(field, {}).get(artist, appearance[field][label])) for field in APPEARANCE}
+            if ref == 'comparison':
+                pair = json.loads(value)
+                owner = next((group for group in context['source_groups']
+                              if len(pair) == 1 and group['table_id'] + '.' + group['column'] == pair[0][0]), None)
+                # Color retains the minuend group's identity; shape distinguishes its baselines.
+                selected = (owner['canonical_labels'][owner['values'].index(pair[0][1])] if owner else None)
+                for field, palette in [('series_colors', 'colors'), ('bar_series_colors', 'bar_colors'),
+                                       ('series_edges', 'edge_colors')]:
+                    style[field] = contract[field][selected] if selected else contract.get(palette, contract['colors'])[0]
             items.append(dict(value=value, artist_label=artist, display_label=label,
                               color=style['series_colors'], bar_color=style['bar_series_colors'],
                               edge=style['series_edges'], marker=style['series_markers'],

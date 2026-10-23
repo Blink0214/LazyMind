@@ -15,6 +15,13 @@ Use `heatmap_layouts` for the chosen mode. Its positions give data axes and sepa
 
 `draw_colorbar(fig, image, colorbar_ax, label, ticks)` keeps the colorbar vector and its compact 7–7.5 pt type. Use the same limits across comparable panels. Captions state values/units, any actual normalization, missing cells and provenance. Mark missing cells rather than filling them with zero.
 
+Bind `ax = fig.add_axes(entry['panel'])` and `colorbar_ax = fig.add_axes(entry['colorbar'])`
+from the selected heatmap layout. Pass `ax` to `draw_heatmap` and `colorbar_ax` to
+`draw_colorbar`; using the data axis for the colorbar is rejected before it changes
+the panel. The paper renderer wraps long column names at word boundaries using
+measured cell widths, or rotates an unbreakable label, while preserving the font
+size and exact label words. Overlapping labels still fail the final layout check.
+
 For verified posterior-event probabilities use matrix mode with limits (0,1), and label
 the scale with the actual event, e.g. `P(p > 0.80 | data)`. This is neither a posterior mean
 nor a p value. F4 supplies the label in `quantity_semantics.value_label` and retains it on

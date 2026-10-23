@@ -11,6 +11,7 @@ PUBLIC_STAGES = {
     'interpretation', 'output_publication',
 }
 MAX_OUTPUT = 96 * 1024
+MAX_REASONING = 32 * 1024
 
 
 def public_error(error):
@@ -51,8 +52,10 @@ class PublicProgress:
         steps = copy.deepcopy(list(self.steps.values()))
         remaining = 512 * 1024
         for step in reversed(steps):
-            if 'output' in step:
-                output = step['output']
+            for channel in ('output', 'reasoning'):
+                if channel not in step:
+                    continue
+                output = step[channel]
                 raw = output['text'].encode('utf-8')
                 output['text'] = raw[:remaining].decode('utf-8', errors='ignore')
                 output['truncated'] = output.get('truncated', False) or len(raw) > remaining
@@ -95,7 +98,7 @@ class PublicProgress:
         if exc:
             from .trace import safe_error
             step['summary'] = public_error(safe_error(exc))['message']
-        elif step['summary'].startswith(('等待模型', '首次请求', '前次请求', '正在接收模型', '模型返回已结束', '模型完整结果')):
+        elif step['summary'].startswith(('等待模型', '首次请求', '前次请求', '已收到推理片段', '正在接收模型', '模型返回已结束', '模型完整结果')):
             step['summary'] = '本阶段已完成。'
         self.send(identifier)
 
@@ -118,7 +121,7 @@ class PublicProgress:
 
 
 class ResponsePreview:
-    """Only the provider's formal text channel; leading think envelopes are withheld."""
+    """Keep provider-returned reasoning and formal text in separate bounded previews."""
     def __init__(self, recorder, parent_id, json_output):
         self.recorder = recorder
         item = next((s for s in recorder.summary['stages'] if s['id'] == parent_id), None)
@@ -130,6 +133,47 @@ class ResponsePreview:
         self.received_text = False
         self.truncated = False
         self.format = 'json' if json_output else 'python'
+        self.reasoning = ''
+        self.reasoning_bytes = 0
+        self.reasoning_truncated = False
+        self.received_reasoning = False
+
+    def _append_reasoning(self, text):
+        if not text:
+            return
+        self.received_reasoning = True
+        if self.reasoning_truncated:
+            return
+        raw = text.encode('utf-8')
+        available = MAX_REASONING - self.reasoning_bytes
+        clipped = raw[:available].decode('utf-8', errors='ignore')
+        self.reasoning += clipped
+        self.reasoning_bytes += len(clipped.encode('utf-8'))
+        self.reasoning_truncated |= len(raw) > available
+        self._publish_reasoning('streaming')
+
+    def _publish_reasoning(self, mode, force=False):
+        if not self.owner or not self.reasoning:
+            return
+        from .trace import redact
+        with self.recorder.lock:
+            step = self.recorder.public.steps[self.owner]
+            first = 'reasoning' not in step
+            visible = redact(self.reasoning).encode('utf-8')
+            step['reasoning'] = dict(text=visible[:MAX_REASONING].decode('utf-8', errors='ignore'),
+                                     format='text', mode=mode,
+                                     truncated=self.reasoning_truncated or len(visible) > MAX_REASONING)
+            if mode == 'streaming' and not self.text:
+                step['summary'] = '已收到推理片段，等待模型返回正文。'
+            self.recorder.public.send(self.owner, force or first)
+
+    @staticmethod
+    def _partial_closing_tag(text, tag):
+        """Hold only a possible split closing tag, leaving its preceding text visible."""
+        for size in range(min(len(text), len(tag) - 1), 0, -1):
+            if text[-size:].lower() == tag[:size].lower():
+                return size
+        return 0
 
     def _publish(self, mode, force=False):
         if not self.owner:
@@ -148,18 +192,34 @@ class ResponsePreview:
                 '模型返回已结束，后续将解析与校验。')
             self.recorder.public.send(self.owner, force or first)
 
+    def _note_reasoning(self):
+        if not self.owner or self.text:
+            return
+        with self.recorder.lock:
+            step = self.recorder.public.steps[self.owner]
+            summary = '已收到推理片段，等待模型返回正文。'
+            if step['summary'] != summary:
+                step['summary'] = summary
+                self.recorder.public.send(self.owner)
+
     def sink(self, payload):
+        if payload.get('tag') == 'think' and payload.get('delta'):
+            self._append_reasoning(str(payload['delta']))
+            return
         if payload.get('tag') != 'text' or not payload.get('delta'):
             return
         self.received_text = True
         self.buffer += str(payload['delta'])
         while self.leading:
             if self.inside:
-                match = re.search(r'</' + self.inside + r'>', self.buffer, re.I)
+                closing = '</' + self.inside + '>'
+                match = re.search(closing, self.buffer, re.I)
                 if not match:
-                    # Keep just the possible split closing tag, never the hidden body.
-                    self.buffer = self.buffer[-16:]
+                    held = self._partial_closing_tag(self.buffer, closing)
+                    self._append_reasoning(self.buffer[:-held] if held else self.buffer)
+                    self.buffer = self.buffer[-held:] if held else ''
                     return
+                self._append_reasoning(self.buffer[:match.start()])
                 self.buffer = self.buffer[match.end():]
                 self.inside = None
             stripped = self.buffer.lstrip()
@@ -167,15 +227,17 @@ class ResponsePreview:
                 return
             lower = stripped.lower()
             tags = ('<think>', '<thinking>')
-            if any(tag.startswith(lower) for tag in tags):
+            if any(tag.startswith(lower) and tag != lower for tag in tags):
                 return
             match = re.match(r'<(think|thinking)>', stripped, re.I)
             if match:
+                self._note_reasoning()
                 self.inside = match[1]
                 self.buffer = stripped[match.end():]
                 continue
             self.leading = False
             self.buffer = stripped
+            self._publish_reasoning('complete', force=True)
         self.truncated = self.truncated or len(self.text) + len(self.buffer) > MAX_OUTPUT
         if len(self.text) < MAX_OUTPUT:
             self.text += self.buffer[:MAX_OUTPUT - len(self.text)]
@@ -184,11 +246,29 @@ class ResponsePreview:
 
     def finish(self, raw):
         from ..plotting.code_response import response_text
+        # Non-streaming providers may include public reasoning in leading tagged envelopes.
+        remaining = str(raw or '').strip() if not isinstance(raw, dict) else ''
+        parts = []
+        while opening := re.match(r'<(think|thinking)>', remaining, re.I):
+            closing = re.search(r'</' + opening[1] + r'>', remaining[opening.end():], re.I)
+            parts.append(remaining[opening.end():opening.end() + closing.start()] if closing
+                         else remaining[opening.end():])
+            if not closing:
+                break
+            remaining = remaining[opening.end() + closing.end():].lstrip()
+        streamed_reasoning = self.received_reasoning
+        if parts:
+            encoded = '\n'.join(parts).encode('utf-8')
+            self.reasoning = encoded[:MAX_REASONING].decode('utf-8', errors='ignore')
+            self.reasoning_bytes = len(self.reasoning.encode('utf-8'))
+            self.reasoning_truncated = len(encoded) > MAX_REASONING
         # Display normalization does not change the value returned to the algorithm.
         text = json.dumps(raw, ensure_ascii=False) if isinstance(raw, dict) else response_text(raw or '')[0]
+        self._publish_reasoning('complete' if streamed_reasoning else 'buffered', force=True)
         self.truncated = len(text.encode('utf-8')) > MAX_OUTPUT
         self.text = text[:MAX_OUTPUT]
         self._publish('complete' if self.received_text and not self.leading else 'buffered', force=True)
 
     def abort(self):
+        self._publish_reasoning('interrupted', force=True)
         self._publish('interrupted', force=True)

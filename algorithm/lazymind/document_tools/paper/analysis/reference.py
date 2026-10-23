@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import math
 import operator
+import re
+from datetime import datetime, timezone
 
 from .views import materialize
 from .plan_repair import AnalysisFeasibilityError
@@ -25,13 +27,36 @@ def select(table, filters):
     ops = {'eq': operator.eq, 'ne': operator.ne, 'gt': operator.gt,
            'ge': operator.ge, 'lt': operator.lt, 'le': operator.le}
 
-    def matches(row, rule):
-        value, expected, op = row[indices[rule['column']]], rule['value'], rule['operator']
-        if op == 'not_null':
-            return value is not None
+    def comparable(value, index):
+        if value is None or table['column_types'][index] != 'datetime':
+            return value
+        if not isinstance(value, str) or not re.fullmatch(
+            r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})', value
+        ):
+            raise ValueError('时间筛选值必须为带时区的 RFC3339 时间')
+        try:
+            return datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(timezone.utc)
+        except ValueError as exc:
+            raise ValueError('时间筛选值必须为有效的 RFC3339 时间') from exc
+
+    prepared = []
+    for rule in filters:
+        index, op, expected = indices[rule['column']], rule['operator'], rule['value']
         if op == 'in':
             if not isinstance(expected, list):
                 raise ValueError('in 筛选须提供列表')
+            expected = [comparable(value, index) for value in expected]
+        elif op != 'not_null':
+            expected = comparable(expected, index)
+        prepared.append((index, op, expected))
+
+    def matches(row, rule):
+        index, op, expected = rule
+        value = row[index]
+        if op == 'not_null':
+            return value is not None
+        value = comparable(value, index)
+        if op == 'in':
             return value in expected
         if value is None or expected is None:
             return op == 'eq' and value is expected or op == 'ne' and value is not expected
@@ -39,7 +64,7 @@ def select(table, filters):
             return ops[op](value, expected)
         except TypeError as exc:
             raise ValueError('筛选值类型不兼容') from exc
-    return [i for i, row in enumerate(table['rows']) if all(matches(row, f) for f in filters)]
+    return [i for i, row in enumerate(table['rows']) if all(matches(row, f) for f in prepared)]
 
 
 def reference(job, inputs, models, views=None):

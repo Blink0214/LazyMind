@@ -12,7 +12,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from .live import public_error
+from .live import MAX_REASONING, public_error
 
 router = APIRouter()
 WORKSPACES = Path(os.environ.get('LAZYMIND_SUBAGENT_WORKSPACE_ROOT', '/data/subagent'))
@@ -70,11 +70,15 @@ def read_snapshot(task_id, task):
                     continue
                 step = {key: item[key] for key in ('step_id', 'revision', 'order', 'title', 'status', 'summary',
                                                    'started_at', 'finished_at', 'elapsed_ms') if key in item}
-                output = item.get('output')
-                if (isinstance(output, dict) and isinstance(output.get('text'), str)
-                        and output.get('format') in ('json', 'python', 'text')
-                        and output.get('mode') in ('streaming', 'buffered', 'complete', 'interrupted')):
-                    step['output'] = {key: output[key] for key in ('text', 'format', 'mode', 'truncated') if key in output}
+                for channel in ('output', 'reasoning'):
+                    output = item.get(channel)
+                    if (isinstance(output, dict) and isinstance(output.get('text'), str)
+                            and output.get('format') in ('json', 'python', 'text')
+                            and output.get('mode') in ('streaming', 'buffered', 'complete', 'interrupted')):
+                        if channel == 'reasoning' and (output['format'] != 'text'
+                                or len(output['text'].encode('utf-8')) > MAX_REASONING):
+                            continue
+                        step[channel] = {key: output[key] for key in ('text', 'format', 'mode', 'truncated') if key in output}
                 steps.append(step)
             value.update(execution_id=trace_id, revision=public['revision'], process_steps=steps,
                          timing={**public['timing'], 'measured_at': measured},

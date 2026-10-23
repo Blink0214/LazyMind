@@ -48,7 +48,5 @@ def draw_radar(ax, series, labels, categories, colors, edges, markers, line_styl
     for angle, label in zip(theta, categories):
         align = 'left' if np.sin(angle) > .15 else 'right' if np.sin(angle) < -.15 else 'center'
         ax.text(angle, 1.12 * radial_max, label, ha=align, va='center', fontsize=8)
-    marker = title.split()[0] if title else ''
-    marker = marker if len(marker) == 3 and marker[0] == '(' and marker[2] == ')' and marker[1].isalpha() else ''
-    ax.set_title(marker, fontsize=9, pad=5)
+    ax.set_title(title, fontsize=9, pad=5)
     ax.legend(loc='upper center', bbox_to_anchor=(.5, -.025), ncol=2, columnspacing=1.1)

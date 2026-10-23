@@ -7,13 +7,16 @@ import matplotlib.patches as mpatches
 
 
 def draw_panel(ax, data_dict, colors, hatches, labels, title, x_positions, total_w,
-               xlim, legend_anchor, benchmarks, best_method, xlabel, ylabel, y_limits):
+               xlim, legend_anchor, benchmarks, best_method, xlabel, ylabel, y_limits,
+               category_styles, intervals):
     if not labels or len(set(labels)) != len(labels):
         raise ValueError('Bar series labels must be nonempty and unique')
     if not (len(colors) == len(hatches) == len(labels)):
         raise ValueError('Supply one color and hatch per series')
     if len(x_positions) != len(benchmarks):
         raise ValueError('Category positions and labels must align')
+    if category_styles is not None and (len(labels) != 1 or len(category_styles) != len(benchmarks)):
+        raise ValueError('Category appearance requires one series and one identity per category')
     if not y_limits[0] <= 0 <= y_limits[1]:
         raise ValueError('Comparison bars require a zero baseline')
     n_groups = len(benchmarks)
@@ -28,12 +31,29 @@ def draw_panel(ax, data_dict, colors, hatches, labels, title, x_positions, total
             raise ValueError('Only an explicitly supplied focal method may use // hatch')
         valid = np.isfinite(vals)
         offset = (i - n_methods / 2 + 0.5) * bar_w
-        bars = ax.bar(x[valid] + offset, vals[valid], width=bar_w, color=color,
+        faces = [style['bar_color'] for style, keep in zip(category_styles, valid) if keep] if category_styles else color
+        bars = ax.bar(x[valid] + offset, vals[valid], width=bar_w, color=faces,
                       hatch=hatch, edgecolor='white', linewidth=0.45, zorder=2, label=label)
+        if category_styles:
+            for bar, style in zip(bars, [style for style, keep in zip(category_styles, valid) if keep]):
+                bar.set_label(style['artist_label'])
+        endpoints = np.asarray(intervals[label], dtype=float)
+        if endpoints.shape != (n_groups, 2) or np.isinf(endpoints).any():
+            raise ValueError('Supply aligned lower/upper endpoints or two nulls per bar')
+        low, high = endpoints.T
+        observed = np.isfinite(low) & np.isfinite(high)
+        if (np.any(np.isnan(low) != np.isnan(high)) or np.any(observed & ~valid)
+                or np.any(low[observed] > vals[observed]) or np.any(high[observed] < vals[observed])
+                or np.any(low[observed] < y_limits[0]) or np.any(high[observed] > y_limits[1])):
+            raise ValueError('Bar intervals must enclose the observed value and remain inside the numeric axis')
+        if observed.any():
+            ax.errorbar(x[observed] + offset, vals[observed],
+                        yerr=np.vstack([vals[observed] - low[observed], high[observed] - vals[observed]]),
+                        fmt='none', ecolor='#606060', elinewidth=.85, capsize=2, capthick=.65, zorder=3)
         is_best = label == best_method
-        for bar, v in zip(bars, vals[valid]):
+        for bar, v, upper in zip(bars, vals[valid], high[valid]):
             ax.text(bar.get_x() + bar.get_width() / 2,
-                    v + (y_limits[1] - y_limits[0]) * (0.5 / 85), f'{v:.3g}',
+                    (upper if np.isfinite(upper) else v) + (y_limits[1] - y_limits[0]) * .02, f'{v:.3g}',
                     ha='center', va='bottom', fontsize=7.2,
                     fontweight='bold' if is_best else 'normal', color='black', zorder=3)
     ax.set_xticks(x)
@@ -42,9 +62,7 @@ def draw_panel(ax, data_dict, colors, hatches, labels, title, x_positions, total
     ax.set_ylabel(ylabel, fontsize=8.5, labelpad=4)
     ax.set_ylim(*y_limits)
     ax.set_xlim(*xlim)
-    marker = title.split()[0] if title else ''
-    marker = marker if len(marker) == 3 and marker[0] == '(' and marker[2] == ')' and marker[1].isalpha() else ''
-    ax.set_title(marker, fontsize=9.0, pad=6)
+    ax.set_title(title, fontsize=9.0, pad=6)
     ax.yaxis.grid(True, color='#EBEBEB', linewidth=0.45, linestyle='--', zorder=0)
     ax.set_axisbelow(True)
     for side, spine in ax.spines.items():
@@ -55,6 +73,8 @@ def draw_panel(ax, data_dict, colors, hatches, labels, title, x_positions, total
             spine.set_color('#333333')
             spine.set_zorder(4)
     ax.tick_params(length=2.5, width=0.6, labelsize=8.0)
+    if len(labels) == 1:
+        return  # Category ticks already identify these bars; an "Estimate" legend repeats no useful information.
     handles = [mpatches.Patch(facecolor=color, hatch=hatch, edgecolor='white', linewidth=0.45, label=label)
                for label, color, hatch in zip(labels, colors, hatches)]
     leg = ax.legend(handles=handles, fontsize=7.3, loc='upper right', bbox_to_anchor=legend_anchor,

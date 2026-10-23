@@ -1,5 +1,10 @@
 # Grouped method comparisons
 
+Do not automatically overlay individual-run dots on these bars. Keep the verified
+means and intervals; when the distribution itself matters, choose an appropriate
+point-interval or distribution figure instead. A bar caption must not claim that
+individual observations are shown.
+
 Select this representation when the question is how named methods compare within
 the same categories. Keep experimental settings in separate panels or apply an
 explicit filter first. Each displayed method/category cell must refer to a single
@@ -13,7 +18,7 @@ generated program it is installed under the name **`draw_reference_panel`**:
 ```python
 draw_reference_panel(ax, data_dict, colors, hatches, labels, title, x_positions,
                      total_w, xlim, legend_anchor, benchmarks, best_method,
-                     xlabel, ylabel, y_limits)
+                     xlabel, ylabel, y_limits, category_styles, intervals)
 ```
 
 - `labels` contains distinct method names; `benchmarks` contains the displayed category names.
@@ -22,6 +27,12 @@ draw_reference_panel(ax, data_dict, colors, hatches, labels, title, x_positions,
 - `x_positions` has one position per category. For unit-spaced positions starting at zero, use `total_w=0.78` and `xlim=(-0.56, len(benchmarks)-0.44)`.
 - `y_limits` must include zero and every visible value, with extra space for annotations. `xlabel` and `ylabel` name the actual quantities and units.
 - `title` is empty or a panel identifier. `legend_anchor` is an axes-relative position chosen with the panel layout.
+- `category_styles` is `None` for separate method series. With one series of named categories, pass the host's
+  aligned identity styles; each bar uses that category's `bar_color` and `artist_label`. Category ticks identify
+  those bars, so the helper omits the redundant single-series legend.
+- `intervals[label]` contains one `[lower, upper]` pair per category, or `[None, None]` for an estimate without
+  uncertainty. The helper draws the verified endpoints at the actual bar centers and places values above them.
+  Endpoints are never estimated here; keep their definition and level in the separate caption.
 
 The helper divides the total group width among all methods. It omits unknown bars
 and their value labels, adds white seams and numeric labels, and emphasizes only
@@ -35,9 +46,8 @@ drop a method to fit the palette, or turn missing cells into zero-height bars.
 
 The application can fit method legends outside the observations after applying
 final font metrics. A category-only display should not repeat its axis labels in a
-legend. Do not overlay another symbol for the same mean. This helper has no interval
-argument: if uncertainty is central, use `point_interval` or a deliberately planned
-custom geometry with verified endpoints.
+legend. Do not overlay another mean symbol. If interval comparison is the main question, `point_interval` can
+communicate those estimates with less ink; choose based on the question rather than dropping uncertainty.
 
 Return the research question as figure metadata. The caption explains panel scope,
 aggregation, units and any absent cells; the drawing does not establish significance.

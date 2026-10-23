@@ -47,6 +47,7 @@
       20
     ],
     "bold_font_family": "cmb10",
+    "note_font_size": 6.2,
     "preserve_canvas": true,
     "preserve_legend_location": true,
     "palette_source": "approved_gray_gray_blue",
@@ -138,7 +139,7 @@
       "Use the actual drawing helpers, not a generic chart with only matching colors. The model chooses the question, source columns, facets and observed-vs-summary data.",
       "Use the shared group identity for colors, edge colors, markers and line styles; sorting or filtering panels must not change that identity. Color is not a rank or significance claim.",
       "Use 89 mm single-column or 182 mm double-column layouts with the supplied margins; these are a general paper preset, not universal journal requirements. For more panels or longer labels allocate more space rather than shrinking all fonts.",
-      "Return short figure titles as metadata, never on the canvas. Native title arguments contain only an empty string or (a)/(b) subplot identifiers. Put panel descriptions, data provenance, statistics definitions, missing values and uncertainty limitations in the separate caption. Do not invent replication or significance.",
+      "Return short figure titles as metadata, never on the canvas. Native title arguments contain an empty string or a short verified scope label such as (a) <cohort>; the full figure title stays external. Put panel descriptions, data provenance, statistics definitions, missing values and uncertainty limitations in the separate caption. Do not invent replication or significance.",
       "Do not add reference events, axis breaks, smoothing, uncertainty bands or embeddings unless the actual data and research question support them.",
       "Method identity colors and numeric colormaps have different meanings. Native stacked components use their own stable palette. Matrix heatmaps use viridis or cividis; signed differences and correlations use zero-centered PuOr. The rejected all-blue benchmark matrix is not an option; Blues remains approved for confusion counts/proportions."
     ]
@@ -185,7 +186,8 @@
       "kind": "scatter",
       "rules": [
         "Preserve every observed x/y pair. Use stable shapes and colors for groups. Ordinary tradeoffs do not need t-SNE styling, a broken axis, connecting lines or quartile bars; bins do not imply matched budgets."
-      ]
+      ],
+      "fit_paper_layout": true
     },
     "line_confidence_band": {
       "script": "line_selfdistill.py",
@@ -628,7 +630,7 @@
       "preserve_template_line_colors": true,
       "rules": [
         "Use verified estimate/lower/upper triples for each method and category, preserving asymmetric endpoints and exact units. Do not fabricate intervals, pair unrelated runs or recompute inference in drawing. Keep all finite intervals within the view. Use zero for arithmetic differences and one for ratios only when meaningful.",
-        "For arithmetic differences call label_difference_axis after draw_point_intervals. Supply comparisons mapping every original series identity to [minuend name, subtrahend name] in the computed order; use its returned handles/labels in the legend. Baseline-only labels are ambiguous. Keep original artist identities/colors unchanged. State the changed metric and units on the x axis. Panel descriptions belong in the separate caption; title arguments contain only subplot identifiers. Include zero and all intervals on an increasing linear scale. Only known higher/lower metric preference permits a direction cue; otherwise pass None, None. Reserve space above the data for cues and subplot identifiers. Share a legend only for panels with identical comparison semantics. Do not apply this difference helper to absolute means or ratios."
+        "For arithmetic differences call label_difference_axis after draw_point_intervals. Supply comparisons mapping every original series identity to [minuend name, subtrahend name] in the computed order; use its returned handles/labels in the legend. Baseline-only labels are ambiguous. Keep original artist identities/colors unchanged. State the changed metric and units on the x axis. Panel descriptions belong in the separate caption; title arguments keep short verified scope labels and subplot identifiers. Include zero and all intervals on an increasing linear scale. Only known higher/lower metric preference permits a direction cue; otherwise pass None, None. Reserve space above the data for cues and subplot identifiers. Share a legend only for panels with identical comparison semantics. Do not apply this difference helper to absolute means or ratios."
       ],
       "fit_paper_layout": true
     },
