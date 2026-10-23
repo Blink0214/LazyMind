@@ -17,23 +17,26 @@ FIELDS = {
     'experiment': ('question', 'evidence', 'data'),
     'data_analysis': ('data', 'experiment', 'data_context', 'study_design', 'result_meta'),
     'write_document': ('papers', 'question', 'evidence', 'analysis', 'charts', 'outline', 'manuscript',
-                       'review', 'review_data', 'selected_issue_ids'),
+                       'review', 'review_data', 'selected_issue_ids', 'writing_materials', 'media_assets'),
     'peer_review': ('manuscript', 'evidence', 'analysis'),
     'reading_reflection': ('papers', 'evidence'),
 }
+FIELDS['write_outline'] = FIELDS['write_document']
+FIELDS['revise_document'] = FIELDS['write_document']
 OUTPUTS = {
     'research_topic': ('question',), 'literature_review': ('evidence', 'papers'),
     'experiment': ('experiment', 'code_files', 'result_meta'), 'data_analysis': ('analysis', 'charts'),
-    'write_document': ('outline', 'manuscript'), 'peer_review': ('review', 'review_data'),
+    'write_outline': ('outline',), 'write_document': ('outline', 'manuscript'), 'peer_review': ('review', 'review_data'),
     'reading_reflection': ('reflection',),
 }
-ALIASES = {'refine_topic': 'research_topic', 'revise_document': 'write_document'}
+OUTPUTS['revise_document'] = ('manuscript',)
+ALIASES = {'refine_topic': 'research_topic'}
 MODES = {'research_topic': 'create', 'refine_topic': 'refine',
-         'write_document': 'draft', 'revise_document': 'revise'}
+         'write_outline': 'draft', 'write_document': 'draft', 'revise_document': 'revise'}
 KINDS = set().union(*FIELDS.values(), *OUTPUTS.values()) - {'selected_issue_ids'}
 # The workflow uses these capabilities when assembling inputs and reading requests.
-CONSTRAINED_MODULES = {'write_document', 'data_analysis'}
-CURRENT_REQUEST_MODULES = {'write_document', 'peer_review'}
+CONSTRAINED_MODULES = {'write_outline', 'write_document', 'revise_document', 'data_analysis'}
+CURRENT_REQUEST_MODULES = {'write_outline', 'write_document', 'revise_document', 'peer_review'}
 DEFAULT_CONSTRAINTS = {
     'paper_language': 'zh-CN', 'word_target': None, 'paper_type': None,
     'citation_style': 'GB/T 7714', 'focus': [],
@@ -108,6 +111,15 @@ def normalize_papers(papers):
 
 
 def validate_value(kind, value):
+    if kind == 'media_assets':
+        from lazyllm.tools.writer.data_models import MediaAssetLibrary
+        library = MediaAssetLibrary.model_validate(value)
+        for key, asset in library.assets.items():
+            if key != asset.media_asset_id or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,79}', key):
+                raise ValueError('Invalid uploaded image ID')
+            if not asset.uri or not re.fullmatch(r'/static-files/paper-media/[A-Za-z0-9_/-]+\.(?:svg|png|jpg|jpeg)', asset.uri):
+                raise ValueError('Uploaded image must reference the saved paper media library')
+        return
     if kind == 'code_files':
         if not isinstance(value, list):
             raise ValueError('code_files 必须是列表')
@@ -254,12 +266,12 @@ def validate_input(step, value):
         item = value.get(field, [] if field in ('papers', 'charts', 'selected_issue_ids') else None)
         if field == 'papers':
             item = normalize_papers(item)
-        if module == 'write_document' and item is not None and field in ('question', 'evidence', 'review'):
+        if module in {'write_outline', 'write_document', 'revise_document'} and item is not None and field in ('question', 'evidence', 'review'):
             text(item, field)
-        elif module == 'write_document' and field == 'analysis' and item is not None:
+        elif module in {'write_outline', 'write_document', 'revise_document'} and field == 'analysis' and item is not None:
             from .analysis.schema import validate_analysis
             validate_analysis(item)
-        elif module == 'write_document' and field == 'charts':
+        elif module in {'write_outline', 'write_document', 'revise_document'} and field == 'charts':
             from .analysis.schema import Chart, parse
             if not isinstance(item, list):
                 raise ValueError('charts 必须是列表')
@@ -269,22 +281,24 @@ def validate_input(step, value):
         elif item is not None or field in ('charts', 'selected_issue_ids'):
             validate_value(field, item)
         result[field] = copy.deepcopy(item)
-    if module == 'write_document' and isinstance(result['analysis'], dict):
+    if module in {'write_outline', 'write_document', 'revise_document'} and isinstance(result['analysis'], dict):
         from .analysis.schema import validate_charts as validate_structured_charts
         validate_structured_charts(result['charts'], result['analysis'])
-    if step == 'write_document' and result.get('manuscript'):
+    if step == 'revise_document' and result.get('manuscript') and not result.get('review_data'):
         from .publication import normalize_source_citations
         result['manuscript'] = normalize_source_citations(result['manuscript'], result['papers'])
     required = {'experiment': ('question',), 'refine_topic': ('evidence',), 'peer_review': ('manuscript',),
-                'revise_document': ('manuscript', 'review', 'review_data'), 'reading_reflection': ('papers',)}.get(step, ())
+                'revise_document': ('manuscript',), 'reading_reflection': ('papers',)}.get(step, ())
     missing = [name for name in required if not result[name]]
-    if step == 'write_document':
-        writing_materials = ('papers', 'question', 'evidence', 'analysis', 'outline', 'manuscript')
+    if step in {'write_outline', 'write_document', 'revise_document'}:
+        writing_materials = ('papers', 'question', 'evidence', 'analysis', 'outline', 'manuscript', 'writing_materials')
         if not any(result[k] for k in writing_materials):
             missing.append('研究材料、大纲或稿件')
     if missing:
         raise MissingMaterials('缺少材料: ' + '、'.join(missing))
-    if step == 'revise_document':
+    if step == 'revise_document' and any((result['review'], result['review_data'], result['selected_issue_ids'])):
+        if not result['review'] or not result['review_data']:
+            raise MissingMaterials('审稿修订需要完整的审稿报告和结构化意见。')
         data = result['review_data']
         text(result['review'], 'review')
         if (data['manuscript_sha256'] != text_digest(result['manuscript'])

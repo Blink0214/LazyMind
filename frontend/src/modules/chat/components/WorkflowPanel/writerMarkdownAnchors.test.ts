@@ -221,6 +221,20 @@ describe('Writer Markdown system anchors', () => {
     )).toBe(source);
   });
 
+  it('keeps paper chart ownership hidden and attached to renamed outline headings', () => {
+    const charts = '<!-- paper-charts: ["accuracy"] -->';
+    const source = '# Paper\n\n<a id="block-sec-1"></a>\n## Results\n' + charts;
+    const editable = writerMarkdownForEditing(source);
+    expect(editable).not.toContain('paper-charts');
+    const saved = writerMarkdownForSave(protectWriterMarkdownHeadingAnchors(
+      source, editable.replace('## Results', '## Verified results'),
+    ));
+    expect(saved).toContain('## Verified results\n' + charts);
+    expect(writerMarkdownForSave(protectWriterMarkdownHeadingAnchors(
+      source, '# Paper',
+    ))).not.toContain('paper-charts');
+  });
+
   it('restores stable heading anchors on save and removes anchors for deleted headings', () => {
     const source = [
       '# 标题',

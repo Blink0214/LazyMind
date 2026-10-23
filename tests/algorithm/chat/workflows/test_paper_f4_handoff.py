@@ -5,7 +5,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from lazymind.document_tools.paper import api, contracts, peer_review, workflow, write_document
+from lazymind.document_tools.paper import api, contracts, peer_review, workflow
+from lazymind.document_tools.paper.writing import write_document, revise_document
 from lazymind.document_tools.paper.analysis.schema import binding, normalize_input
 
 
@@ -42,6 +43,7 @@ def test_f4_materials_reach_writing_review_and_revision(f4_result, monkeypatch, 
         manuscript=(value['manuscript'] or '# 稿件\n\n## 结果\n\n当前样本平均得分为二分。') + '\n补充样本范围。',
         is_demo=False))
     monkeypatch.setattr(write_document, 'run', writing)
+    monkeypatch.setattr(revise_document, 'run', writing)
     monkeypatch.setattr(peer_review, 'AutoModel', lambda **_: object())
     monkeypatch.setattr(peer_review, 'WriterToolBase', lambda **_: object())
     review_call = Mock(return_value=dict(summary='结论需限定到当前样本。', issues=[dict(severity='minor', category='language', location='全文',

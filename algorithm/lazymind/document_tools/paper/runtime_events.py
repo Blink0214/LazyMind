@@ -62,7 +62,7 @@ class PaperRuntimeEvents:
         with self._lock:
             if self._preview:
                 self._preview.end()
-            self.progress(100, '成稿已保存')
+            self.progress(100, '大纲已保存，等待确认' if self._slot == 'write_outline_document' else '成稿已保存')
             self._closed = True
 
     def abort(self):

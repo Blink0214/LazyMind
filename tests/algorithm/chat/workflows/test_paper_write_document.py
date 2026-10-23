@@ -7,7 +7,8 @@ from unittest.mock import Mock
 import pytest
 
 from lazyllm.tools.writer.data_models.task import WritingTask
-from lazymind.document_tools.paper import contracts, peer_review, write_document as document
+from lazymind.document_tools.paper import contracts, peer_review
+from lazymind.document_tools.paper.writing import common as document, revise_document as revision_entry
 from lazymind.document_tools.paper.review_schema import text_digest
 from lazymind.document_tools.toolkits import WriterRevisionToolkit
 
@@ -17,7 +18,7 @@ BODY = '仅比较单次得分。新方法得分高 15 分；不能推断统计�
 
 
 def test_review_location_numbering_and_quote_disambiguation():
-    from lazymind.document_tools.paper.write_document import resolve_review_target
+    from lazymind.document_tools.paper.writing.common import resolve_review_target
     body = '# 论文\n\n## 2 方法\n\n### 2.1 参数\n第一种。\n\n## 3 补充\n\n### 3.1 参数\n第二种。'
     issue = {'location': '3.1 参数', 'quote': '第二种。'}
     assert resolve_review_target(issue, body)['heading_path'] == ['论文', '3 补充', '3.1 参数']
@@ -122,8 +123,8 @@ def test_revision_preserves_reviewed_source_and_quote_before_hash_check(revision
     assert revision == before
 
 
-def test_draft_import_still_normalizes_explicit_source_ids(revision):
-    normalized = contracts.validate_input('write_document', {
+def test_direct_revision_normalizes_explicit_source_ids(revision):
+    normalized = contracts.validate_input('revise_document', {
         key: revision[key] for key in ('topic', 'manuscript', 'papers')})
     assert '[文献:SRC-001]' in normalized['manuscript']
 
@@ -148,11 +149,11 @@ def test_current_f5_contract_rejects_other_shapes(field, value):
         contracts.validate_input('write_document', dict(topic='论文', manuscript='# 论文\n\n## 方法', **{field: value}))
 
 
-@pytest.mark.parametrize('mode', ['draft', 'revise'])
+@pytest.mark.parametrize('mode', ['direct', 'review'])
 def test_existing_manuscript_does_not_validate_input_outline_structure(revision, mode):
-    source = revision if mode == 'revise' else {key: revision[key] for key in ('topic', 'manuscript', 'papers')}
-    source = dict(source, outline='过期大纲，仅供背景参考')
-    normalized = contracts.validate_input('revise_document' if mode == 'revise' else 'write_document', source)
+    source = revision if mode == 'review' else {key: revision[key] for key in ('topic', 'manuscript', 'papers')}
+    source = dict(source, outline='过期大纲，仅供背景参考', request='修改方法')
+    normalized = contracts.validate_input('revise_document', source)
     document.validate_inputs(normalized)
 
 
@@ -221,7 +222,7 @@ def replacement(old='原方法。', new='修订方法。', section='方法'):
 def prepared(issues=None):
     issues = issues if issues is not None else [('R1', '方法', 'text_revision')]
     return dict(manuscript=SOURCE, outline='# 论文\n\n## 方法\n\n## 结果\n\n## 局限',
-                writing_task={'query': '只修改选中意见', 'meta': {'mode': 'revise'}},
+                writing_task={'query': '只修改选中意见', 'meta': {'mode': 'revise', 'review_driven': True}},
                 writing_context={'context_id': 'scope-test'}, charts=[], reference_candidates=[],
                 selected_issues=[dict(id=key, action_type=action,
                     target={'heading_path': ['论文', section], 'occurrence': 1, 'document_root': False})
@@ -241,27 +242,27 @@ def test_replacements_reject_ambiguous_original_and_accept_explicit_section():
     item = replacement()
     item['content_ref'] = {'document_root': True}
     with pytest.raises(ValueError, match='exactly once'):
-        document._bounded_replacements(source, [(0, len(source))], {'replacements': [item]})
+        revision_entry._bounded_replacements(source, [(0, len(source))], {'replacements': [item]})
     item['content_ref'] = {'heading_path': ['论文', '方法']}
-    _, located = document._bounded_replacements(source, [(0, len(source))], {'replacements': [item]})
+    _, located = revision_entry._bounded_replacements(source, [(0, len(source))], {'replacements': [item]})
     assert source[located[0][0]:located[0][1]] == '原方法。'
 
 
 def test_replacements_cannot_escape_planned_scope():
     allowed = [document.markdown_section_range(SOURCE, ['论文', '方法'], 1)]
     with pytest.raises(ValueError, match='exceeds the planned'):
-        document._bounded_replacements(SOURCE, allowed, {
+        revision_entry._bounded_replacements(SOURCE, allowed, {
             'replacements': [replacement('原结果。', '篡改结果。', '结果')]})
 
 
 def test_replacements_reject_overlap():
     with pytest.raises(ValueError, match='overlapping'):
-        document._bounded_replacements(SOURCE, [(0, len(SOURCE))], {'replacements': [
+        revision_entry._bounded_replacements(SOURCE, [(0, len(SOURCE))], {'replacements': [
             replacement(), replacement('方法。', '新方法。')]})
 
 
 def test_reverse_application_preserves_child_references_when_title_changes():
-    changes, _ = document._bounded_replacements(SOURCE, [(0, len(SOURCE))], {'replacements': [
+    changes, _ = revision_entry._bounded_replacements(SOURCE, [(0, len(SOURCE))], {'replacements': [
         dict(old_string='# 论文', new_string='# 新论文', content_ref={'heading_path': ['论文']}),
         replacement(), replacement('原结果。', '修订结果。', '结果')]})
     result = json.loads(WriterRevisionToolkit().apply_string_replace(
@@ -276,21 +277,21 @@ def test_reverse_application_preserves_child_references_when_title_changes():
 def test_review_plan_requires_selected_issue_ids(ids):
     data = prepared()
     with pytest.raises(ValueError, match='selected issue_ids'):
-        document._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data,
+        revision_entry._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data,
                               editor([instruction(ids=ids)]), '{}')
 
 
 def test_review_plan_rejects_unrelated_issue_association():
     data = prepared([('R1', '方法', 'text_revision'), ('R2', '结果', 'text_revision')])
     with pytest.raises(ValueError, match='unrelated operation'):
-        document._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data,
+        revision_entry._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data,
                               editor([instruction(ids=['R1', 'R2'])]), '{}')
 
 
 def test_review_plan_requires_every_selected_text_revision():
     data = prepared([('R1', '方法', 'text_revision'), ('R2', '结果', 'text_revision')])
     with pytest.raises(ValueError, match='does not cover all'):
-        document._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data,
+        revision_entry._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data,
                               editor([instruction()]), '{}')
 
 
@@ -300,10 +301,10 @@ def test_move_destination_must_also_be_authorized():
     operation.update(modify_type='move', destination_ref={'heading_path': ['论文', '结果']},
                      destination_scope='section', position='after')
     with pytest.raises(ValueError, match='exceeds selected issue target'):
-        document._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data, editor([operation]), '{}')
+        revision_entry._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data, editor([operation]), '{}')
     data['selected_issues'].append(prepared([('R2', '结果', 'text_revision')])['selected_issues'][0])
     operation['meta']['issue_ids'].append('R2')
-    _, ranges, _ = document._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data, editor([operation]), '{}')
+    _, ranges, _ = revision_entry._review_plan(SOURCE, copy.deepcopy(data['writing_task']), data, editor([operation]), '{}')
     assert [SOURCE[start:end].strip() for start, end in ranges[0]] == ['## 方法\n\n原方法。', '## 结果\n\n原结果。']
 
 
@@ -311,14 +312,14 @@ def test_each_text_issue_requires_an_effective_replacement_before_application():
     data = prepared([('R1', '方法', 'text_revision'), ('R2', '结果', 'text_revision')])
     tools = editor([instruction(), instruction('结果', ['R2'])], [replacement()])
     with pytest.raises(ValueError, match='no effective edit.*R2'):
-        document._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
+        revision_entry._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
     tools.apply_string_replace.assert_not_called()
 
 
 def test_invalid_generated_edit_is_rejected_before_application():
     tools = editor([instruction()], [replacement('原结果。', '篡改结果。', '结果')])
     with pytest.raises(ValueError, match='exceeds the planned'):
-        document._modify_manuscript(prepared(), {'word_target': None}, Mock(), editor=tools)
+        revision_entry._modify_manuscript(prepared(), {'word_target': None}, Mock(), editor=tools)
     tools.apply_string_replace.assert_not_called()
 
 
@@ -327,24 +328,25 @@ def test_selected_revision_preserves_unselected_sections_and_inputs():
     before = copy.deepcopy(data)
     tools = editor([instruction()], [replacement()])
     quality = Mock()
-    result = document._modify_manuscript(data, {'word_target': None}, quality, editor=tools)
-    assert result == dict(manuscript=SOURCE.replace('原方法。', '修订方法。'), outline=data['outline'], is_demo=False)
+    result = revision_entry._modify_manuscript(data, {'word_target': None}, quality, editor=tools)
+    assert result == dict(manuscript=SOURCE.replace('原方法。', '修订方法。'), is_demo=False)
     assert data == before
     tools.apply_string_replace.assert_called_once()
     quality.check_consistency.assert_not_called()
 
 
-@pytest.mark.parametrize('mode', ['draft', 'revise'])
+@pytest.mark.parametrize('mode', ['direct', 'review'])
 @pytest.mark.parametrize('old,new,outline', [
     ('## 方法', '## 研究方法', None),
     ('原方法。', '原方法。\n\n### 参数\n\n补充说明。', '旧大纲说明，不再约束当前稿件'),
     ('## 方法\n\n原方法。\n\n', '', None),
     ('# 论文', '# 新论文', '旧大纲说明，不再约束当前稿件'),
 ])
-def test_edits_sync_outline_from_manuscript_without_enforcing_old_outline(mode, outline, old, new):
+def test_edits_only_update_manuscript_without_enforcing_old_outline(mode, outline, old, new):
     data = prepared()
     data['outline'] = outline
-    data['writing_task']['meta']['mode'] = mode
+    data['writing_task']['meta']['mode'] = 'revise'
+    data['writing_task']['meta']['review_driven'] = mode == 'review'
     operation = instruction()
     operation.update(target_scope='fragment', locator_text=old)
     change = replacement(old, new)
@@ -356,20 +358,18 @@ def test_edits_sync_outline_from_manuscript_without_enforcing_old_outline(mode, 
     quality = Mock()
     quality.check_consistency.return_value = json.dumps({
         'review_report': {'result': {'is_passed': True, 'score': 100, 'summary': '通过'}}})
-    result = document._modify_manuscript(data, {'word_target': None}, quality, editor=tools)
+    result = revision_entry._modify_manuscript(data, {'word_target': None}, quality, editor=tools)
     expected = SOURCE.replace(old, new)
     assert result['manuscript'] == expected
-    assert result['outline'] == '\n\n'.join(line for line in expected.splitlines() if line.startswith('#'))
-    document.validate_result(result, dict(mode=mode, manuscript=SOURCE, papers=[], charts=[], outline=outline))
-    assert quality.check_consistency.call_count == (mode == 'draft')
+    assert 'outline' not in result
+    assert data['outline'] == outline
+    document.validate_result(result, dict(mode='revise', manuscript=SOURCE, papers=[], charts=[], outline=outline))
+    quality.check_consistency.assert_not_called()
 
 
-@pytest.mark.parametrize('mode', ['draft', 'revise'])
-def test_result_boundary_rejects_stale_or_missing_output_outline(mode):
-    inputs = dict(mode=mode, manuscript=SOURCE, papers=[], charts=[], outline=None)
-    for outline in (None, '# 旧标题\n\n## 旧章节'):
-        with pytest.raises(ValueError, match='大纲与稿件不一致'):
-            document.validate_result(dict(manuscript=SOURCE, outline=outline), inputs)
+def test_revision_result_does_not_require_output_outline():
+    inputs = dict(mode='revise', manuscript=SOURCE, papers=[], charts=[], outline=None)
+    document.validate_result(dict(manuscript=SOURCE), inputs)
 
 
 def test_new_draft_still_checks_planned_headings():
@@ -389,12 +389,13 @@ def test_inline_trace_failure_preserves_business_result_and_error(monkeypatch):
         document._trace_call('assemble', lambda: (_ for _ in ()).throw(ValueError('business failure')))
 
 
-@pytest.mark.parametrize('mode', ['draft', 'revise'])
+@pytest.mark.parametrize('mode', ['direct', 'review'])
 @pytest.mark.parametrize('failure', [None, 'scope', 'validation'])
 def test_completed_revision_streams_full_text_once_after_validation(monkeypatch, mode, failure):
     from lazymind.document_tools.paper.runtime_events import bind_runtime_events
     data = prepared()
-    data['writing_task']['meta']['mode'] = mode
+    data['writing_task']['meta']['mode'] = 'revise'
+    data['writing_task']['meta']['review_driven'] = mode == 'review'
     changes = [replacement('原结果。', '越界。', '结果')] if failure == 'scope' else [replacement()]
     tools = editor([instruction()], changes)
     tools.locate_revision_target = Mock(return_value='{}')
@@ -405,11 +406,11 @@ def test_completed_revision_streams_full_text_once_after_validation(monkeypatch,
         assert not any(e['type'].startswith('artifact_stream') for e in emitted)
         if failure == 'validation':
             raise ValueError('invalid candidate')
-    monkeypatch.setattr(document, '_validate_manuscript', validate)
-    slot = 'revise_document_document' if mode == 'revise' else 'write_document_document'
+    monkeypatch.setattr(revision_entry, '_validate_manuscript', validate)
+    slot = 'revise_document_document'
     def run():
         with bind_runtime_events(emitted.append, slot) as events:
-            result = document._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
+            result = revision_entry._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
             assert ''.join(e['delta'] for e in emitted if 'delta' in e) == expected
             assert not any(e['type'] == 'artifact_stream_end' for e in emitted)
             events.complete()

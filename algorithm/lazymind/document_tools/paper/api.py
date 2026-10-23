@@ -3,13 +3,14 @@ import copy
 
 from . import contracts
 from . import research_topic, literature_review, experiment, data_analysis
-from . import write_document, peer_review, reading_reflection
+from . import peer_review, reading_reflection
+from .writing import write_outline, write_document, revise_document
 
 ALGORITHMS = {
     'research_topic': research_topic, 'literature_review': literature_review,
     'experiment': experiment, 'data_analysis': data_analysis,
-    'write_document': write_document, 'peer_review': peer_review,
-    'reading_reflection': reading_reflection,
+    'write_outline': write_outline, 'write_document': write_document, 'peer_review': peer_review,
+    'reading_reflection': reading_reflection, 'revise_document': revise_document,
 }
 
 

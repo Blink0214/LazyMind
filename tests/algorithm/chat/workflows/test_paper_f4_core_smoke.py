@@ -104,7 +104,7 @@ def replay(monkeypatch, tmp_path):
         'user_id': 'f4-test', 'conversation_id': 'f4-test', 'query': request,
         'files': [str(source)], 'history_files_per_turn': {'1': [str(source)]},
     }
-    from lazymind.document_tools.paper.attachments import workflow_input_bindings
+    from lazymind.document_tools.paper.analysis.attachments import workflow_input_bindings
     slots = ['data_analysis_pool', 'data_analysis_document', 'analysis_chart']
     events = []
     context = SubAgentContext(
@@ -237,3 +237,28 @@ def test_skill_override_requires_the_actual_skill_root(tmp_path):
     with pytest.raises(RuntimeError, match='缺少绘图 skill'):
         PlotSkills(str(tmp_path))
     assert 'bar_grouped_hatch' in PlotSkills(str(root)).catalog()
+
+
+def test_json_attachment_binding_stays_in_analysis(tmp_path, monkeypatch):
+    from lazymind.document_tools.paper.analysis import attachments, trace
+    from lazymind.chat.engine.tools.file_resources import resolver
+    from lazymind.chat.engine.tools import host_file_resolution
+
+    source = tmp_path / 'data.json'
+    value = {'topic': 'Analysis', 'data': {'columns': ['score'], 'column_types': ['number'],
+             'units': [None], 'rows': [[1], [2], [3]]}}
+    source.write_text(json.dumps(value))
+    lazyllm.globals['agentic_config'] = {'history_files_per_turn': {'1': [str(source)]}}
+    assert attachments.workflow_input_bindings({}, '根据上传附件写论文') == {}
+    assert attachments.workflow_input_bindings({}, '只做数据分析，使用上传附件') == {
+        'paper_input': str(source)}
+    monkeypatch.setattr(resolver, 'resolve_text_target',
+                        lambda *a, **kw: SimpleNamespace(kind='attachment_text', path=str(source)))
+    monkeypatch.setattr(host_file_resolution, 'open_input_file', lambda path: open(path, 'rb'))
+    monkeypatch.setattr(trace, 'save', Mock())
+    reference = tmp_path / 'reference.txt'
+    reference.write_text('data.json')
+    bound = attachments.bind_attachment({'paper_input': str(reference)}, str(tmp_path), '分析数据')
+    assert json.loads(Path(bound['paper_input']).read_text()) == value
+    pool = workflow.initialize_pool(bound, '分析数据')
+    assert workflow.material(pool, 'data')['content']['rows'] == [[1], [2], [3]]

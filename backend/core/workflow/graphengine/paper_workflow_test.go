@@ -34,7 +34,7 @@ func TestPaperGraphAllForwardScenarios(t *testing.T) {
 	paths := [][]string{
 		{"research_topic", "literature_review", "refine_topic"},
 		{"literature_review", "write_document", "peer_review", "revise_document"},
-		{"data_analysis", "write_document"}, {"reading_reflection"}, {"literature_review", "reading_reflection"},
+		{"data_analysis", "write_document"}, {"revise_document"}, {"write_document", "revise_document"}, {"reading_reflection"}, {"literature_review", "reading_reflection"},
 		{"literature_review", "experiment", "data_analysis"},
 	}
 	for _, node := range []string{"research_topic", "literature_review", "experiment", "data_analysis", "write_document", "peer_review", "reading_reflection"} {
@@ -101,5 +101,29 @@ func TestPaperWritingRequiresAnInputSource(t *testing.T) {
 				t.Fatalf("source %q: %+v", source, node)
 			}
 		})
+	}
+}
+
+func TestPaperOutlineConfirmationPath(t *testing.T) {
+	graph := paperGraph(t, nil)
+	if graph.Nodes["write_outline"].Mode != "human" {
+		t.Fatal("outline must use the existing human approval boundary")
+	}
+	snapshot := RuntimeSnapshot{Materials: []MaterialValue{{MaterialID: "paper_input", RevisionID: "input-1", Valid: true}}}
+	previous := "__start__"
+	for _, step := range []string{"write_outline", "write_document", "peer_review"} {
+		choice := SelectRouteTarget(graph, previous, step, DecideRoute(graph, previous, snapshot.Materials))
+		snapshot.Routes = append(snapshot.Routes, RouteFact{From: previous, Activated: choice.Activated, Pruned: choice.Pruned, Validity: "effective"})
+		if node := Project(graph, snapshot).Nodes[step]; node.Readiness != "ready" {
+			t.Fatalf("%s not ready: %+v", step, node)
+		}
+		snapshot.Attempts = append(snapshot.Attempts, AttemptFact{StepID: step, Status: "succeeded", Validity: "effective"})
+		for _, slot := range graph.Nodes[step].Outputs {
+			if step == "write_outline" && slot == "write_document_document" {
+				t.Fatal("outline step must not publish a manuscript")
+			}
+			snapshot.Materials = append(snapshot.Materials, MaterialValue{MaterialID: slot, RevisionID: slot + "-1", Valid: true})
+		}
+		previous = step
 	}
 }

@@ -1,4 +1,4 @@
-"""Read paper JSON attachments without model transcription for analysis and writing."""
+"""Read paper JSON attachments without model transcription for F4 data analysis."""
 from __future__ import annotations
 
 import hashlib
@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 import lazyllm
 
-from .analysis.schema import ContractError
+from .schema import ContractError
 
 # Same source-file ceiling as the conversation text-resource reader.
 MAX_SOURCE_BYTES = 100 * 1024 * 1024
@@ -88,17 +88,14 @@ def standalone_f4_request(request):
 
 
 def workflow_input_bindings(bindings, request):
-    """Import a catalog reference for JSON analysis/writing requests."""
-    writing = bool(re.search(r'F5|write_document|写作|写论文|撰写|修改.*稿|\bwrite\b|\bdraft\b', request, re.I))
-    if not (standalone_f4_request(request) or writing) or any(key.endswith('_pool') for key in bindings):
+    """Import a catalog reference for standalone F4 JSON analysis requests."""
+    if not standalone_f4_request(request) or any(key.endswith('_pool') for key in bindings):
         return bindings
     config = lazyllm.globals.get('agentic_config') or {}
     if not _upload_requested(config, request):
         return bindings
     source = _select_attachment(config, request)
     if source is None:
-        if writing and 'paper_input' not in bindings:
-            return bindings  # Manuscript uploads use the existing manuscript_file entry.
         raise ContractError('MISSING_MATERIAL', 'input.paper_input', '当前会话未找到所要求的 JSON 附件，请检查上传状态')
     # This exact path comes from the Host's catalog, not from the model.
     return {**bindings, 'paper_input': source}
@@ -141,7 +138,7 @@ def _bound_reference(path):
     except (ValueError, RecursionError) as exc:
         raise ContractError('INVALID_INPUT', 'input.paper_input', '论文输入含重复字段或无效 JSON 值') from exc
     # Preserve the same artifact-envelope support as the ordinary Runtime adapter.
-    from .workflow import _unwrap
+    from ..workflow import _unwrap
     value = _unwrap(value)
     if isinstance(value, dict):
         return None
@@ -151,7 +148,7 @@ def _bound_reference(path):
     return value.strip()
 
 
-def bind_attachment(bound: dict, workspace: str, request: str, step: str = 'data_analysis') -> dict:
+def bind_attachment(bound: dict, workspace: str, request: str) -> dict:
     """Confirmed pools are pinned; an explicit upload request uses original attachment bytes.
 
     Candidates come only from the host's current conversation attachment catalog.
@@ -164,10 +161,6 @@ def bind_attachment(bound: dict, workspace: str, request: str, step: str = 'data
     if _upload_requested(config, request):
         source = _select_attachment(config, request)
         if source is None:
-            if step == 'write_document' and (
-                'paper_input' not in bound or _bound_reference(bound['paper_input']) is None
-            ):
-                return bound  # Preserve direct programmatic JSON when no upload exists.
             raise ContractError('MISSING_MATERIAL', 'input.paper_input', '当前会话未找到所要求的 JSON 附件，请检查上传状态')
     else:
         reference = _bound_reference(bound['paper_input']) if 'paper_input' in bound else None
@@ -198,12 +191,12 @@ def bind_attachment(bound: dict, workspace: str, request: str, step: str = 'data
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ContractError('INVALID_INPUT', 'input.paper_input',
                             f'附件 {filename} 不是有效的 UTF-8 JSON：{exc}') from exc
-    from .analysis import trace
+    from . import trace
     trace.save('input-source.json', dict(kind='conversation_attachment', filename=filename,
                                          bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
     # Validate only the shared business envelope; each algorithm validates its
     # own projected inputs after the ordinary material-pool initialization.
-    from .workflow import pool_from_business
+    from ..workflow import pool_from_business
     pool_from_business(value)
     directory = Path(tempfile.mkdtemp(prefix='paper-input-', dir=workspace))
     target = directory / 'paper_input.json'

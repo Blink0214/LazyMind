@@ -1269,7 +1269,7 @@ def test_minimax_wire_schema_and_correction_preserve_input(workflow_input_runtim
 def test_paper_reference_explanation_does_not_change_runtime_binding(workflow_input_runtime):
     trigger, toolkit, holder, importer, resource = workflow_input_runtime
     source = '/uploads/materials.json'
-    with patch('lazymind.document_tools.paper.attachments.workflow_input_bindings',
+    with patch('lazymind.document_tools.paper.analysis.attachments.workflow_input_bindings',
                return_value={'paper_input': source}):
         result = trigger({'paper_input': 'materials.json'})
     importer.assert_called_once_with('paper_input', source)

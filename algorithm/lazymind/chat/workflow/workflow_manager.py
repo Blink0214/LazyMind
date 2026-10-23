@@ -1238,7 +1238,7 @@ def _workflow_trigger_tools(
                     else bound_query or supplied_context
                 )
                 if bound_id == 'paper-writing':
-                    from lazymind.document_tools.paper.attachments import workflow_input_bindings
+                    from lazymind.document_tools.paper.analysis.attachments import workflow_input_bindings
                     input_bindings = workflow_input_bindings(input_bindings, effective_context)
                 existing_session_id = str(
                     (session_holder or {}).get('session_id') or '',
@@ -1308,7 +1308,7 @@ def _workflow_trigger_tools(
                     )
                 model_bindings = resolved_bindings
                 if bound_id == 'paper-writing':
-                    from lazymind.document_tools.paper.attachments import describe_input_bindings
+                    from lazymind.document_tools.paper.analysis.attachments import describe_input_bindings
                     model_bindings = describe_input_bindings(resolved_bindings, input_bindings)
                 toolkit = HostWorkflowToolkit(
                     _client,

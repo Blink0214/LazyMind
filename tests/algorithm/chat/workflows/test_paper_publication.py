@@ -270,7 +270,7 @@ def test_old_pool_missing_identity_creates_papers_version(monkeypatch):
 def test_source_evidence_preserved_and_manuscript_imported():
     papers = [paper('SRC-001'), {**paper('KB-001'), 'citation': 'KB source[Z].'}]
     original = '# T\n\n## Findings\nResult[SRC-001], context[KB-001], again[SRC-001].\n\n## 参考文献\n[SRC-001] A study[Z].\n[KB-001] KB source[Z].'
-    normalized = contracts.validate_input('write_document', {
+    normalized = contracts.validate_input('revise_document', {
         'topic': 'T', 'papers': papers, 'evidence': original, 'manuscript': original})
     assert normalized['evidence'] == original
     body = normalized['manuscript']
@@ -313,7 +313,7 @@ def test_pr_source_list_heading_and_bullets(heading):
 
 
 def test_generated_body_cannot_leak_pr_source_markers():
-    from lazymind.document_tools.paper.write_document import _validate_reference_markers
+    from lazymind.document_tools.paper.writing.common import _validate_reference_markers
     with pytest.raises(ValueError, match='成稿来源引用'):
         _validate_reference_markers('Result[SRC-001]', [paper('SRC-001')])
     _validate_reference_markers('Result[文献:SRC-001]', [paper('SRC-001')])

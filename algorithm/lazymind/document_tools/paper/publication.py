@@ -11,7 +11,19 @@ from lazyllm.tools.writer.numbering import build_numbering_view_from_markdown, c
 from ..artifacts import validate_paper_svg, markdown_prose
 
 
+def figure_catalog(charts, media_assets=None):
+    """Adapt Writer assets to the shared placement catalog without changing F4 charts."""
+    return [*(charts or []), *[
+        {'id': key, 'title': asset.get('caption') or key,
+         'caption': asset.get('summary') or asset.get('caption') or key,
+         'media_uri': asset['uri']}
+        for key, asset in (media_assets or {}).get('assets', {}).items()
+    ]]
+
+
 def chart_uri(chart):
+    if chart.get('media_uri'):
+        return chart['media_uri']
     digest = hashlib.sha256(chart['svg'].encode('utf-8')).hexdigest()
     return f'/static-files/paper-charts/{digest}.svg'
 
@@ -29,7 +41,7 @@ def validate_chart_references(body, charts):
     catalog = {chart['id']: chart for chart in charts}
     objects = [match for match in _OBJECT.finditer(prose)
                if match[1] in catalog or match['source'].startswith(
-                   ('media-placeholder://', '/static-files/paper-charts/'))]
+                   ('media-placeholder://', '/static-files/paper-charts/', '/static-files/paper-media/'))]
     ids = [match[1] for match in objects]
     anchors = re.findall(r'<a\s+id="block-([A-Za-z][A-Za-z0-9_-]{0,63})"\s*></a>', prose)
     links = re.findall(r'(?<!!)\[(?:\\.|[^\]\\\r\n])+\]\(#block-([A-Za-z][A-Za-z0-9_-]{0,63})\)', prose)
@@ -55,9 +67,9 @@ def validate_chart_references(body, charts):
         match[1] for match in objects if match['source'].startswith('media-placeholder://')
     ):
         raise ValueError('Chart placeholder must have an adjacent unique anchor.')
-    managed = re.findall(r'!\[(?:\\.|[^\]\\\r\n])*\]\((/static-files/paper-charts/[^\s)]+)\)', prose)
+    managed = re.findall(r'!\[(?:\\.|[^\]\\\r\n])*\]\((/static-files/paper-(?:charts|media)/[^\s)]+)\)', prose)
     if sorted(managed) != sorted(m['source'] for m in objects
-                                  if m['source'].startswith('/static-files/paper-charts/')):
+                                  if m['source'].startswith(('/static-files/paper-charts/', '/static-files/paper-media/'))):
         raise ValueError('Published chart must have an adjacent unique anchor.')
     if not ids:
         return objects
@@ -97,9 +109,11 @@ def publish_charts(body, charts):
     catalog = {chart['id']: chart for chart in charts}
     used = {match[1] for match in objects}
     for identifier in used:
-        validate_paper_svg(catalog[identifier]['svg'])
+        if 'svg' in catalog[identifier]:
+            validate_paper_svg(catalog[identifier]['svg'])
     for identifier in used:
-        _save_svg(catalog[identifier])
+        if 'svg' in catalog[identifier]:
+            _save_svg(catalog[identifier])
     return _resolve_chart_sources(body, charts, objects)
 
 

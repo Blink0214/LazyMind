@@ -60,7 +60,10 @@ def paper_simulation(monkeypatch, request):
         body = inputs['manuscript'] or ((inputs['outline'] or '# 测试论文\n\n## 方法') + '\n测试正文。')
         outline = '\n\n'.join(
             line for line in body.splitlines() if line.startswith('#'))
-        return {'outline': outline, 'manuscript': body + '\n测试修订。', 'is_demo': True}
+        result = {'manuscript': body + '\n测试修订。', 'is_demo': True}
+        if inputs['mode'] != 'revise':
+            result['outline'] = outline
+        return result
 
     def reviewer(inputs):
         from lazymind.document_tools.paper.peer_review import ReviewResult, build_output
@@ -73,7 +76,7 @@ def paper_simulation(monkeypatch, request):
 
     monkeypatch.setattr(workflow, 'seed_pool', seed)
     for name, fn in [('research_topic', question), ('literature_review', literature), ('data_analysis', analysis),
-                     ('write_document', writer), ('peer_review', reviewer)]:
+                     ('write_document', writer), ('revise_document', writer), ('peer_review', reviewer)]:
         if name == 'research_topic' and request.module.__name__.endswith(('test_paper_writing', 'test_paper_writing_algorithms')):
             continue
         monkeypatch.setattr(api.ALGORITHMS[name], 'run', fn)
