@@ -303,3 +303,72 @@ def test_repair_payload_limit_does_not_silently_truncate_source(example):
     inputs = {**example['input'], 'manuscript': '原文' * peer_review.MAX_REPAIR_CHARS}
     with pytest.raises(ValueError, match='超过限制'):
         peer_review.repair_prompt(inputs, {'summary': {'value': '', 'errors': []}})
+
+
+def test_parse_failure_logs_metadata_without_response_content(caplog, monkeypatch):
+    import logging
+    monkeypatch.setattr(peer_review, 'LOG', logging.getLogger(__name__))
+    from unittest.mock import Mock
+    reviewer = Mock()
+    reviewer._build_structured_llm.return_value = lambda prompt: '{"summary":"PRIVATE_MANUSCRIPT",'
+    with pytest.raises(ValueError, match='无法解析的 JSON'):
+        peer_review.call_once(reviewer, 'PRIVATE_PROMPT', peer_review.ReviewResult)
+    assert 'paper_review parse_failure' in caplog.text
+    assert 'position' in caplog.text and 'sha256' in caplog.text
+    assert 'PRIVATE_MANUSCRIPT' not in caplog.text
+    assert 'PRIVATE_PROMPT' not in caplog.text
+
+
+def test_model_transport_failure_records_stage_without_payload(monkeypatch, caplog):
+    import logging
+    from unittest.mock import Mock
+    monkeypatch.setattr(peer_review, 'LOG', logging.getLogger(__name__))
+    caplog.set_level(logging.INFO)
+    model = Mock(side_effect=TimeoutError('PRIVATE_PROVIDER_DETAIL'))
+    reviewer = Mock()
+    reviewer._build_structured_llm.return_value = model
+    with pytest.raises(TimeoutError):
+        peer_review.call_once(reviewer, 'PRIVATE_PROMPT', peer_review.ReviewResult, 'review-test')
+    events = [json.loads(record.message.split(' ', 2)[2]) for record in caplog.records]
+    assert any(event.get('stage') == 'model_response' and event.get('cause_types') == ['TimeoutError']
+               and event['trace_id'] == 'review-test' for event in events)
+    assert not any(event.get('stage') == 'json_parse' for event in events)
+    assert 'PRIVATE_' not in caplog.text
+
+
+def test_silent_review_stream_distinguishes_runtime_and_content(monkeypatch, caplog):
+    import logging
+    from unittest.mock import Mock
+    monkeypatch.setattr(peer_review, 'LOG', logging.getLogger(__name__))
+    caplog.set_level(logging.INFO)
+    reviewer = Mock()
+
+    def build(_prompt, *, stream_output, apply_formatter):
+        assert apply_formatter is False
+        sink = stream_output['_stream_sink']
+        def model(_input):
+            sink({'tag': 'runtime_event', 'runtime_event': {
+                'type': 'model_call_started', 'data': {'model_call_id': 'provider-test', 'secret': 'PRIVATE'}}})
+            sink({'tag': 'think', 'delta': 'PRIVATE_REASONING'})
+            sink({'tag': 'text', 'delta': 'PRIVATE_CONTENT'})
+            return '{"summary":"ok"}'
+        return model
+
+    reviewer._build_structured_llm.side_effect = build
+    assert peer_review.call_once(reviewer, 'PRIVATE_PROMPT', peer_review.ReviewResult) == {'summary': 'ok'}
+    assert 'model_runtime' in caplog.text and 'provider-test' in caplog.text
+    assert caplog.text.count('model_first_delta') == 1
+    assert '"delta_type": "think"' in caplog.text
+    assert 'PRIVATE' not in caplog.text
+
+
+@pytest.mark.parametrize('content', ['{"summary":"ok"}', '```json\n{"summary":"ok"}\n```'])
+def test_parse_review_reuses_writer_thinking_cleanup(content):
+    assert peer_review.parse_response('<think>not JSON { PRIVATE_REASONING</think>\n' + content) == {'summary': 'ok'}
+
+
+def test_unclosed_thinking_or_duplicate_json_is_still_rejected():
+    with pytest.raises(ValueError):
+        peer_review.parse_response('<think>unfinished {"summary":"ok"}')
+    with pytest.raises(ValueError, match='重复字段'):
+        peer_review.parse_response('<think>reasoning</think>{"summary":"a","summary":"b"}')

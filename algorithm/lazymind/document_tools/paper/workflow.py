@@ -652,6 +652,10 @@ def run_paper_step() -> dict:
             result = _run_paper_step(context)
             events.complete()
             return result
+    if context.params.get('step_id') == 'peer_review':
+        from .peer_review import stage
+        with stage('workflow', getattr(context, 'task_id', 'peer_review')):
+            return _run_paper_step(context)
     stream = None
     if context.params.get('step_id') == 'experiment':
         from .experiment.stream import ExperimentStream
@@ -732,6 +736,11 @@ def _run_paper_step(context, stream=None) -> dict:
             if step == 'research_topic' and use_attachments and not any(item['mock'] for item in pool['materials']):
                 if 'paper_topic' not in bound:
                     pool['topic'] = research_topic.infer_topic(pool.get('request') or request, papers)
+        elif step == 'peer_review':
+            from .peer_review import stage
+            with stage('pool_initialization', getattr(context, 'task_id', 'peer_review'),
+                       bindings=sorted(bound)):
+                pool = initialize_pool(bound, request)
         else:
             pool = initialize_pool(bound, request)
         if step == 'literature_review' and not any(key.endswith('_pool') for key in bound):
