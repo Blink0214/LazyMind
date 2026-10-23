@@ -3,6 +3,7 @@
 import copy
 import json
 import re
+from collections.abc import Callable
 
 from lazyllm import AutoModel, ThreadPoolExecutor
 
@@ -117,11 +118,13 @@ def infer_topic(request: str, papers: list[dict]) -> str:
     return topic.strip()
 
 
-def _paper_chunks(text: str, paper: dict, prompt_limit: int) -> list[str]:
-    """Keep a fitting paper whole; otherwise split contiguous text to fit its full prompt."""
+def split_text_by_prompt_budget(
+    text: str, build_prompt: Callable[[str], str], prompt_limit: int, *, overflow_message: str,
+) -> list[str]:
+    """Split contiguous text using the caller's complete prompt, without changing the source."""
     if not text:
         return []
-    if estimate_tokens(_note_prompt(text, paper)) <= prompt_limit:
+    if estimate_tokens(build_prompt(text)) <= prompt_limit:
         return [text]
 
     chunks = []
@@ -131,13 +134,13 @@ def _paper_chunks(text: str, paper: dict, prompt_limit: int) -> list[str]:
         end = start
         while low <= high:
             middle = (low + high) // 2
-            if estimate_tokens(_note_prompt(text[start:middle], paper)) <= prompt_limit:
+            if estimate_tokens(build_prompt(text[start:middle])) <= prompt_limit:
                 end = middle
                 low = middle + 1
             else:
                 high = middle - 1
         if end == start:
-            raise ValueError('研究选题的论文片段提示超出模型输入预算。')
+            raise ValueError(overflow_message)
         if end < len(text):
             line_end = text.rfind('\n', start, end)
             if line_end >= start + (end - start) // 2:
@@ -145,6 +148,31 @@ def _paper_chunks(text: str, paper: dict, prompt_limit: int) -> list[str]:
         chunks.append(text[start:end])
         start = end
     return chunks
+
+
+def group_texts_by_prompt_budget(
+    texts: list[str], build_prompt: Callable[[str], str], prompt_limit: int, *, overflow_message: str,
+) -> list[list[str]]:
+    """Group texts in order within the caller's complete prompt budget; never call a model."""
+    groups = []
+    group = []
+    for text in texts:
+        if estimate_tokens(build_prompt(text)) > prompt_limit:
+            raise ValueError(overflow_message)
+        if group and estimate_tokens(build_prompt('\n\n'.join([*group, text]))) > prompt_limit:
+            groups.append(group)
+            group = []
+        group.append(text)
+    if group:
+        groups.append(group)
+    return groups
+
+
+def _paper_chunks(text: str, paper: dict, prompt_limit: int) -> list[str]:
+    return split_text_by_prompt_budget(
+        text, lambda source: _note_prompt(source, paper), prompt_limit,
+        overflow_message='研究选题的论文片段提示超出模型输入预算。',
+    )
 
 
 def _note_prompt(source: str, paper: dict) -> str:
@@ -180,18 +208,10 @@ def _condensed_papers(papers: list[dict], prompt_limit: int) -> list[dict]:
         paper_notes = notes[offset:offset + count]
         offset += count
         while len(paper_notes) > 1:
-            groups = []
-            group = []
-            for note in paper_notes:
-                if estimate_tokens(_note_prompt(note, paper)) > prompt_limit:
-                    raise ValueError(f'论文 {paper["id"]} 的摘要超出合并输入预算。')
-                if group and estimate_tokens(
-                    _note_prompt('\n\n'.join([*group, note]), paper)
-                ) > prompt_limit:
-                    groups.append(group)
-                    group = []
-                group.append(note)
-            groups.append(group)
+            groups = group_texts_by_prompt_budget(
+                paper_notes, lambda source, current_paper=paper: _note_prompt(source, current_paper), prompt_limit,
+                overflow_message=f'论文 {paper["id"]} 的摘要超出合并输入预算。',
+            )
             if len(groups) == len(paper_notes):
                 raise ValueError(f'论文 {paper["id"]} 的摘要无法在输入预算内继续合并。')
             with ThreadPoolExecutor(max_workers=min(_MAX_WORKERS, len(groups))) as executor:

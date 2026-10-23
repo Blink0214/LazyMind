@@ -33,7 +33,7 @@ def mock_f1_model(monkeypatch):
     ['F4', 'F5'], ['F7'], ['F2', 'F7'],
     ['F2', 'F3', 'F4'], *[[f'F{i}'] for i in range(1, 8)],
 ])
-def test_scenarios_preserve_sources_versions_and_inputs(path):
+def test_scenarios_preserve_sources_versions_and_inputs(path, reflection_calls):
     pool = tools.seed_pool()
     original = copy.deepcopy(pool)
     for node in path:
@@ -64,11 +64,13 @@ def test_ten_feedback_rounds_from_direct_entry(start, feedback):
 
 
 @pytest.mark.parametrize('count', [1, 2])
-def test_single_multiple_paper_reflection(count):
+def test_single_multiple_paper_reflection(count, reflection_calls):
     pool = tools.seed_pool()
     tools.material(pool, 'papers')['content'] = tools.material(pool, 'papers')['content'][:count]
     result = tools.execute_mock('F7', pool)
-    assert f'{count} 篇' in result['document']
+    papers = tools.material(pool, 'papers')['content']
+    assert reflection_calls[0]['papers'] == papers
+    assert all(paper['id'] in result['document'] for paper in papers)
 
 
 def test_edited_artifact_is_imported_as_new_version_and_used_for_review():
@@ -94,12 +96,13 @@ def test_feedback_snapshot_wins_over_old_upstream_pool():
 
 
 @pytest.mark.parametrize('node,kind', [('F4', 'data'), ('F6', 'manuscript'), ('F7', 'papers')])
-def test_missing_input_fails_without_mutation_then_can_resume(node, kind):
+def test_missing_input_fails_without_mutation_then_can_resume(node, kind, reflection_calls):
     pool = tools.seed_pool()
     ref = pool['current'].pop(kind)
     before = copy.deepcopy(pool)
     with pytest.raises(tools.MissingMaterials, match='缺少材料'):
         tools.execute_mock(node, pool)
+    assert not reflection_calls
     assert pool == before
     pool['current'][kind] = ref
     assert tools.execute_mock(node, pool)['status'] == 'completed'
@@ -214,12 +217,13 @@ def test_runtime_failure_retry_and_bad_external_input_never_fallback(runtime, tm
     assert len(batches) == 1
 
 
-def test_f1_direct_entry_uses_conversation_pdfs_and_publishes_pool(runtime, monkeypatch):
+@pytest.mark.parametrize('user_input', ['根据两篇论文研究证据追溯', ''])
+def test_f1_direct_entry_uses_conversation_pdfs_and_publishes_pool(user_input, runtime, monkeypatch):
     ctx, batches = runtime
     papers = [{'id': 'P1', 'title': '论文一', 'text': '<!-- page:1 -->\n证据一'},
               {'id': 'P2', 'title': '论文二', 'text': '<!-- page:1 -->\n证据二'}]
     monkeypatch.setattr(tools, '_conversation_papers', lambda history: papers if history else [])
-    ctx.params = {'step_id': 'research_topic', 'user_input': '根据两篇论文研究证据追溯',
+    ctx.params = {'step_id': 'research_topic', 'user_input': user_input,
                   'history_files_per_turn': {'1': ['/uploads/论文一.pdf'], '2': ['/uploads/论文二.pdf']}}
     tools.run_paper_step()
     outputs = {item['key']: item['value'] for item in batches[-1]}
@@ -267,6 +271,272 @@ def test_f1_real_pdf_overrides_demo_marker(runtime, monkeypatch):
     assert tools.material(pool, 'papers')['mock'] is False
     assert tools.material(pool, 'papers')['content'][0]['id'] == 'P1'
     assert '演示数据' not in tools._read_bound(outputs['research_topic_document'])
+
+
+@pytest.fixture
+def reflection_calls(monkeypatch):
+    calls = []
+
+    def model(prompt):
+        inputs = json.loads(prompt.split('Input materials (JSON):\n', 1)[1])
+        calls.append(inputs)
+        return '# 阅读心得\n\n' + '、'.join(paper['id'] for paper in inputs['papers'])
+
+    monkeypatch.setattr(api.ALGORITHMS['reading_reflection'], 'AutoModel', lambda **_: model)
+    return calls
+
+
+@pytest.mark.parametrize('count', [1, 2])
+@pytest.mark.parametrize('user_input', ['', '生成阅读心得', '[paper:demo] 读取真实论文'])
+def test_f7_attachment_entry_publishes_papers_and_reflection(count, user_input, runtime, reflection_calls, monkeypatch):
+    ctx, batches = runtime
+    papers = [{'id': f'P{i}', 'title': f'论文{i}', 'text': f'<!-- page:1 -->\n正文{i}'} for i in range(count)]
+    before = copy.deepcopy(papers)
+    history = {'1': ['/uploads/论文.pdf'], '2': ['/uploads/另一篇.pdf']}
+
+    def attachments(value):
+        assert value == history
+        return papers
+
+    monkeypatch.setattr(tools, '_conversation_papers', attachments)
+    monkeypatch.setattr(tools.research_topic, 'prepare_papers', lambda *_: pytest.fail('F7 prepared F1 abstracts'))
+    monkeypatch.setattr(tools.research_topic, 'infer_topic', lambda *_: pytest.fail('F7 inferred a topic'))
+    ctx.params = {'step_id': 'reading_reflection', 'user_input': user_input, 'history_files_per_turn': history}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    assert set(outputs) == {'reading_reflection_pool', 'reading_reflection_document'}
+    pool = tools._read_bound(outputs['reading_reflection_pool'])
+    assert pool['topic'] == (user_input or '；'.join(paper['title'] for paper in papers))
+    assert tools.material(pool, 'papers')['content'] == papers == before
+    assert pool['history'][-1]['node'] == 'F7'
+    assert pool['current']['papers'] in pool['history'][-1]['inputs']
+    assert reflection_calls[0]['papers'] == papers
+    assert reflection_calls[0]['request'] == user_input
+    assert tools._read_bound(outputs['reading_reflection_document']) == '# 阅读心得\n\n' + '、'.join(
+        paper['id'] for paper in papers
+    )
+    assert all(not item['mock'] for item in pool['materials'])
+
+
+@pytest.mark.parametrize('source', ['paper_input', 'seed_pool'])
+def test_f7_explicit_empty_sources_do_not_fallback(source, runtime, reflection_calls, tmp_path, monkeypatch):
+    ctx, batches = runtime
+    path = tmp_path / 'input.md'
+    value = tools.pool_from_business({'topic': '明确主题'}) if source == 'seed_pool' else {'topic': '明确主题'}
+    path.write_text(json.dumps(value))
+    monkeypatch.setattr(tools, '_conversation_papers', lambda *_: pytest.fail('history was scanned'))
+    ctx.params = {'step_id': 'reading_reflection', 'remote_inputs': {source: str(path)},
+                  'history_files_per_turn': {'1': ['/uploads/无关论文.pdf']}}
+    with pytest.raises(tools.MissingMaterials, match='请先选择至少一篇论文'):
+        tools.run_paper_step()
+    assert not reflection_calls and not batches
+
+
+@pytest.mark.parametrize('papers,error', [
+    ([], '请先选择至少一篇论文'),
+    ([{'id': 'P1', 'title': '缺内容'}], '摘要或全文'),
+])
+def test_f7_missing_materials_stop_before_model(papers, error, runtime, reflection_calls, monkeypatch):
+    ctx, batches = runtime
+    monkeypatch.setattr(tools, '_conversation_papers', lambda *_: papers)
+    ctx.params = {'step_id': 'reading_reflection'}
+    with pytest.raises(tools.MissingMaterials, match=error):
+        tools.run_paper_step()
+    assert not reflection_calls and not batches
+
+
+@pytest.mark.parametrize('binding', ['paper_input', 'seed_pool', 'paper_input_pool'])
+def test_f7_bound_papers_preserve_manuscript(binding, runtime, reflection_calls, tmp_path, monkeypatch):
+    ctx, batches = runtime
+    papers = [{'id': 'P1', 'title': '参考论文', 'abstract': '摘要依据'}]
+    value = {'topic': '已确认主题', 'papers': papers, 'manuscript': '# 待操作稿件\n正文'}
+    if binding != 'paper_input':
+        value = tools.pool_from_business(value)
+    path = tmp_path / 'input.json'
+    path.write_text(json.dumps(value))
+    monkeypatch.setattr(tools, '_conversation_papers', lambda *_: pytest.fail('history was scanned'))
+    ctx.params = {'step_id': 'reading_reflection', 'current_user_input': '重点看实验设计',
+                  'remote_inputs': {'paper_input' if binding == 'paper_input_pool' else binding: str(path)}}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    pool = tools._read_bound(outputs['reading_reflection_pool'])
+    assert tools.material(pool, 'manuscript')['content'] == '# 待操作稿件\n正文'
+    assert tools.material(pool, 'papers')['content'] == papers
+    assert reflection_calls[0]['papers'] == papers
+    assert reflection_calls[0]['topic'] == '已确认主题'
+    assert reflection_calls[0]['request'] == '重点看实验设计'
+    assert tools._read_bound(str(path)) == value
+
+
+def test_f7_uses_edited_f2_evidence_and_current_request(runtime, reflection_calls, tmp_path, monkeypatch):
+    ctx, batches = runtime
+    monkeypatch.setattr(api.ALGORITHMS['literature_review'], 'run', lambda inputs: {
+        'evidence': '# 原始综述', 'papers': inputs['papers'], 'is_demo': False,
+    })
+    seed = tools.pool_from_business({'topic': '既有主题', 'papers': [
+        {'id': 'P1', 'title': '参考论文', 'abstract': '摘要', 'citation': '参考论文（测试材料）'},
+    ]})
+    pool = tools.execute_step('literature_review', seed, '旧的综述要求')['pool']
+    pool_path, document_path = tmp_path / 'pool.json', tmp_path / 'evidence.md'
+    pool_path.write_text(json.dumps(pool))
+    document_path.write_text('# 人工修改后的综述\n补充比较依据')
+    monkeypatch.setattr(tools, '_conversation_papers', lambda *_: pytest.fail('history was scanned'))
+    ctx.params = {'step_id': 'reading_reflection', 'user_input': '旧的启动请求', 'current_user_input': '比较实验设计',
+                  'remote_inputs': {'literature_review_pool': str(pool_path),
+                                    'literature_review_document': str(document_path)}}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    result = tools._read_bound(outputs['reading_reflection_pool'])
+    assert reflection_calls[0]['evidence'] == document_path.read_text()
+    assert reflection_calls[0]['request'] == '比较实验设计'
+    assert result['sequence'] == pool['sequence'] + 1
+    assert result['current']['papers'] == pool['current']['papers']
+    assert result['current']['evidence']['version'] == pool['current']['evidence']['version'] + 1
+    assert result['current']['evidence'] in result['history'][-1]['inputs']
+    assert tools._read_bound(str(pool_path)) == pool
+
+
+@pytest.mark.parametrize('existing_question', [False, True])
+def test_bound_experiment_question_only_fills_missing_pool_material(existing_question, tmp_path):
+    value = {'topic': '既有主题'}
+    if existing_question:
+        value['question'] = '已经确认的研究问题'
+    original = tools.pool_from_business(value)
+    source, question = tmp_path / 'pool.json', tmp_path / 'question.txt'
+    source.write_text(json.dumps(original))
+    question.write_text('补充的研究问题')
+    pool = tools.initialize_pool({'seed_pool': str(source), 'experiment_question': str(question)})
+    expected = value['question'] if existing_question else question.read_text()
+    assert tools.material(pool, 'question')['content'] == expected
+    assert tools._read_bound(str(source)) == original
+    assert pool['sequence'] == original['sequence']
+
+
+@pytest.mark.parametrize('use_pool', [False, True])
+def test_f2_attachment_merge_preserves_bound_pool_priority(use_pool, runtime, tmp_path, monkeypatch):
+    ctx, batches = runtime
+    papers = [{'id': 'P1', 'title': '原论文', 'abstract': '原摘要', 'citation': '原论文（测试材料）'}]
+    value = {'topic': '既有主题', 'papers': papers}
+    if use_pool:
+        value = tools.pool_from_business(value)
+    source = tmp_path / 'input.json'
+    source.write_text(json.dumps(value))
+    uploaded = [{'id': 'P1', 'title': '重复论文', 'text': '不覆盖原摘要'},
+                {'id': 'P2', 'title': '新论文', 'text': '新正文', 'citation': '新论文（测试材料）'}]
+
+    def attachments(_history):
+        assert not use_pool
+        return uploaded
+
+    monkeypatch.setattr(tools, '_conversation_papers', attachments)
+    monkeypatch.setattr(api.ALGORITHMS['literature_review'], 'run', lambda inputs: {
+        'evidence': '# 文献综述', 'papers': inputs['papers'], 'is_demo': False,
+    })
+    ctx.params = {'step_id': 'literature_review',
+                  'remote_inputs': {'seed_pool' if use_pool else 'paper_input': str(source)}}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    result = tools._read_bound(outputs['literature_review_pool'])
+    expected = papers if use_pool else [papers[0], uploaded[1]]
+    assert tools.material(result, 'papers')['content'] == expected
+    assert tools._read_bound(str(source)) == value
+
+
+@pytest.mark.parametrize('source', ['request', 'paper_input'])
+def test_f7_explicit_demo_keeps_demo_status(source, runtime, reflection_calls, tmp_path):
+    ctx, batches = runtime
+    ctx.params = {'step_id': 'reading_reflection', 'user_input': '[paper:demo]'}
+    if source == 'paper_input':
+        path = tmp_path / 'demo.json'
+        path.write_text(json.dumps({'demo': True}))
+        ctx.params = {'step_id': 'reading_reflection', 'remote_inputs': {'paper_input': str(path)}}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    assert reflection_calls
+    assert '演示数据' in tools._read_bound(outputs['reading_reflection_document'])
+
+
+def test_f7_business_papers_without_topic_or_request_use_titles(runtime, reflection_calls, tmp_path, monkeypatch):
+    ctx, batches = runtime
+    path = tmp_path / 'papers.json'
+    path.write_text(json.dumps({'papers': [{'id': 'P1', 'title': '论文主题', 'text': '完整正文'}]}))
+    monkeypatch.setattr(tools, '_conversation_papers', lambda *_: pytest.fail('history was scanned'))
+    ctx.params = {'step_id': 'reading_reflection', 'remote_inputs': {'paper_input': str(path)}}
+    tools.run_paper_step()
+    assert reflection_calls[0]['topic'] == '论文主题'
+    assert reflection_calls[0]['request'] == ''
+    assert len(batches) == 1
+
+
+@pytest.mark.parametrize('step', ['research_topic', 'reading_reflection'])
+def test_paper_entry_explicit_topic_without_request_uses_attachments(
+    step, runtime, reflection_calls, tmp_path, monkeypatch,
+):
+    ctx, batches = runtime
+    topic = tmp_path / 'topic.txt'
+    topic.write_text('明确阅读主题')
+    monkeypatch.setattr(tools, '_conversation_papers', lambda *_: [
+        {'id': 'P1', 'title': '论文', 'text': '正文'},
+    ])
+    monkeypatch.setattr(tools.research_topic, 'infer_topic', lambda *_: pytest.fail('explicit topic was inferred'))
+    ctx.params = {'step_id': step, 'remote_inputs': {'paper_topic': str(topic)}}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    assert tools._read_bound(outputs[step + '_pool'])['topic'] == '明确阅读主题'
+
+
+@pytest.mark.parametrize('step', ['research_topic', 'reading_reflection'])
+@pytest.mark.parametrize('binding', ['manuscript_file', 'manuscript_text'])
+def test_bound_manuscript_does_not_block_conversation_papers(
+    step, binding, runtime, reflection_calls, tmp_path, monkeypatch,
+):
+    ctx, batches = runtime
+    manuscript = tmp_path / 'manuscript.md'
+    manuscript.write_text('# 目标稿件\n稿件正文')
+    papers = [{
+        'id': 'P1',
+        'title': '参考论文',
+        'text': '附件论文正文',
+        'abstract': '附件论文摘要',
+    }]
+    history = {'1': ['/uploads/参考论文.pdf']}
+
+    def attachments(value):
+        assert value == history
+        return copy.deepcopy(papers)
+
+    monkeypatch.setattr(tools, '_conversation_papers', attachments)
+    ctx.params = {
+        'step_id': step,
+        'remote_inputs': {binding: str(manuscript)},
+        'history_files_per_turn': history,
+    }
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    pool = tools._read_bound(outputs[step + '_pool'])
+    assert tools.material(pool, 'manuscript')['content'] == manuscript.read_text()
+    assert tools.material(pool, 'papers')['content'] == papers
+    assert step + '_document' in outputs
+    if step == 'reading_reflection':
+        assert reflection_calls[0]['papers'][0]['id'] == 'P1'
+        assert reflection_calls[0]['papers'][0]['text'] == '附件论文正文'
+
+
+@pytest.mark.parametrize('binding', ['manuscript_file', 'manuscript_text'])
+def test_f7_bound_manuscript_without_attachments_fails(
+    binding, runtime, reflection_calls, tmp_path,
+):
+    ctx, batches = runtime
+    manuscript = tmp_path / 'manuscript.md'
+    manuscript.write_text('# 目标稿件\n正文')
+    ctx.params = {
+        'step_id': 'reading_reflection',
+        'remote_inputs': {binding: str(manuscript)},
+        'history_files_per_turn': {},
+    }
+    with pytest.raises(tools.MissingMaterials, match='请先选择至少一篇论文'):
+        tools.run_paper_step()
+    assert not reflection_calls and not batches
 
 
 def test_f1_pdf_resources_are_scoped_deduplicated_and_parsed(tmp_path, monkeypatch):
@@ -324,7 +594,8 @@ def test_paper_attachments_reuse_text_resolver_and_content_identity(suffix, tmp_
     ('部分正文\n\n[Attachment truncated after 200000 characters.]', '解析正文被截断'),
     (None, '无法读取或尚未解析完成'),
 ])
-def test_invalid_parsed_attachment_stops_before_publication(body, error, runtime, tmp_path, monkeypatch):
+@pytest.mark.parametrize('step', ['research_topic', 'reading_reflection'])
+def test_invalid_parsed_attachment_stops_before_publication(body, error, step, runtime, tmp_path, monkeypatch):
     from lazymind.chat.engine.tools.file_resources import resolver, store
 
     ctx, batches = runtime
@@ -335,7 +606,7 @@ def test_invalid_parsed_attachment_stops_before_publication(body, error, runtime
     monkeypatch.setattr(resolver, 'resolve_text_target', lambda *a, **kw: SimpleNamespace(
         file_id=None, path=str(parsed), display_name='论文.docx',
     ))
-    ctx.params = {'step_id': 'research_topic', 'user_input': '研究主题',
+    ctx.params = {'step_id': step, 'user_input': '研究主题',
                   'history_files_per_turn': {'1': ['/uploads/论文.docx']}}
     with pytest.raises(tools.MissingMaterials, match=error):
         tools.run_paper_step()
