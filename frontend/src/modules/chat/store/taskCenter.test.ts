@@ -513,6 +513,31 @@ describe("task center workflow events", () => {
     expect(stream.chunk_index).toBe(3);
   });
 
+  it.each(["write_document_document", "revise_document_document"])(
+    "loads materialized %s directly without restarting its full-text preview", async (slot) => {
+      const store = useTaskCenterStore.getState();
+      store.upsertTask("conversation-1", { task_id: "paper", status: "running" });
+      store.applyTaskEvent("conversation-1", "paper", {
+        type: "artifact_stream_start", slot, content_type: "text/markdown",
+        stream_id: "paper-preview", chunk_index: 1,
+      });
+      store.applyTaskEvent("conversation-1", "paper", {
+        type: "artifact_stream", stream_id: "paper-preview", chunk_index: 2,
+        delta: "# 稿件\n正文[文献:SRC-1]",
+      });
+      const artifact = { slot, content_type: "file", seq: 1, value: { url: "/final.md" } };
+      store.applyTaskEvent("conversation-1", "paper", { type: "artifact", ...artifact });
+      const { axiosInstance } = await import("@/components/request");
+      vi.mocked(axiosInstance.get).mockResolvedValueOnce({ data: "# 稿件\n最终编号与图表" });
+      await store.loadArtifactStreamContent("conversation-1", "paper", artifact);
+      const streams = store.getTasks("conversation-1")[0].artifact_streams;
+      expect(streams).toHaveLength(1);
+      expect(streams[0].stream_id).toBe("paper-preview");
+      expect(streams[0].final_content).toBe("# 稿件\n最终编号与图表");
+      expect(streams[0].deltas).toEqual(["# 稿件\n正文[文献:SRC-1]"]);
+    },
+  );
+
   it("uses public snapshots in ordinary mode and rejects raw execution events", async () => {
     useTaskCenterStore.setState({ viewMode: "ordinary" });
     requestHarness.listConversationTasks.mockResolvedValue({ data: { data: {

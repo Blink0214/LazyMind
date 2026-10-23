@@ -404,6 +404,8 @@ def _safe_session_tools(
     def session_id() -> str:
         value = session() if callable(session) else session
         selected = str(value or '').strip()
+        # A query must never initialize a session: that would discard the
+        # trigger's not-yet-supplied input bindings and make recovery ambiguous.
         if not selected:
             raise WorkflowClientError(
                 'WORKFLOW_SESSION_NOT_INITIALIZED',
@@ -1362,17 +1364,18 @@ def _workflow_trigger_tools(
                     (session_holder or {}).get('session_id') or '',
                 ).strip()
                 if existing_session_id:
-                    # Repeated launches must never silently discard new inputs.
-                    previous = session_holder.get('launch_bindings', {})
-                    if (session_holder.get('workflow_id') != bound_id or any(
-                        previous.get(key) != value.strip()
+                    previous = (session_holder or {}).get('launch_bindings', {})
+                    if ((session_holder or {}).get('workflow_id', bound_id) != bound_id or any(
+                        key in previous and previous[key] != value.strip()
                         for key, value in input_bindings.items() if value.strip()
                     )):
                         raise WorkflowClientError(
                             'WORKFLOW_INPUT_BINDINGS_CONFLICT',
-                            'A Workflow has already started with different inputs. '
-                            'This call did not change its input bindings.',
+                            'A Workflow has already started with different inputs; use explicit input revision recovery.',
                         )
+                if existing_session_id and not input_bindings:
+                    # Repeated launches without new bindings are idempotent;
+                    # calls that supply inputs must continue through recovery.
                     return {
                         'status': 'prepared',
                         'outcome': 'already_initialized',
@@ -1441,16 +1444,40 @@ def _workflow_trigger_tools(
                         if path and not error and material_type in {'', 'file', 'image'}
                         else _import_text_binding(str(material_id), binding)
                     )
+                model_bindings = resolved_bindings
+                if bound_id == 'paper-writing':
+                    from lazymind.document_tools.paper.analysis.attachments import describe_input_bindings
+                    model_bindings = describe_input_bindings(resolved_bindings, input_bindings)
                 toolkit = HostWorkflowToolkit(
                     _client,
                     allowed_workflow_ids=[bound_id],
                     origin_ref=conversation_id,
                 )
-                prepared = toolkit.prepare_workflow(
-                    bound_id, input_bindings=resolved_bindings,
-                    request_context=effective_context,
-                    workflow_mode=workflow_mode,
-                )
+                if existing_session_id:
+                    # Recovery may supply inputs after an earlier empty launch.
+                    # Reuse the session, but never silently replace its inputs.
+                    existing = {
+                        str(item.get('material_id') or item.get('MaterialID')): item
+                        for item in (toolkit.list_workflow_inputs(existing_session_id).get('inputs') or [])
+                    }
+                    for material_id, resource in resolved_bindings.items():
+                        previous = existing.get(material_id)
+                        previous_hash = (previous.get('content_hash') or previous.get('ContentHash')) if previous else None
+                        if previous and previous_hash != resource.get('content_hash'):
+                            raise WorkflowClientError(
+                                'WORKFLOW_INPUT_CONFLICT',
+                                f'{material_id} is already bound to different content; use explicit input revision recovery.',
+                            )
+                    for material_id, resource in resolved_bindings.items():
+                        if material_id not in existing:
+                            toolkit.bind_workflow_input(existing_session_id, material_id, resource)
+                    prepared = {'session_id': existing_session_id}
+                else:
+                    prepared = toolkit.prepare_workflow(
+                        bound_id, input_bindings=resolved_bindings,
+                        request_context=effective_context,
+                        workflow_mode=workflow_mode,
+                    )
                 session_id = str(prepared.get('session_id') or '')
                 if not session_id:
                     return {
@@ -1462,7 +1489,7 @@ def _workflow_trigger_tools(
                         'workflow_id': bound_id,
                         'revision_id': str(package.get('revision_id') or bound_revision),
                         'request_context': effective_context,
-                        'input_bindings': resolved_bindings,
+                        'input_bindings': model_bindings,
                     }
                 if session_holder is not None:
                     session_holder['session_id'] = session_id
@@ -1516,7 +1543,7 @@ def _workflow_trigger_tools(
                     'workflow_id': bound_id,
                     'revision_id': str(package.get('revision_id') or bound_revision),
                     'request_context': effective_context,
-                    'input_bindings': resolved_bindings,
+                    'input_bindings': model_bindings,
                     'session_id': session_id,
                     'state_version': int(state.get('state_version') or prepared.get('state_version') or 0),
                     'projection': projection,
@@ -1594,10 +1621,9 @@ def _workflow_trigger_tools(
             'values for required text/json input_bindings.'
         )
         if workflow_id == 'paper-writing':
-            from lazymind.document_tools.paper.analysis.attachments import standalone_f4_request
-            if standalone_f4_request(current_query) and attachments_available:
+            if attachments_available:
                 attachment_guidance = (
-                    ' For standalone F4, paper_input accepts the exact JSON attachment filename. '
+                    ' For paper analysis or writing, paper_input accepts the exact JSON attachment filename. '
                     'The Host reads the complete original file. Never transcribe, summarize, repair, '
                     'or embed the uploaded JSON in tool arguments; pass only its filename, or omit '
                     'paper_input when the request unambiguously selects one JSON attachment.'
@@ -1610,6 +1636,16 @@ def _workflow_trigger_tools(
             + ' If this turn follows startup clarification, request_context must merge the '
             'original request with every clarification answer; otherwise omit it. The Host '
             'forwards the exact current_query and ignores model-authored paraphrases.'
+            '\n\nArgs:\n'
+            '    input_bindings: Object mapping external material IDs to string values. '
+            'The exact argument name is input_bindings (snake_case), not inputBindings. '
+            + ('For uploaded paper JSON, pass its exact attachment filename; the Host reads it, preserving all fields. '
+             'Literal JSON remains supported for programmatic inputs. '
+             if workflow_id == 'paper-writing' and attachments_available else
+             'For JSON materials, the value is the complete JSON text, preserving all fields. ')
+            + 'Example call: {"input_bindings": {"material_id": "complete value"}}. '
+            'On argument validation errors, correct the field name and retain the input content; do not drop bindings.\n'
+            '    request_context: Optional merged original request and clarification answers.\n'
         )
         tools.append(trigger_workflow)
     return tools
@@ -1742,6 +1778,21 @@ def resolve_workflow_injection(
         activations, allowed_refs, current_query, conversation_id, session_holder,
         conversation_history, mode,
     )
+    if session_id:
+        # Recovery in a later Chat turn must also be able to supply missing
+        # inputs. Bind this capability to the existing session's pinned package,
+        # never to another activation selected in the same request.
+        repair_tools = _workflow_trigger_tools([{
+            'workflow_id': workflow_id,
+            'workflow_ref': str(context.get('workflow_ref') or f'builtin:{workflow_id}'),
+            'revision_id': revision_id,
+            'tool_name': 'trigger_existing_workflow',
+            'tool_description': 'Supply missing inputs to the existing Workflow Session; conflicting inputs are rejected.',
+        }], {str(context.get('workflow_ref') or f'builtin:{workflow_id}')},
+            current_query, conversation_id, session_holder, conversation_history, mode)
+        for tool in repair_tools:
+            tool.__name__ = 'supply_workflow_inputs'
+        trigger_tools = repair_tools
     toolkit = HostWorkflowToolkit(
         _client, allowed_workflow_ids=allowed_ids, origin_ref=conversation_id,
     )
@@ -1760,6 +1811,7 @@ def resolve_workflow_injection(
         'list_workflow_inputs', 'get_workflow_command',
         'list_artifacts', 'read_artifact', 'patch_artifact', 'delete_artifact',
         'reorder_artifact_pages', 'patch_artifact_text',
+        'supply_workflow_inputs',
     }
     if allowed_refs or session_id:
         tools = [
@@ -1768,6 +1820,9 @@ def resolve_workflow_injection(
             or str(getattr(tool, '__name__', '')) in execution_tools
         ]
     if allowed_refs and not session_id:
+        # A ChatAgent tool set is fixed for the duration of one model turn. Expose
+        # Host-bound Session tools up front and resolve their Session id only after
+        # trigger_<workflow> creates it, so trigger -> advance works in the same turn.
         @fc_register(host_file='NONE')
         def launch_user_input() -> str:
             return session_holder.get('request_context', '')
@@ -1832,7 +1887,7 @@ def resolve_workflow_injection(
             *[tool for tool in tools if isinstance(tool, dict)],
         ]
     if session_id:
-        tools = _safe_session_tools(toolkit, selected_session_id)
+        tools = [*trigger_tools, *_safe_session_tools(toolkit, selected_session_id)]
         patch.update({
             'workflow_id': workflow_id,
             'workflow_session_id': session_id,

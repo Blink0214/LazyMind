@@ -136,3 +136,26 @@ it('round-trips the repository README editor input with only the added content i
   await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1), { timeout: 4000 });
   expect(publishedSource(onSave.mock.calls[0][0])).toBe(editorReadme.replace('## 快速开始', '新增安全合规说明。\n\n## 快速开始'));
 }, 15000);
+
+it.each(['ref-001', 'SRC-001', 'KB-001', 'source.v2_甲'])('preserves and navigates citation %s across real editor saves', async (id) => {
+  const manuscript = '# 论文\n\nOriginal paragraph.\n\n依据[\\[1\\]](#paper-ref-ref-001)。\n\n'
+    + '<a id="block-chart-001" data-paper-figure-label="图1"></a>\n![图1 比较](https://example.org/chart.svg)\n\n'
+    + '<a id="paper-references-start"></a>\n\n**参考文献**\n\n'
+    + '<a id="paper-ref-ref-001"></a>\n\n[1] 作者. 标题. 2026.\n\n'
+    + '<a id="paper-references-end"></a>';
+  const source = manuscript.replaceAll('paper-ref-ref-001', `paper-ref-${id}`);
+  const onSave = vi.fn(async (markdown: string) => ({ markdown, revision: 2 }));
+  render(<MarkdownArtifactEditor markdown={source} sourceRevision={1} onSave={onSave} resolveImageUrl={resolveImageUrl} />);
+  await waitFor(() => expect(capture.editor).not.toBeNull());
+  expect(capture.importError).toBe('');
+  await replaceText('Original paragraph.', 'Edited paragraph.');
+  await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1), { timeout: 3000 });
+  expect(publishedSource(onSave.mock.calls[0][0])).toBe(source.replace('Original paragraph.', 'Edited paragraph.'));
+  expect(document.getElementById(`paper-ref-${id}`)).toHaveClass('writer-markdown-editor__system-anchor');
+  const surface = document.querySelector<HTMLElement>('.writer-markdown-editor__surface')!;
+  surface.scrollTo = vi.fn();
+  const link = document.querySelector<HTMLAnchorElement>(`a[href="#paper-ref-${id}"]`)!;
+  expect(link.textContent).toBe('[1]');
+  fireEvent.click(link);
+  expect(surface.scrollTo).toHaveBeenCalled();
+}, 15000);

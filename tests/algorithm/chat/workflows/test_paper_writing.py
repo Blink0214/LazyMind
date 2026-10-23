@@ -13,6 +13,14 @@ PACKAGE = ROOT / 'workflows/paper-writing'
 from lazymind.document_tools.paper import api
 from lazymind.document_tools.paper import workflow as tools
 
+pytestmark = pytest.mark.usefixtures('paper_simulation')
+
+
+def draft_pool():
+    pool = tools.seed_pool()
+    pool['current'].pop('manuscript', None)
+    return pool
+
 
 @pytest.fixture(autouse=True)
 def mock_f1_model(monkeypatch):
@@ -37,6 +45,13 @@ def test_scenarios_preserve_sources_versions_and_inputs(path, reflection_calls):
     pool = tools.seed_pool()
     original = copy.deepcopy(pool)
     for node in path:
+        if node == 'F5':
+            if pool['history'] and pool['history'][-1]['node'] == 'F6':
+                pool['selected_issue_ids'] = ['R1']
+            else:
+                pool['current'].pop('manuscript', None)
+        if node == 'F4':
+            pool['current'].pop('experiment', None)  # Select raw data, not the unexecuted F3 demo.
         before = copy.deepcopy(pool)
         result = tools.execute_mock(node, pool, '给导师汇报')
         assert pool == before
@@ -54,6 +69,8 @@ def test_scenarios_preserve_sources_versions_and_inputs(path, reflection_calls):
 def test_ten_feedback_rounds_from_direct_entry(start, feedback):
     pool = tools.execute_mock(start, tools.seed_pool())['pool']
     for _ in range(10):
+        if feedback == 'F5':
+            pool['selected_issue_ids'] = ['R1']
         pool = tools.execute_mock(feedback, pool)['pool']
         before = copy.deepcopy(pool)
         pool = tools.execute_mock(start, pool)['pool']
@@ -74,7 +91,7 @@ def test_single_multiple_paper_reflection(count, reflection_calls):
 
 
 def test_edited_artifact_is_imported_as_new_version_and_used_for_review():
-    pool = tools.execute_mock('F5', tools.seed_pool())['pool']
+    pool = tools.execute_mock('F5', draft_pool())['pool']
     before = copy.deepcopy(pool)
     edited = '# 用户确认的修订稿\n保留该句'
     selected = tools.pool_from_inputs({'write_document_pool': pool, 'write_document_document': edited})
@@ -87,7 +104,9 @@ def test_edited_artifact_is_imported_as_new_version_and_used_for_review():
 
 def test_feedback_snapshot_wins_over_old_upstream_pool():
     seed = tools.seed_pool()
-    revised = tools.execute_mock('F5', tools.execute_mock('F6', seed)['pool'])['pool']
+    reviewed = tools.execute_mock('F6', seed)['pool']
+    reviewed['selected_issue_ids'] = ['R1']
+    revised = tools.execute_mock('F5', reviewed)['pool']
     selected = tools.pool_from_inputs({'seed_pool': seed, 'recovery_review_pool': revised,
                                       'recovery_review_document': '# 修改后的正文'})
     assert selected['sequence'] == 2
@@ -100,7 +119,7 @@ def test_missing_input_fails_without_mutation_then_can_resume(node, kind, reflec
     pool = tools.seed_pool()
     ref = pool['current'].pop(kind)
     before = copy.deepcopy(pool)
-    with pytest.raises(tools.MissingMaterials, match='缺少材料'):
+    with pytest.raises(tools.MissingMaterials, match='缺少'):
         tools.execute_mock(node, pool)
     assert not reflection_calls
     assert pool == before
@@ -133,22 +152,22 @@ def test_forbidden_execution_edges(a, b):
 
 
 def test_failed_or_invalid_algorithm_does_not_publish_or_change_input(monkeypatch):
-    pool = tools.seed_pool()
+    pool = draft_pool()
     before = copy.deepcopy(pool)
     with pytest.raises(RuntimeError, match='模拟执行失败'):
         tools.execute_mock('F5', pool, fail=True)
     assert pool == before
     assert tools.execute_mock('F5', pool)['status'] == 'completed'
     monkeypatch.setattr(api.ALGORITHMS['write_document'], 'run', lambda inputs: {'manuscript': 'x'})
-    with pytest.raises(ValueError, match='输出'):
+    with pytest.raises(ValueError, match='算法输出字段'):
         tools.execute_mock('F5', pool)
     assert pool == before
 
 
 def test_algorithm_cannot_publish_wrong_material_kind(monkeypatch):
     monkeypatch.setattr(api.ALGORITHMS['write_document'], 'run', lambda inputs: {'review': 'wrong output', 'is_demo': False})
-    with pytest.raises(ValueError, match='输出'):
-        tools.execute_mock('F5', tools.seed_pool())
+    with pytest.raises(ValueError, match='算法输出字段'):
+        tools.execute_mock('F5', draft_pool())
 
 
 def test_edited_experiment_report_keeps_simulated_result_and_history():
@@ -158,12 +177,13 @@ def test_edited_experiment_report_keeps_simulated_result_and_history():
     assert experiment['content']['report'] == '# 用户修改的实验方案'
     assert experiment['content']['executed'] is False
     assert experiment['version'] == 2
+    selected['current'].pop('experiment')  # Explicit raw-data selection for F4.
     assert tools.execute_mock('F4', selected)['status'] == 'completed'
 
 
 @pytest.fixture
 def runtime(monkeypatch, tmp_path):
-    ctx = SimpleNamespace(params={}, workspace_path=str(tmp_path), emit=lambda _event: None, output_slots=[])
+    ctx = SimpleNamespace(task_id='paper-runtime', params={}, workspace_path=str(tmp_path), emit=lambda event: None, output_slots=[])
     batches = []
     context_module = ModuleType('lazymind.chat.engine.subagent.context')
     context_module.require_context = lambda: ctx
@@ -202,8 +222,8 @@ def test_runtime_wrapper_uses_host_inputs_and_saves_all_declared_outputs(runtime
 def test_runtime_failure_retry_and_bad_external_input_never_fallback(runtime, tmp_path):
     ctx, batches = runtime
     path = tmp_path / 'pool.json'
-    path.write_text(json.dumps(tools.seed_pool()))
-    ctx.params = {'step_id': 'write_document', 'remote_inputs': {'seed_pool': str(path)}, 'user_input': '[mock:fail]'}
+    path.write_text(json.dumps(draft_pool()))
+    ctx.params = {'step_id': 'write_document', 'remote_inputs': {'seed_pool': str(path)}, 'current_user_input': '[mock:fail]'}
     with pytest.raises(RuntimeError):
         tools.run_paper_step()
     assert not batches
@@ -715,7 +735,7 @@ def test_config_logical_edges_and_no_real_external_calls():
         assert step['acceptance_criteria'].isascii()
     assert all(edge['when'].isascii() for edges in state['transitions'].values() for edge in edges)
     config = yaml.safe_load((PACKAGE / 'workflow.yaml').read_text())
-    assert config['when_to_use'].isascii()
+    assert 'data_analysis' in config['when_to_use']
     assert config['name'] == '论文写作'
     for step, node in tools.STEP_NODE.items():
         actual = {tools.STEP_NODE[e['to']] for e in state['transitions'][step] if e['to'] != 'finish'}
@@ -723,7 +743,12 @@ def test_config_logical_edges_and_no_real_external_calls():
             actual.add('F2')  # Native rewind, not a cyclic control edge.
         if step == 'revise_document':
             actual.add('F6')
-        assert actual == set(tools.ROUTES[node])
+        if step in {'write_outline', 'write_document', 'data_analysis', 'literature_review'}:
+            actual.discard(node)  # Outline/draft/direct revision are distinct F5 entries.
+        if step == 'write_outline':
+            assert actual == set()
+        else:
+            assert actual == set(tools.ROUTES[node])
         assert state['steps'][step]['mode'] == 'human'
         assert state['steps'][step]['tools'] == ['run_paper_step']
 
@@ -754,7 +779,7 @@ def test_feedback_text_reaches_algorithm_unchanged(content, monkeypatch):
 ])
 def test_real_core_request_fields_override_launch_intent(runtime, tmp_path, update):
     ctx, batches = runtime
-    pool = tools.execute_mock('F5', tools.seed_pool())['pool']
+    pool = tools.execute_mock('F5', draft_pool())['pool']
     path = tmp_path / 'pool.json'
     path.write_text(json.dumps(pool))
     ctx.params = {'step_id': 'peer_review', 'remote_inputs': {'write_document_pool': str(path)},
@@ -770,14 +795,14 @@ def test_public_workflow_presentation_and_named_outputs():
     assert workflow['name'] == '论文写作'
     assert {step['id'] for step in workflow['steps']} == {
         'research_topic', 'literature_review', 'refine_topic', 'experiment',
-        'data_analysis', 'write_document', 'peer_review', 'revise_document',
+        'data_analysis', 'write_outline', 'write_document', 'peer_review', 'revise_document',
         'reading_reflection', 'finish',
     }
     assert not any(re.match(r'f\d(?:_|$)', slot['id']) for slot in workflow['slots'])
     ui = workflow['ui']
     assert not ui['task_presentation'].get('grouped')
     assert set(ui['task_presentation']['hidden_steps']) == {'finish'}
-    assert len(ui['tabs']) == 9
+    assert len(ui['tabs']) == 10
     assert ui['tabs'][0]['step_id'] == 'research_topic'
     assert 'prepare_document' not in ui['slots']
     assert 'prepare' not in yaml.safe_load((PACKAGE / 'scenario/state.yml').read_text())['steps']

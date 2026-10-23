@@ -1,11 +1,14 @@
 """Read-only academic review; storage and workflow routing belong to the caller."""
 import json
-import logging
+import hashlib
 import re
 import time
+import uuid
+from contextlib import contextmanager
+from threading import Event, Thread
 from copy import deepcopy
 
-from lazyllm import AutoModel
+from lazyllm import AutoModel, LOG
 from lazyllm.tools.writer.tools.base import WriterToolBase
 from pydantic import ValidationError
 
@@ -18,9 +21,50 @@ CATEGORY_LABELS = {'method': '方法', 'evidence': '证据', 'analysis': '分析
                    'structure': '结构', 'language': '语言', 'citation': '引用'}
 ACTION_LABELS = {'text_revision': '可直接修改文字', 'needs_material': '需要作者补充材料',
                  'needs_experiment': '需要补充实验，不能用生成文字代替'}
-LOG = logging.getLogger(__name__)
 MAX_REPAIR_ISSUES = 5
 MAX_REPAIR_CHARS = 24000
+
+
+def log_event(event, **metadata):
+    # Use the service logger: standard-library INFO records are not emitted by
+    # the chat container's logging configuration. Never pass payloads here.
+    LOG.info('paper_review ' + event + ' ' + json.dumps(metadata, ensure_ascii=False))
+
+
+@contextmanager
+def stage(name, trace_id, *, heartbeat=False, progress=None, **metadata):
+    started = time.monotonic()
+    log_event('stage_start', trace_id=trace_id, stage=name, **metadata)
+    done = Event()
+
+    def waiting():
+        while not done.wait(30):
+            log_event('stage_waiting', trace_id=trace_id, stage=name,
+                      elapsed_s=round(time.monotonic() - started, 3),
+                      **(progress() if progress else {}))
+
+    worker = Thread(target=waiting, daemon=True) if heartbeat else None
+    if worker:
+        worker.start()
+    try:
+        yield
+    except Exception as error:
+        causes, seen, cause = [], set(), error
+        while cause is not None and id(cause) not in seen and len(causes) < 8:
+            seen.add(id(cause))
+            causes.append(type(cause).__name__)
+            cause = cause.__cause__ or cause.__context__
+        log_event('stage_failed', trace_id=trace_id, stage=name,
+                  elapsed_s=round(time.monotonic() - started, 3),
+                  error_type=type(error).__name__, cause_types=causes)
+        raise
+    else:
+        log_event('stage_completed', trace_id=trace_id, stage=name,
+                  elapsed_s=round(time.monotonic() - started, 3))
+    finally:
+        done.set()
+        if worker:
+            worker.join()
 
 
 def review_scope(result: ReviewResult, inputs: dict) -> tuple[list[str], list[str]]:
@@ -178,7 +222,7 @@ def parse_response(response):
     """Never use structural JSON guessing: one damaged issue must not become two."""
     if not isinstance(response, str):
         return response
-    text = response.strip()
+    text = WriterToolBase._strip_leading_think_blocks(response).strip()
     if text.startswith('```') and text.endswith('```'):
         text = re.sub(r'^```(?:json)?\s*\n', '', text, count=1).removesuffix('```').strip()
     try:
@@ -201,30 +245,95 @@ def parse_response(response):
         return json.loads(text, object_pairs_hook=_unique_fields)
 
 
-def call_once(reviewer: WriterToolBase, prompt: str, schema):
+def call_once(reviewer: WriterToolBase, prompt: str, schema, trace_id=None):
     # Writer's convenience call retries the whole task; F6 owns one targeted repair instead.
-    model = reviewer._build_structured_llm(reviewer._structured_output_prompt(schema), apply_formatter=False)
-    started = time.monotonic()
-    response = model(prompt)
-    LOG.info('paper_review model_call schema=%s elapsed=%.3fs response_chars=%d',
-             schema.__name__, time.monotonic() - started, len(response) if isinstance(response, str) else 0)
+    trace_id = trace_id or uuid.uuid4().hex
+    started, received = time.monotonic(), False
+    counts = {'text_chars': 0, 'think_chars': 0, 'deltas': 0}
+    last_delta = None
+
+    def progress():
+        return {**counts, 'idle_s': round(time.monotonic() - last_delta, 3) if last_delta else None}
+
+    def on_event(event):
+        nonlocal received, last_delta
+        if not isinstance(event, dict):
+            return
+        if event.get('tag') == 'runtime_event':
+            runtime = event.get('runtime_event', {})
+            data = runtime.get('data', {})
+            fields = {key: data[key] for key in (
+                'model_call_id', 'retry_index', 'max_attempts', 'delay_ms',
+                'attempt_count', 'kind', 'finish', 'has_semantic_output', 'duration_ms',
+            ) if key in data and isinstance(data[key], (str, int, float, bool))}
+            log_event('model_runtime', trace_id=trace_id, runtime_type=runtime.get('type'), **fields)
+        elif event.get('tag') in {'text', 'think'} and isinstance(event.get('delta'), str) and event['delta']:
+            counts[event['tag'] + '_chars'] += len(event['delta'])
+            counts['deltas'] += 1
+            last_delta = time.monotonic()
+            if not received:
+                received = True
+                log_event('model_first_delta', trace_id=trace_id, schema=schema.__name__,
+                          delta_type=event['tag'], elapsed_s=round(time.monotonic() - started, 3))
+
+    # Receive provider deltas without publishing unfinished JSON or reasoning.
+    # This uses Writer's streaming transport; F6 still owns strict JSON parsing.
+    model = reviewer._build_structured_llm(reviewer._structured_output_prompt(schema),
+                                         stream_output={'_stream_sink': on_event}, apply_formatter=False)
+    model_name = getattr(model, '_model_name', None)
+    with stage('model_response', trace_id, heartbeat=True, progress=progress, schema=schema.__name__,
+               model_class=type(model).__name__,
+               model_name=model_name if isinstance(model_name, str) else None,
+               prompt_chars=len(prompt), streaming=True):
+        response = model(prompt)
+    log_event('model_response', trace_id=trace_id, schema=schema.__name__,
+              response_chars=len(response) if isinstance(response, str) else 0, **progress())
+    if isinstance(response, str):
+        cleaned = WriterToolBase._strip_leading_think_blocks(response)
+        log_event('response_normalization', trace_id=trace_id, raw_chars=len(response),
+                  content_chars=len(cleaned), removed_chars=len(response) - len(cleaned))
     try:
-        return parse_response(response)
+        with stage('json_parse', trace_id, schema=schema.__name__):
+            return parse_response(response)
     except ValueError as error:
+        # Keep malformed-response diagnostics useful without logging manuscript,
+        # prompt, reasoning, or model credentials.
+        raw = response if isinstance(response, str) else ''
+        info = {'trace_id': trace_id, 'schema': schema.__name__, 'response_type': type(response).__name__,
+                'response_chars': len(raw), 'sha256': hashlib.sha256(raw.encode()).hexdigest(),
+                'fenced': raw.lstrip().startswith('```'),
+                'thinking_tag': bool(re.search(r'<think(?:ing)?\b', raw, re.I)),
+                'ends_with_object': raw.rstrip().endswith('}'),
+                'error_type': type(error).__name__}
+        if isinstance(error, json.JSONDecodeError):
+            info.update(message=error.msg, line=error.lineno, column=error.colno, position=error.pos,
+                        parsed_chars=len(error.doc), at_end=error.pos >= len(error.doc.rstrip()))
+        LOG.warning('paper_review parse_failure ' + json.dumps(info, ensure_ascii=False))
         raise ValueError('审稿返回无法解析的 JSON，已停止，未自动重新审稿。') from error
 
 
 def run(inputs: dict) -> dict:
     """Business inputs -> Markdown review, structured review_data, is_demo."""
-    inputs = validate_input('peer_review', inputs)
-    reviewer = WriterToolBase(llm=AutoModel(model='llm'))
-    prompt = REVIEW_PROMPT + '\n\nInput JSON:\n' + json.dumps(inputs, ensure_ascii=False)
-    candidate = call_once(reviewer, prompt, ReviewResult)
-    targets = repair_targets(candidate, inputs['manuscript'])
-    LOG.info('paper_review issues=%d repair_targets=%d', len(candidate['issues']), len(targets))
-    if targets:
-        repair = ReviewRepair.model_validate(call_once(reviewer, repair_prompt(inputs, targets), ReviewRepair))
-        result = apply_repair(candidate, targets, repair, inputs['manuscript'])
-    else:
-        result = ReviewResult.model_validate(candidate)
-    return build_output(result, inputs)
+    trace_id = uuid.uuid4().hex
+    with stage('review', trace_id):
+        with stage('input_validation', trace_id):
+            inputs = validate_input('peer_review', inputs)
+        log_event('input_ready', trace_id=trace_id, manuscript_chars=len(inputs['manuscript']),
+                  manuscript_sha256=text_digest(inputs['manuscript']),
+                  has_evidence=bool(inputs.get('evidence')), has_analysis=bool(inputs.get('analysis')))
+        reviewer = WriterToolBase(llm=AutoModel(model='llm'))
+        prompt = REVIEW_PROMPT + '\n\nInput JSON:\n' + json.dumps(inputs, ensure_ascii=False)
+        candidate = call_once(reviewer, prompt, ReviewResult, trace_id)
+        with stage('schema_and_quote_validation', trace_id):
+            targets = repair_targets(candidate, inputs['manuscript'])
+        log_event('validation_result', trace_id=trace_id, issues=len(candidate['issues']),
+                  repair_targets=len(targets))
+        if targets:
+            with stage('targeted_repair', trace_id):
+                repair = ReviewRepair.model_validate(call_once(reviewer, repair_prompt(inputs, targets),
+                                                              ReviewRepair, trace_id))
+                result = apply_repair(candidate, targets, repair, inputs['manuscript'])
+        else:
+            result = ReviewResult.model_validate(candidate)
+        with stage('report_rendering', trace_id):
+            return build_output(result, inputs)

@@ -71,3 +71,40 @@ func TestPaperDirectReviewFreezesEntryChoiceWithoutPrepareAttempt(t *testing.T) 
 		t.Fatal("retry duplicated the entry decision")
 	}
 }
+
+func TestPaperDirectWritingRejectsMissingInputsBeforeCreatingAttempt(t *testing.T) {
+	db, _ := setupBatchTransitionSession(t)
+	root := filepath.Join("..", "..", "..", "workflows", "paper-writing")
+	config, err := os.ReadFile(filepath.Join(root, "workflow.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := os.ReadFile(filepath.Join(root, "scenario", "state.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled := graphengine.Compile(string(config), string(state), "", graphengine.ProfileRuntimeLoad)
+	if !compiled.Valid {
+		t.Fatal(compiled.Diagnostics)
+	}
+	graph := compiled.Graph
+	if err := db.Model(&orm.WorkflowRevision{}).Where("id = ?", "batch-revision").Updates(map[string]any{
+		"compiled_graph": graph.JSON(), "graph_hash": graph.GraphHash,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&orm.WorkflowSession{}).Where("id = ?", "batch-session").Update("graph_hash", graph.GraphHash).Error; err != nil {
+		t.Fatal(err)
+	}
+	w, data := runBatchTransition(t, db, graph.GraphHash, "execute_batch", []map[string]any{
+		{"target_step_id": "write_document", "task_id": "empty-writing", "objective": "写论文", "user_input": "按附件写论文"},
+	})
+	failure, _ := data["error"].(map[string]any)
+	if w.Code != http.StatusConflict || failure["code"] != "STEP_NOT_READY" {
+		t.Fatalf("empty input launched F5: %s", w.Body.String())
+	}
+	var count int64
+	if err := db.Model(&orm.WorkflowSessionStep{}).Where("session_id = ? AND step_id = ?", "batch-session", "write_document").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("empty input created attempt: count=%d err=%v", count, err)
+	}
+}

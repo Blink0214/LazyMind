@@ -3,6 +3,7 @@ const EDITOR_SYSTEM_ANCHOR_RE = /<a\s+id=(["'])(block-[^"']+)\1((?:\s+[^>]*?)?)\
 const SYSTEM_ANCHOR_LINE_RE = /^<a\s+id=(["'])(block-[^"']+)\1((?:\s+[^>]*?)?)\s*(?:\/>|>\s*<\/a>)$/i;
 const HEADING_NUMBERING_CONFIG_LINE_RE = /^\s*<!--\s*heading-numbering:[^\r\n]*-->\s*$/i;
 const OUTLINE_INSTRUCTION_LINE_RE = /^\s*<!--\s*writer:outline\s+(\{.*\})\s*-->\s*$/;
+const PAPER_CHARTS_LINE_RE = /^\s*<!--\s*paper-charts:\s*(\[.*\])\s*-->\s*$/;
 const SOURCE_PAGE_MARKER_RE = /^([ \t]*)<!--[ \t]*第[ \t]*(\d+)[ \t]*页[ \t]*-->[ \t]*$/i;
 const EDITOR_PAGE_MARKER_RE = /^([ \t]*)<a\s+id=(["'])writer-page-marker-(\d+)\2\s*(?:\/>|>\s*<\/a>)[ \t]*$/i;
 const HEADING_LINE_RE = /^(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+[ \t]*)?$/;
@@ -91,6 +92,7 @@ interface WriterMarkdownTargetBinding {
   level?: number;
   signature: string;
   outlineInstructionLine?: string;
+  paperChartsLines?: string[];
 }
 
 interface WriterMarkdownImageTarget {
@@ -183,6 +185,7 @@ function writerMarkdownTargetBindings(
   let fenceCharacter = '';
   let fenceLength = 0;
   let currentHeadingIndex: number | undefined;
+  let chartHeadingIndex: number | undefined;
 
   markdown.split(/\r?\n/).forEach((line, lineIndex) => {
     const fence = line.match(/^\s*(`{3,}|~{3,})/);
@@ -204,6 +207,12 @@ function writerMarkdownTargetBindings(
     if (OUTLINE_INSTRUCTION_LINE_RE.test(trimmed)) {
       if (currentHeadingIndex !== undefined) {
         bindings[currentHeadingIndex].outlineInstructionLine = trimmed;
+      }
+      return;
+    }
+    if (PAPER_CHARTS_LINE_RE.test(trimmed)) {
+      if (chartHeadingIndex !== undefined) {
+        (bindings[chartHeadingIndex].paperChartsLines ??= []).push(trimmed);
       }
       return;
     }
@@ -231,6 +240,7 @@ function writerMarkdownTargetBindings(
         signature: `${heading[1].length}:${heading[2]?.trim() ?? ''}`,
       });
       currentHeadingIndex = bindings.length - 1;
+      chartHeadingIndex = currentHeadingIndex;
     } else {
       currentHeadingIndex = undefined;
       const image = writerMarkdownImageTarget(trimmed);
@@ -375,15 +385,15 @@ export function protectWriterMarkdownAnchors(
       const previousTarget = previous.find(
         (item) => item.anchorId === assignment.anchorId && item.type === 'heading',
       );
-      if (previousTarget?.outlineInstructionLine) {
-        insertAfter.set(target.lineIndex, previousTarget.outlineInstructionLine);
-      }
+      const sidecars = [previousTarget?.outlineInstructionLine, ...(previousTarget?.paperChartsLines ?? [])]
+        .filter((line): line is string => Boolean(line));
+      if (sidecars.length) insertAfter.set(target.lineIndex, sidecars.join('\n'));
     }
   });
 
   const result: string[] = [];
   lines.forEach((line, lineIndex) => {
-    if (targetAnchorLines.has(lineIndex) || OUTLINE_INSTRUCTION_LINE_RE.test(line)) return;
+    if (targetAnchorLines.has(lineIndex) || OUTLINE_INSTRUCTION_LINE_RE.test(line) || PAPER_CHARTS_LINE_RE.test(line)) return;
     const anchor = insertBefore.get(lineIndex);
     if (anchor) {
       // MDX serializers may surround a standalone JSX anchor with extra empty
@@ -441,7 +451,7 @@ export function writerMarkdownForEditing(markdown: string): string {
     (line) => HEADING_NUMBERING_CONFIG_LINE_RE.test(line),
   );
   const hasOutlineInstructions = editorMarkdown.split(/\r?\n/).some(
-    (line) => OUTLINE_INSTRUCTION_LINE_RE.test(line),
+    (line) => OUTLINE_INSTRUCTION_LINE_RE.test(line) || PAPER_CHARTS_LINE_RE.test(line),
   );
   if (anchorLines.size === 0 && !hasConfig && !hasOutlineInstructions) {
     return editorMarkdown;
@@ -453,6 +463,7 @@ export function writerMarkdownForEditing(markdown: string): string {
       anchorLines.has(lineIndex)
       || HEADING_NUMBERING_CONFIG_LINE_RE.test(line)
       || OUTLINE_INSTRUCTION_LINE_RE.test(line)
+      || PAPER_CHARTS_LINE_RE.test(line)
     ) return;
     if (anchoredTargetLines.has(lineIndex)) {
       while (

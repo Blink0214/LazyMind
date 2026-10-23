@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { SlotRevision } from '@/modules/chat/store/workflowPanel';
-import { PaperAnalysisCharts } from './PaperAnalysisCharts';
+import { PaperAnalysisCharts, paperChartDescriptions } from './PaperAnalysisCharts';
 
 vi.mock('./SlotComponents', async () => ({ SlotDownloadContext: (await import('react')).createContext(true) }));
 vi.mock('@/modules/knowledge/utils/imageUrl', () => ({
@@ -47,4 +47,13 @@ it('falls back to SVG and keeps downloads accessible when previews fail', async 
   fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
   expect(await screen.findByRole('img', { name: 'Mean scores' }))
     .toHaveAttribute('src', '/static-files/means.png');
+});
+
+
+it.each(['paper-material-pool.v1', 'paper-material-pool.v2'])('reads figure metadata from %s', schema => {
+  const value = { ...metadata[0].artifact_value.data, schema };
+  expect(paperChartDescriptions({ data: value })).toEqual([
+    { id: 'means', title: 'Mean scores', caption: 'Synthetic group means.' },
+  ]);
+  expect(paperChartDescriptions({ ...value, schema: 'unknown' })).toEqual([]);
 });

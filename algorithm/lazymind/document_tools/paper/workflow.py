@@ -5,6 +5,7 @@ import base64
 import copy
 import json
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -16,18 +17,18 @@ from .entry import MAX_MANUSCRIPT_CHARS, read_manuscript
 from .review_schema import text_digest
 from .analysis import trace as diagnostics
 
-SCHEMA = 'paper-material-pool.v1'
+SCHEMA = 'paper-material-pool.v2'
 ROUTES = {
     'F1': ['F2'], 'F2': ['F1', 'F3', 'F5', 'F7'], 'F3': ['F4'],
     'F4': ['F5'], 'F5': ['F6'], 'F6': ['F5'], 'F7': [],
 }
 STEP_NODE = {
     'research_topic': 'F1', 'literature_review': 'F2', 'experiment': 'F3', 'data_analysis': 'F4', 'write_document': 'F5',
-    'peer_review': 'F6', 'reading_reflection': 'F7', 'refine_topic': 'F1', 'revise_document': 'F5',
+    'peer_review': 'F6', 'reading_reflection': 'F7', 'refine_topic': 'F1', 'revise_document': 'F5', 'write_outline': 'F5',
 }
 STEP_LABELS = {
     'research_topic': '研究选题', 'literature_review': '文献综述', 'experiment': '实验研究', 'data_analysis': '数据分析',
-    'write_document': '论文写作', 'peer_review': '模拟审稿', 'reading_reflection': '阅读心得',
+    'write_outline': '论文大纲', 'write_document': '论文写作', 'peer_review': '模拟审稿', 'reading_reflection': '阅读心得',
     'refine_topic': '调整选题', 'revise_document': '论文修订', 'prepare': '材料准备', 'finish': '结束说明',
 }
 KINDS = contracts.KINDS
@@ -44,6 +45,11 @@ def validate_pool(pool: Any) -> dict:
         raise ValueError('materials 必须是列表，current 必须是材料引用表')
     if not isinstance(pool.get('history'), list):
         raise ValueError('history 必须是列表')
+    contracts.normalize_constraints(pool.get('constraints', {}))
+    selected = pool.get('selected_issue_ids', [])
+    if not isinstance(selected, list) or any(not isinstance(i, str) or not i.strip() for i in selected):
+        raise ValueError('selected_issue_ids 必须是 ID 数组')
+    contracts.unique(selected, 'selected_issue_ids')
     indexed = {}
     for item in pool['materials']:
         if not isinstance(item, dict) or item.get('kind') not in KINDS:
@@ -55,9 +61,8 @@ def validate_pool(pool: Any) -> dict:
         key = (item['id'], item['version'])
         if key in indexed:
             raise ValueError('材料 id/version 重复')
-        if (not isinstance(item.get('content'), (str, dict, list))
-                or (not item['content'] and item['kind'] not in ('papers', 'charts'))):
-            raise ValueError('材料 content 不能为空')
+        if 'content' not in item:
+            raise ValueError('材料缺少 content')
         if item['kind'] == 'analysis' and isinstance(item['content'], dict):
             from .analysis.schema import VERSION, validate_analysis
             if item.get('contract') != VERSION:
@@ -95,9 +100,6 @@ def validate_pool(pool: Any) -> dict:
             resolve(ref)
     if pool['sequence'] != len(pool['history']):
         raise ValueError('sequence 与执行历史长度不一致')
-    papers = material(pool, 'papers')
-    if papers:
-        contracts.validate_value('papers', papers['content'])
     return pool
 
 
@@ -128,26 +130,47 @@ def add_material(pool: dict, kind: str, content: Any, derived: list[dict], sourc
 def seed_pool() -> dict:
     pool = {'schema': SCHEMA, 'topic': '检索增强生成的证据可追溯性', 'sequence': 0,
             'materials': [], 'current': {}, 'history': []}
-    # shortcut: small mock contents are inline; real adapters should use the
-    # platform's authorized material references instead of embedding full papers.
+    # Demonstration sources retain explicit coverage and provenance.
     add_material(pool, 'papers', [
-        {'id': '示例P1', 'title': '[示例] 检索证据组织方法', 'text': '示例论文讨论检索与引用对齐，不是真实论文。'},
-        {'id': '示例P2', 'title': '[示例] 生成答案的来源检查', 'text': '示例论文讨论主张与来源核验，不是真实论文。'},
-    ], [], ['示例P1', '示例P2'], is_demo=True)
+        {'id': 'ref-demo-1', 'title': '[示例] 检索证据组织方法', 'text': '示例论文讨论检索与引用对齐，不是真实论文。',
+         'url': None, 'authors': [], 'year': None, 'doi': None, 'content_type': 'excerpt',
+         'source': 'demo', 'truncated': False},
+        {'id': 'ref-demo-2', 'title': '[示例] 生成答案的来源检查', 'text': '示例论文讨论主张与来源核验，不是真实论文。',
+         'url': None, 'authors': [], 'year': None, 'doi': None, 'content_type': 'excerpt',
+         'source': 'demo', 'truncated': False},
+    ], [], ['ref-demo-1', 'ref-demo-2'], is_demo=True)
     add_material(pool, 'data', {'columns': ['method', 'score'],
                                'rows': [['baseline', 60], ['evidence', 75]]}, [], [], is_demo=True)
     add_material(pool, 'question', '比较不同证据组织方法对引用可追溯性的影响（演示问题）。',
                  [], [], is_demo=True)
-    add_material(pool, 'manuscript', '# [示例] 已有论文\n\n## 方法\n待完善证据定位。\n\n## 局限\n仅为流程测试。', [], ['示例P1'], is_demo=True)
+    add_material(pool, 'manuscript', '# [示例] 已有论文\n\n## 方法\n待完善证据定位。\n\n## 局限\n仅为流程测试。', [], ['ref-demo-1'], is_demo=True)
     return validate_pool(pool)
 
 
 def business_input(step: str, pool: dict, request: str = '') -> dict:
     module = contracts.ALIASES.get(step, step)
-    value = {'topic': pool['topic'], 'request': request or pool.get('request', '')}
-    if module == 'data_analysis' and 'constraints' in pool:
-        value['constraints'] = copy.deepcopy(pool['constraints'])
+    value = {'topic': pool['topic'], 'request': request}
+    if module in contracts.CONSTRAINED_MODULES:
+        value['constraints'] = copy.deepcopy(pool.get('constraints', {}))
+    if step in {'peer_review', 'revise_document'}:
+        # New research materials may inform the existing manuscript. Review freshness
+        # is checked against manuscript/report digests by the revision contract.
+        from .publication import validate_chart_references, figure_catalog
+        manuscript, charts = material(pool, 'manuscript'), material(pool, 'charts')
+        if manuscript:
+            media = material(pool, 'media_assets')
+            validate_chart_references(manuscript['content'], figure_catalog(charts['content'] if charts else [], media['content'] if media else None))
+            from .publication import validate_citations
+            papers = material(pool, 'papers')
+            validate_citations(manuscript['content'], papers['content'] if papers else [], published=True)
     for kind in contracts.FIELDS[module]:
+        if kind == 'selected_issue_ids':
+            value[kind] = copy.deepcopy(pool.get(kind, [])) if step == 'revise_document' else []
+            continue
+        if kind in {'review', 'review_data'} and (step in {'write_outline', 'write_document'}
+                or (step == 'revise_document' and not pool.get('selected_issue_ids'))):
+            value[kind] = None
+            continue
         item = material(pool, kind)
         if item:
             value[kind] = copy.deepcopy(item['content'])
@@ -164,13 +187,21 @@ def business_input(step: str, pool: dict, request: str = '') -> dict:
     return value
 
 
+def paper_source_ids(papers):
+    """Project available provenance without requiring or validating Paper fields."""
+    if not isinstance(papers, list):
+        return []
+    return [paper['id'] for paper in papers if isinstance(paper, dict)
+            and isinstance(paper.get('id'), str) and paper['id']]
+
+
 def pool_from_business(value: dict) -> dict:
     """The entry adapter accepts business values, not a user-authored pool."""
     if not isinstance(value, dict):
         raise ValueError('入口材料必须是 JSON 对象')
     if value.get('schema') == SCHEMA:
         return validate_pool(copy.deepcopy(value))  # Existing pinned integrations.
-    if set(value) - {'topic', 'request', 'demo', 'constraints', *KINDS}:
+    if set(value) - {'topic', 'request', 'demo', 'constraints', 'selected_issue_ids', *KINDS}:
         raise ValueError('入口材料含未知字段')
     if type(value.get('demo', False)) is not bool:
         raise ValueError('demo 必须是布尔值')
@@ -186,14 +217,14 @@ def pool_from_business(value: dict) -> dict:
     if not isinstance(value.get('request', ''), str):
         raise ValueError('request 必须是字符串')
     pool = {'schema': SCHEMA, 'topic': value['topic'], 'request': value.get('request', ''),
+            'constraints': contracts.normalize_constraints(value.get('constraints', {})),
+            'selected_issue_ids': copy.deepcopy(value.get('selected_issue_ids', [])),
             'sequence': 0, 'materials': [], 'current': {}, 'history': []}
-    if 'constraints' in value:
-        from .analysis.schema import Constraints, parse
-        pool['constraints'] = parse(Constraints, value['constraints'])
-    paper_ids = []
+    value = copy.deepcopy(value)
     if 'papers' in value:
+        value['papers'] = contracts.normalize_papers(value['papers'])
         contracts.validate_value('papers', value['papers'])
-        paper_ids = [p['id'] for p in value['papers']]
+    paper_ids = paper_source_ids(value.get('papers'))
     meta = value.get('result_meta')
     if meta is not None:
         if value.get('experiment') is not None:
@@ -260,8 +291,8 @@ def _conversation_papers(files_by_turn: dict | None) -> list[dict]:
 def preparation_document(pool: dict) -> str:
     # Compatibility for already pinned legacy sessions; new workflows have no prepare node.
     names = {'papers': '论文', 'data': '数据表', 'question': '研究选题', 'evidence': '文献综述',
-             'experiment': '实验结果', 'analysis': '分析结论', 'chart': '图表', 'charts': '图表列表',
-             'outline': '大纲', 'manuscript': '稿件', 'review': '审稿意见', 'review_data': '结构化审稿意见',
+             'experiment': '实验结果', 'analysis': '分析结论', 'chart': '图表',
+             'charts': '图表目录', 'outline': '大纲', 'manuscript': '稿件', 'review': '审稿意见', 'review_data': '结构化审稿意见',
              'reflection': '阅读心得'}
     names.update(data_context='数据说明', study_design='观测设计事实')
     lines = ['# 材料准备', '', '## 研究主题', pool['topic'], '', '## 已接收材料']
@@ -277,6 +308,22 @@ def preparation_document(pool: dict) -> str:
     return '\n'.join(lines)
 
 
+def render_material(kind: str, content: Any) -> str:
+    """Project structured business data without replacing its canonical value."""
+    if isinstance(content, str):
+        return content
+    if kind == 'experiment':
+        return content['report']
+    if kind == 'review':
+        lines = ['# 模拟审稿', '', content['summary']]
+        for issue in content['issues']:
+            lines.extend(['', '## ' + issue['id'], issue['problem'], '', issue['suggestion']])
+        if content['limitations']:
+            lines.extend(['', '## 审稿局限', *['- ' + item for item in content['limitations']]])
+        return '\n'.join(lines)
+    return '# ' + kind + '\n\n```json\n' + json.dumps(content, ensure_ascii=False, indent=2) + '\n```'
+
+
 def execute_step(step: str, pool: dict, request: str = '', fail: bool = False, *,
                  on_event=None, allow_execution=False) -> dict:
     """Infrastructure owns lineage and atomic validation; algorithms own content."""
@@ -288,6 +335,16 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False, *
     if fail:
         raise RuntimeError('[示例] 模拟执行失败；可重试。')
     module = contracts.ALIASES.get(step, step)
+    relevant = contracts.FIELDS[module]
+    if step == 'revise_document' and not pool.get('selected_issue_ids'):
+        relevant = tuple(kind for kind in relevant if kind not in {'review', 'review_data'})
+    pool = copy.deepcopy(pool)
+    current_papers = material(pool, 'papers')
+    if current_papers and 'papers' in relevant:
+        normalized_papers = contracts.normalize_papers(current_papers['content'])
+        if normalized_papers != current_papers['content']:
+            add_material(pool, 'papers', normalized_papers, [pool['current']['papers']],
+                         paper_source_ids(normalized_papers), is_demo=current_papers['mock'])
     if module == 'research_topic':
         contracts.validate_input(step, business_input(step, pool, request))
         pool = copy.deepcopy(pool)
@@ -297,7 +354,6 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False, *
             if prepared != papers['content']:
                 add_material(pool, 'papers', prepared, [pool['current']['papers']], papers['source_refs'],
                              is_demo=papers['mock'])
-    relevant = contracts.FIELDS[module]
     inputs = [copy.deepcopy(pool['current'][kind]) for kind in relevant if kind in pool['current']]
     execution_records = []
     if module == 'data_analysis':
@@ -318,12 +374,14 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False, *
     generated = {key: copy.deepcopy(output[key]) for key in contracts.OUTPUTS[module]}
     main = {'F1': 'question', 'F2': 'evidence', 'F3': 'experiment', 'F4': 'analysis',
             'F5': 'manuscript', 'F6': 'review', 'F7': 'reflection'}[node]
+    if step == 'write_outline':
+        main = 'outline'
     structured_analysis = main == 'analysis' and isinstance(generated[main], dict)
     if structured_analysis:
         from .analysis.render import render
         document = render(generated[main], '数据分析 · ' + pool['topic'])
     else:
-        document = generated[main]['report'] if main == 'experiment' else generated[main]
+        document = render_material(main, generated[main])
     provenance = generated.get('result_meta') or (material(pool, 'result_meta') or {}).get('content')
     if provenance:
         from .experiment.handoff import source_notice
@@ -333,18 +391,22 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False, *
     if is_demo and notice not in document:
         first, sep, rest = document.partition('\n')
         document = first + '\n\n' + notice + '\n' + rest
-    if main == 'experiment':
-        generated[main]['report'] = document
-    elif not structured_analysis:
-        generated[main] = document
+    # Keep canonical manuscripts unchanged by display notices.
     if main == 'review':
+        generated[main] = document
         generated['review_data']['review_sha256'] = text_digest(document)
     sources = {source for kind in relevant if material(pool, kind)
                for source in material(pool, kind)['source_refs']}
-    sources.update(p['id'] for p in generated.get('papers', []))
+    sources.update(paper_source_ids(generated.get('papers')))
     result = copy.deepcopy(pool)
-    outputs = [add_material(result, kind, content, inputs, sorted(sources), is_demo=is_demo)
-               for kind, content in generated.items()]
+    outputs = []
+    for kind, content in generated.items():
+        if content is None:
+            result['current'].pop(kind, None)
+        else:
+            outputs.append(add_material(result, kind, content, inputs, sorted(sources), is_demo=is_demo))
+    if step == 'peer_review':
+        result['selected_issue_ids'] = []
     result['sequence'] += 1
     result['history'].append({'node': node, 'request': request, 'inputs': inputs, 'outputs': outputs})
     if execution_records:
@@ -382,7 +444,7 @@ def _unwrap(value: Any) -> Any:
 
 
 def _read_bound(path: str) -> Any:
-    text = Path(path).read_text(encoding='utf-8')
+    text = Path(path).read_text(encoding='utf-8-sig')
     try:
         return _unwrap(json.loads(text))
     except json.JSONDecodeError:
@@ -402,6 +464,8 @@ def pool_from_inputs(inputs: dict[str, Any]) -> dict:
         node = pool['history'][-1]['node'] if pool['history'] else None
         kind = {'F1': 'question', 'F2': 'evidence', 'F3': 'experiment', 'F4': 'analysis', 'F5': 'manuscript',
                 'F6': 'review', 'F7': 'reflection'}.get(node)
+        if key == 'write_outline_pool':
+            kind = 'outline'
         current = material(pool, kind) if kind else None
         if current:
             content = current['content']
@@ -416,12 +480,23 @@ def pool_from_inputs(inputs: dict[str, Any]) -> dict:
                     raise ContractError('STALE_MATERIAL', 'analysis',
                                         '分析报告已编辑；编辑稿保留，请将改动作为本轮要求重新分析，不能将修改后的数字视为已复算结果')
                 return validate_pool(pool)
-            previous_document = content.get('report') if kind == 'experiment' and isinstance(content, dict) else content
+            previous_document = render_material(kind, content)
+            if kind == 'manuscript':
+                from ..artifacts import strip_paper_chart_numbering
+                document = strip_paper_chart_numbering(document)
+            notice = '> 演示数据，仅用于流程测试，不是真实研究结果。'
+            if current['mock'] and kind != 'review':
+                document = document.replace('\n\n' + notice + '\n', '\n', 1)
             if previous_document != document:
-                updated = ({**content, 'report': document}
-                           if kind == 'experiment' and isinstance(content, dict) else document)
-                add_material(pool, kind, updated, [pool['current'][kind]], current['source_refs'],
-                             is_demo=current['mock'])
+                if isinstance(content, (dict, list)) and kind != 'experiment':
+                    raise ValueError('结构化材料展示文档已变更，请通过结构化输入更新，不能用 Markdown 覆盖业务对象')
+                if kind == 'manuscript':
+                    from .publication import protect_reference_region, publish_citations
+                    protect_reference_region(content, document)
+                    papers = material(pool, 'papers')
+                    document = publish_citations(document, papers['content'] if papers else [])
+                updated = {**content, 'report': document} if kind == 'experiment' and isinstance(content, dict) else document
+                add_material(pool, kind, updated, [pool['current'][kind]], current['source_refs'], is_demo=current['mock'])
     return validate_pool(pool)
 
 
@@ -439,22 +514,19 @@ def _runtime_request(params: dict) -> tuple[str, str]:
     instruction = str(params.get('retry_hint') or params.get('runtime_instruction') or '').strip()
     # Core restores launch intent in user_input on rewind; the new request is in retry_hint.
     recovery = instruction.partition('Recovery request for this rerun only:')[2].strip()
-    values = (params.get('current_user_input'), recovery, params.get('user_input'), params.get('launch_user_input'))
-    request = next((text for value in values if (text := _business_request(value))), '')
+    if params.get('step_id') == 'data_analysis':
+        # Before PR #83 Core did not expose current_user_input to algorithms.
+        # Keep that F4 contract; Writer independently consumes the new field.
+        values = (recovery, params.get('user_input'), params.get('launch_user_input'))
+        request = next((text for value in values if (text := _business_request(value))), '')
+    elif 'current_user_input' in params:
+        request = str(params['current_user_input'] or recovery or '').strip()
+    elif contracts.ALIASES.get(params.get('step_id'), params.get('step_id')) in contracts.CURRENT_REQUEST_MODULES:
+        request = recovery
+    else:
+        request = str(recovery or params.get('user_input') or params.get('launch_user_input') or '').strip()
     return request, instruction
 
-
-def _step_request(step: str, pool: dict, params: dict) -> str:
-    request, instruction = _runtime_request(params)
-    recovery = instruction.partition('Recovery request for this rerun only:')[2].strip()
-    if _business_request(params.get('current_user_input')) or _business_request(recovery):
-        return request
-    # Reuse the last saved requirements for this module before falling back to launch intent.
-    previous = ''
-    if params.get('current_user_input') or recovery:
-        previous = next((_business_request(item.get('request')) for item in reversed(pool['history'])
-                         if item['node'] == STEP_NODE[step] and _business_request(item.get('request'))), '')
-    return previous or _business_request(pool.get('request')) or request
 
 
 def initialize_pool(bound: dict[str, str], request: str = '') -> dict:
@@ -475,11 +547,11 @@ def initialize_pool(bound: dict[str, str], request: str = '') -> dict:
 def _read_entry_value(bound: dict[str, str]) -> dict:
     """Read bound business inputs without creating a pool or selecting paper sources."""
     value = _read_bound(bound['paper_input']) if 'paper_input' in bound else {}
-    if not isinstance(value, dict):
-        raise ValueError('程序化 paper_input 必须是业务对象；上传论文请绑定 manuscript_file')
+    if not isinstance(value, dict) or {'schema', 'step', 'input', 'output'} & value.keys():
+        raise ValueError('paper_input 必须是 JSON 业务对象，不接受附件名、样例包装或材料池')
     value = copy.deepcopy(value)
     for slot, field in (('manuscript_text', 'manuscript'), ('paper_topic', 'topic'),
-                        ('review_request', 'request'), ('experiment_question', 'question')):
+                        ('experiment_question', 'question')):
         if slot in bound:
             incoming = Path(bound[slot]).read_text(encoding='utf-8-sig')
             contracts.text(incoming, field)
@@ -518,12 +590,64 @@ def _pool_from_entry(value: dict, request: str, *, fallback_topic: str = '') -> 
     return pool_from_business(value)
 
 
+def _step_request(step: str, pool: dict, params: dict, bound: dict | None = None) -> str:
+    """Keep requirements step-scoped, while restoring saved requirements on retry."""
+    if step == 'data_analysis':
+        request, instruction = _runtime_request({**params, 'step_id': step})
+        recovery = instruction.partition('Recovery request for this rerun only:')[2].strip()
+        if _business_request(recovery):
+            return request
+        # Restore the pre-PR input contract: only recovery can override materials.
+        previous = ''
+        if recovery:
+            previous = next((_business_request(item.get('request')) for item in reversed(pool['history'])
+                             if item['node'] == STEP_NODE[step] and _business_request(item.get('request'))), '')
+        return previous or _business_request(pool.get('request')) or request
+    bound = bound if bound is not None else params.get('remote_inputs', {})
+    current, instruction = _runtime_request(params)
+    current = _business_request(current)
+    recovery = instruction.partition('Recovery request for this rerun only:')[2].strip()
+    retry = bool(params.get('current_user_input') or recovery) and not current
+    saved = next((_business_request(item.get('request')) for item in reversed(pool['history'])
+                  if item['node'] == STEP_NODE[step] and _business_request(item.get('request'))), '')
+    initial = not any(key.endswith('_pool') for key in bound)
+    if initial and not current:
+        current = _business_request(params.get('user_input') or params.get('launch_user_input'))
+    base = _business_request(pool.get('request')) if initial else ''
+    if step == 'peer_review' and 'review_request' in bound:
+        base = Path(bound['review_request']).read_text(encoding='utf-8-sig')
+        contracts.text(base, 'review_request')
+    if step == 'write_document' and 'write_outline_pool' in bound and saved:
+        base = saved
+    if retry and saved:
+        base = saved
+    if retry and not base:
+        base = _business_request(params.get('user_input'))
+    if not base or not current:
+        return base or current
+    if base.strip() == current.strip():
+        return base
+    label = '本次启动补充要求' if initial and step == 'write_document' else '本轮补充要求（优先于上述要求）'
+    return base + '\n\n' + label + '：\n' + current
+
+
 @diagnostics.workflow_trace
 def run_paper_step() -> dict:
     """Publish one scheduled step, with failure-safe attempt-scoped experiment previews."""
     from lazymind.chat.engine.subagent.context import require_context
 
     context = require_context()
+    if context.params.get('step_id') in {'write_outline', 'write_document', 'revise_document'}:
+        from .runtime_events import bind_runtime_events
+        with bind_runtime_events(context.emit, f"{context.params['step_id']}_document") as events:
+            events.progress(5, '正在读取写作材料')
+            result = _run_paper_step(context)
+            events.complete()
+            return result
+    if context.params.get('step_id') == 'peer_review':
+        from .peer_review import stage
+        with stage('workflow', getattr(context, 'task_id', 'peer_review')):
+            return _run_paper_step(context)
     stream = None
     if context.params.get('step_id') == 'experiment':
         from .experiment.stream import ExperimentStream
@@ -565,13 +689,20 @@ def _run_paper_step(context, stream=None) -> dict:
     else:
         if step not in STEP_NODE:
             raise ValueError(f'未知 Workflow 步骤: {step}')
-        if step == 'data_analysis':
-            from .analysis.attachments import bind_attachment, retry_request
-            request = retry_request(context.params, request)
+        if step in {'data_analysis', 'write_outline', 'write_document', 'revise_document'}:
+            if step == 'data_analysis':
+                from .analysis.attachments import bind_attachment
+                from .data_analysis import retry_request
+                request = retry_request(context.params, request)
+            else:
+                from .writing.attachments import bind_attachment
             with diagnostics.stage('input_binding'):
                 bound = bind_attachment(bound, context.workspace_path, request)
             with diagnostics.stage('input_validation'):
                 pool = initialize_pool(bound, request)
+                if step == 'data_analysis':
+                    from .analysis.schema import normalize_input
+                    normalize_input(business_input(step, pool, _step_request(step, pool, context.params, bound)))
         elif step in {'research_topic', 'reading_reflection'} and not any(
             key.endswith('_pool') for key in bound
         ):
@@ -597,6 +728,11 @@ def _run_paper_step(context, stream=None) -> dict:
             if step == 'research_topic' and use_attachments and not any(item['mock'] for item in pool['materials']):
                 if 'paper_topic' not in bound:
                     pool['topic'] = research_topic.infer_topic(pool.get('request') or request, papers)
+        elif step == 'peer_review':
+            from .peer_review import stage
+            with stage('pool_initialization', getattr(context, 'task_id', 'peer_review'),
+                       bindings=sorted(bound)):
+                pool = initialize_pool(bound, request)
         else:
             pool = initialize_pool(bound, request)
         if step == 'literature_review' and not any(key.endswith('_pool') for key in bound):
@@ -614,8 +750,17 @@ def _run_paper_step(context, stream=None) -> dict:
             papers = material(pool, 'papers')
             if papers is None or not papers['content']:
                 raise MissingMaterials('请先选择至少一篇论文，或上传论文附件，再生成阅读心得。')
-        request = _step_request(step, pool, context.params)
+        request = _step_request(step, pool, context.params, bound)
+        if step == 'revise_document':
+            from .writing.revise_document import resolve_review_issues
+            review = material(pool, 'review_data')
+            pool['selected_issue_ids'] = resolve_review_issues(
+                request, review['content'] if review else None,
+            )
         fail = '[mock:fail]' in request + instruction and '[mock:retry]' not in request + instruction
+        if (step == 'write_document' and 'write_outline_document' in getattr(context, 'input_slots', [])
+                and not material(pool, 'manuscript') and 'write_outline_document' not in bound):
+            raise MissingMaterials('请先生成并确认论文大纲，再继续写作。')
         preference = _read_bound(bound['experiment_execution']) if 'experiment_execution' in bound else 'simulate_only'
         result = execute_step(step, pool, request, fail=fail, on_event=stream,
                               allow_execution=preference == 'allow_local')
@@ -623,6 +768,21 @@ def _run_paper_step(context, stream=None) -> dict:
             output = {kind: material(result['pool'], kind)['content'] for kind in contracts.OUTPUTS['experiment']}
             output['is_demo'] = result['mock']
             stream.validated(output)
+        if step in {'write_document', 'revise_document'}:
+            from .publication import publish_citations, publish_charts, figure_catalog
+            manuscript = material(result['pool'], 'manuscript')
+            charts = material(result['pool'], 'charts')
+            papers = material(result['pool'], 'papers')
+            original = publish_citations(manuscript['content'], papers['content'] if papers else [])
+            media = material(result['pool'], 'media_assets')
+            published = publish_charts(original, figure_catalog(charts['content'] if charts else [], media['content'] if media else None))
+            manuscript['content'] = published
+            # Slots and the frontend receive canonical Markdown with resolved image URLs.
+            result['document'] = published
+            notice = '> 演示数据，仅用于流程测试，不是真实研究结果。'
+            if result['mock'] and notice not in result['document']:
+                first, _, rest = result['document'].partition('\n')
+                result['document'] = first + '\n\n' + notice + '\n' + rest
         artifacts = [
             {'key': f'{step}_pool', 'content_type': 'json', 'value': result['pool']},
             {'key': f'{step}_document', 'content_type': 'text', 'value': result['document']},
@@ -653,25 +813,38 @@ def _run_paper_step(context, stream=None) -> dict:
                     exported.write_bytes(base64.b64decode(encoded, validate=True))
                     artifacts.append({'key': 'analysis_chart', 'content_type': 'file', 'value': str(exported),
                                       'caption': f'{figure.get("caption") or figure["title"]} ({extension.upper()})'})
+    # Validate all publication dependencies before writing, and never overwrite a prior run.
+    publication_dir = Path(tempfile.mkdtemp(prefix='paper-output-', dir=context.workspace_path))
     # Publish actual named files; the existing document projection supplies the editor.
     for artifact in artifacts:
         if artifact['key'].endswith('_pool'):
-            path = Path(context.workspace_path) / f"{artifact['key']}.json"
+            path = publication_dir / f"{artifact['key']}.json"
             persist_artifact_json(artifact['value'], str(path), schema_name=SCHEMA,
                                   created_by='paper-writing')
             artifact.update(content_type='file', value=str(path))
         elif artifact['key'].endswith('_document'):
-            path = Path(context.workspace_path) / markdown_filename(STEP_LABELS[step])
+            path = publication_dir / markdown_filename(STEP_LABELS[step])
             path.write_text(artifact['value'], encoding='utf-8')
             artifact.update(content_type='file', value=str(path))
+    from .runtime_events import report_progress
+    report_progress(97, '正在保存成稿')
     with diagnostics.stage('output_publication'):
         saved = save_artifacts(artifacts)
         diagnostics.save('published-files.json', [
             {'slot': item['key'], 'filename': Path(item['value']).name}
             for item in artifacts if item['content_type'] == 'file'
         ])
+    final_text = '产物已保存，请在工作流中查看。'
+    if step == 'revise_document':
+        review = material(result['pool'], 'review_data')
+        selected = set(result['pool'].get('selected_issue_ids', []))
+        pending = [issue['id'] for issue in review['content']['issues']
+                   if issue['id'] in selected and issue['action_type'] != 'text_revision'] if review else []
+        if pending:
+            final_text += ' ' + '、'.join(pending) + ' 仍需补充材料或实验；本轮文字修改不代表这些事项已完成。'
     return {
         'status': 'completed', 'step': step, 'saved': saved,
+        **({'control': {'next_step': 'write_document'}} if step == 'write_outline' else {}),
         # Stop the node with user-facing text, not a stringified publication receipt.
-        '_agent_control': {'stop': True, 'final_text': '产物已保存，请在工作流中查看。'},
+        '_agent_control': {'stop': True, 'final_text': final_text},
     }

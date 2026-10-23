@@ -221,6 +221,41 @@ describe('Writer Markdown system anchors', () => {
     )).toBe(source);
   });
 
+  it('keeps paper chart ownership hidden and attached to renamed outline headings', () => {
+    const charts = '<!-- paper-charts: ["accuracy"] -->';
+    const source = '# Paper\n\n<a id="block-sec-1"></a>\n## Results\n' + charts;
+    const editable = writerMarkdownForEditing(source);
+    expect(editable).not.toContain('paper-charts');
+    const saved = writerMarkdownForSave(protectWriterMarkdownHeadingAnchors(
+      source, editable.replace('## Results', '## Verified results'),
+    ));
+    expect(saved).toContain('## Verified results\n' + charts);
+    expect(writerMarkdownForSave(protectWriterMarkdownHeadingAnchors(
+      source, '# Paper',
+    ))).not.toContain('paper-charts');
+  });
+
+  it('preserves all chart assignments across descriptions and keeps them in their sections', () => {
+    const first = '<!-- paper-charts: ["accuracy"] -->';
+    const second = '<!-- paper-charts: ["latency"] -->';
+    const third = '<!-- paper-charts: ["overview"] -->';
+    const source = '# Paper\n\n<a id="block-sec-1"></a>\n## Results\n'
+      + first + '\n插图：准确率\n' + second + '\n插图：耗时\n\n'
+      + '<a id="block-sec-2"></a>\n## Discussion\n' + third;
+    const editable = writerMarkdownForEditing(source);
+    expect(editable).not.toContain('paper-charts');
+    const saved = writerMarkdownForSave(protectWriterMarkdownHeadingAnchors(
+      source, editable.replace('## Results', '## Verified results'),
+    ));
+    expect(saved).toContain('## Verified results\n' + first + '\n' + second);
+    expect(saved).toContain('## Discussion\n' + third);
+    expect(saved).toContain('插图：准确率');
+    expect(saved).toContain('插图：耗时');
+    expect(writerMarkdownForSave(protectWriterMarkdownHeadingAnchors(
+      saved, writerMarkdownForEditing(saved),
+    ))).toBe(saved);
+  });
+
   it('restores stable heading anchors on save and removes anchors for deleted headings', () => {
     const source = [
       '# 标题',

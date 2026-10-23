@@ -54,6 +54,7 @@ def test_completion_feedback_uses_brief_text_only_after_real_publication(tmp_pat
             lazyllm.globals['subagent_ctx'] = previous
 
 
+@pytest.mark.usefixtures('paper_simulation')
 @pytest.mark.parametrize('start,feedback,recovery', [
     ('literature_review', 'refine_topic', 'recovery_research'),
     ('peer_review', 'revise_document', 'recovery_review'),
@@ -62,6 +63,12 @@ def test_real_artifact_publisher_across_ten_feedback_rounds(tmp_path, start, fee
     monkeypatch.setattr(api.ALGORITHMS['research_topic'], 'AutoModel', lambda **_kwargs: lambda _prompt:
                         '# 研究选题\n\n## 研究问题\n如何改善效果？\n\n'
                         '## 文献反馈与调整依据\n根据综述调整路线。')
+    from lazymind.document_tools.paper.writing import revise_document
+    def resolve_scope(request, review):
+        assert request == '按当前审稿意见修订'
+        assert any(issue['id'] == 'R1' for issue in review['issues'])
+        return ['R1']
+    monkeypatch.setattr(revise_document, 'resolve_review_issues', resolve_scope)
     state = yaml.safe_load((PACKAGE / 'scenario/state.yml').read_text())
     workflow = yaml.safe_load((PACKAGE / 'workflow.yaml').read_text())
     types = {slot['id']: slot['type'] for slot in workflow['slots']}
@@ -88,6 +95,7 @@ def test_real_artifact_publisher_across_ten_feedback_rounds(tmp_path, start, fee
         set_context(SubAgentContext(
             task_id='paper-' + workspace.name, conversation_id='paper-test', agent_type='workflow_step',
             objective='Mock contract test', params={'step_id': step, 'remote_inputs': bound,
+                'current_user_input': '按当前审稿意见修订' if step == 'revise_document' else '',
                 'output_slot_types': {slot: types[slot] for slot in slots}},
             workspace_path=str(workspace), input_slots=list(inputs), output_slots=slots,
             db=None, emit=emitted.append,
@@ -107,6 +115,7 @@ def test_real_artifact_publisher_across_ten_feedback_rounds(tmp_path, start, fee
             structured = json.loads(Path(latest['peer_review_data']['path']).read_text())
             pool = tools._read_bound(latest['peer_review_pool']['path'])
             assert structured == tools.material(pool, 'review_data')['content']
+            pool['selected_issue_ids'] = ['R1']
             inputs = tools.business_input('revise_document', pool)
             api.contracts.validate_input('revise_document', inputs)
             assert inputs['review_data'] == structured

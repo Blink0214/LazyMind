@@ -1,10 +1,21 @@
 # Paper writing
 
 Start when the user explicitly requests paper writing or academic manuscript review.
-For uploaded manuscripts, bind the exact attachment filename to manuscript_file and run peer_review directly.
+For uploaded manuscripts, bind the exact attachment filename to manuscript_file; do not transcribe the manuscript.
 Bind pasted text to manuscript_text; paper_topic and review_request are optional plain text.
 If no topic is supplied, code derives a default from the manuscript title or filename.
-paper_input supports existing programmatic business inputs only. Users need not supply JSON or pool.json.
+For new writing, use uploaded Markdown materials/outlines and SVG/PNG/JPG images; write_outline reads the attachments directly.
+Run write_outline and stop for user confirmation of its editable artifact.
+Only after confirmation run write_document using the selected outline revision. Choose peer_review only when the user requests a review; uploading or having a manuscript does not request review.
+Use write_document only to draft from the confirmed outline. Use revise_document for all existing-manuscript edits.
+Pass the current editing request unchanged through the existing request_context/user_input mechanism.
+Direct edits go to revise_document and use the public Writer to plan changes from that request.
+For review followed by revision, run peer_review first and stop for the user's revision instructions.
+When the user requests revision according to the review, use all current issues by default; honor explicit issue numbers, exclusions, or categories for selective revision.
+Direct edits must ignore historical review advice. Never broaden a partial-review request to all issues; clarify only ambiguous selections. Missing materials or experiments remain pending and must not block other executable text edits.
+A manuscript or historical review alone does not request review-driven revision.
+If the request does not distinguish review from editing, clarify the intended action before execution. Keep the file's request and pass additions through request_context;
+review_request remains a peer-review requirement.
 Never treat filenames, paths, or summaries as manuscript text. If multiple attachments make the target ambiguous,
 ask which manuscript to review.
 Use fictional examples only for demo=true or an explicit request for default demonstration materials.
@@ -31,8 +42,9 @@ Native rewind preserves confirmed feedback snapshots before invalidating downstr
 Do not reinitialize materials. Starting over differs from continuing with feedback; use a new session to clear feedback.
 
 Allowed routes: F1→F2; F2→F1/F3/F5/F7; F3→F4; F4→F5; F5→F6; F6→F5; finish after F7.
-Do not add other execution edges. refine_topic and revise_document are feedback operations of F1/F5,
-not additional algorithm capabilities.
+Do not add other execution edges. refine_topic is a feedback operation of F1; revise_document handles direct and review-driven F5 revisions,
+not additional algorithm capabilities. Within F5, write_outline → write_document is an approval boundary,
+with separate outline and manuscript nodes in the frontend. Do not continue from outline to body without user confirmation.
 This workflow produces manuscripts or reading reflections. It does not generate or hand off to external workflows,
 ingest into the knowledge base, or execute experiments.
 Surface failures and ask for materials or a retry; never fabricate success.

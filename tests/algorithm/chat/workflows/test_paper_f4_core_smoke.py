@@ -181,7 +181,9 @@ def test_f4_failure_is_not_published_and_can_resume(replay, fault):
     replay.structured.side_effect = [replay.plan, replay.conclusion]
     replay.context.params['retry_hint'] = 'Recovery request for this rerun only: 重试'
     assert workflow.run_paper_step()['status'] == 'completed'
-    saved = workflow._read_bound(str(replay.source.parent / 'data_analysis_pool.json'))
+    saved_path = next(event['value']['path'] for event in reversed(replay.events)
+                      if event['type'] == 'artifact' and event['slot'] == 'data_analysis_pool')
+    saved = workflow._read_bound(saved_path)
     assert saved['history'][-1]['request'] == replay.context.params['user_input']
     assert workflow.material(saved, 'analysis')['content']['findings'][0]['value'] == 2.
 
@@ -235,3 +237,36 @@ def test_skill_override_requires_the_actual_skill_root(tmp_path):
     with pytest.raises(RuntimeError, match='缺少绘图 skill'):
         PlotSkills(str(tmp_path))
     assert 'bar_grouped_hatch' in PlotSkills(str(root)).catalog()
+
+
+def test_json_attachment_binding_stays_in_analysis(tmp_path, monkeypatch):
+    from lazymind.document_tools.paper.analysis import attachments, trace
+    from lazymind.chat.engine.tools.file_resources import resolver
+    from lazymind.chat.engine.tools import host_file_resolution
+
+    source = tmp_path / 'data.json'
+    value = {'topic': 'Analysis', 'data': {'columns': ['score'], 'column_types': ['number'],
+             'units': [None], 'rows': [[1], [2], [3]]}}
+    value.update(request='只分析附件中的得分',
+                 papers=[{'id': 'SRC-001', 'title': '测试来源', 'text': '虚构测试材料'}],
+                 evidence='[SRC-001] 测试证据')
+    source.write_text(json.dumps(value))
+    lazyllm.globals['agentic_config'] = {'history_files_per_turn': {'1': [str(source)]}}
+    assert attachments.workflow_input_bindings({}, '根据上传附件写论文') == {}
+    assert attachments.workflow_input_bindings({}, '只做数据分析，使用上传附件') == {
+        'paper_input': str(source)}
+    monkeypatch.setattr(resolver, 'resolve_text_target',
+                        lambda *a, **kw: SimpleNamespace(kind='attachment_text', path=str(source)))
+    monkeypatch.setattr(host_file_resolution, 'open_input_file', lambda path: open(path, 'rb'))
+    monkeypatch.setattr(trace, 'save', Mock())
+    reference = tmp_path / 'reference.txt'
+    reference.write_text('data.json')
+    bound = attachments.bind_attachment({'paper_input': str(reference)}, str(tmp_path), '分析数据')
+    assert json.loads(Path(bound['paper_input']).read_text()) == value
+    pool = workflow.initialize_pool(bound, '分析数据')
+    assert workflow.material(pool, 'data')['content']['rows'] == [[1], [2], [3]]
+    request = workflow._step_request('data_analysis', pool, {'user_input': '启动请求和实验授权问答'})
+    assert request == value['request']
+    writing = workflow.business_input('write_outline', pool, value['request'])
+    assert writing['papers'] == value['papers']
+    assert writing['evidence'] == value['evidence']

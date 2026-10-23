@@ -6,7 +6,9 @@ transitions:
     - {to: literature_review, when: "The user explicitly selects literature review"}
     - {to: experiment, when: "The user explicitly selects experimental research"}
     - {to: data_analysis, when: "The user explicitly selects data analysis"}
-    - {to: write_document, when: "The user explicitly selects manuscript writing"}
+    - {to: write_outline, when: "The user requests a new manuscript or an outline before drafting"}
+    - {to: write_document, when: "The user continues drafting from the confirmed outline"}
+    - {to: revise_document, when: "The user requests direct edits to an existing manuscript without peer review"}
     - {to: peer_review, when: "The user explicitly selects peer review"}
     - {to: reading_reflection, when: "The user explicitly selects reading reflection"}
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}
@@ -16,7 +18,9 @@ transitions:
   literature_review:
     - {to: refine_topic, when: "The user explicitly selects topic refinement"}
     - {to: experiment, when: "The user explicitly selects experimental research"}
-    - {to: write_document, when: "The user explicitly selects manuscript writing"}
+    - {to: write_outline, when: "The user requests a new manuscript or an outline before drafting"}
+    - {to: write_document, when: "The user continues drafting from the confirmed outline"}
+    - {to: revise_document, when: "The user requests direct edits to an existing manuscript without peer review"}
     - {to: reading_reflection, when: "The user explicitly selects reading reflection"}
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   refine_topic:
@@ -25,13 +29,18 @@ transitions:
     - {to: data_analysis, when: "The user explicitly selects data analysis"}
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   data_analysis:
-    - {to: write_document, when: "The user explicitly selects manuscript writing"}
+    - {to: write_outline, when: "The user requests a new manuscript or an outline before drafting"}
+    - {to: write_document, when: "The user continues drafting from the confirmed outline"}
+    - {to: revise_document, when: "The user requests direct edits to an existing manuscript without peer review"}
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}
+  write_outline:
+    - {to: write_document, when: "Continue drafting from the confirmed outline"}
   write_document:
+    - {to: revise_document, when: "The user requests direct edits to the manuscript"}
     - {to: peer_review, when: "The user explicitly selects peer review"}
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   peer_review:
-    - {to: revise_document, when: "The user explicitly selects manuscript revision"}
+    - {to: revise_document, when: "The user requests revision according to the current review, or explicitly requests direct edits without using the review"}
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   revise_document:
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}
@@ -212,6 +221,43 @@ steps:
       - {material: data_analysis_document, required: true}
       - {material: analysis_chart, required: false}
     acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
+  write_outline:
+    label: "论文大纲"
+    mode: human
+    route: choice
+    tools_only: true
+    terminal_tools_only: true
+    prompt: |
+      This is an already scheduled algorithm execution, not a planning or clarification task.
+      Immediately call run_paper_step exactly once with no arguments and wait for its result.
+      Do not substitute chat text for the tool call.
+      The tool reads the actual node, bound materials, current request, and retry flag from Runtime.
+      The currently viewed tab is not the execution node. Do not choose nodes, materials, or content
+      based on the viewed tab or an old launch request.
+      Independent modules implement the algorithms. The tool must save all artifacts; do not invent materials or results.
+      On tool failure, report the error and stop. Do not retry, fabricate, or save materials on your own.
+      On success, end this node and wait for user confirmation or selection; do not run other branches.
+    tools: [run_paper_step]
+    terminal_tools: [run_paper_step]
+    inputs:
+      - {material: seed_pool, required: false, transport: path}
+      - {material: paper_input, required: false, transport: path}
+      - {material: manuscript_file, required: false, transport: path}
+      - {material: manuscript_text, required: false, transport: path}
+      - {material: paper_topic, required: false, transport: path}
+      - {material: review_request, required: false, transport: path}
+      - {material: research_topic_pool, required: false, transport: path}
+      - {material: research_topic_document, required: false, transport: path}
+      - {material: literature_review_pool, required: false, transport: path}
+      - {material: literature_review_document, required: false, transport: path}
+      - {material: experiment_pool, required: false, transport: path}
+      - {material: experiment_document, required: false, transport: path}
+      - {material: data_analysis_pool, required: false, transport: path}
+      - {material: data_analysis_document, required: false, transport: path}
+    outputs:
+      - {material: write_outline_pool, required: true}
+      - {material: write_outline_document, required: true}
+    acceptance_criteria: Tool validation succeeds and all declared artifacts are saved; never present demonstration outputs as real research findings.
   write_document:
     label: "论文写作"
     mode: human
@@ -245,6 +291,8 @@ steps:
       - {material: experiment_document, required: false, transport: path}
       - {material: data_analysis_pool, required: false, transport: path}
       - {material: data_analysis_document, required: false, transport: path}
+      - {material: write_outline_pool, required: false, transport: path}
+      - {material: write_outline_document, required: false, transport: path}
     outputs:
       - {material: write_document_pool, required: true}
       - {material: write_document_document, required: true}

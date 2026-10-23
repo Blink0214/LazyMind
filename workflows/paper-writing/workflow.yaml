@@ -19,10 +19,24 @@ when_to_use: >
   If it is unclear, ask for that question; never invent a goal. F1/F2 entries reuse the accumulated
   question and evidence instead. F3 handles execution and fallback internally, records actual status,
   and returns final results for F4. Never separately run this generated code through Chat tools.
-  Bind the exact attachment filename to manuscript_file and select peer_review directly;
+  For an existing manuscript to review or revise, bind the exact attachment filename to manuscript_file;
   do not first summarize or copy the manuscript through Chat.
   Bind pasted manuscript text to manuscript_text; paper_topic and review_request are optional.
-  Do not ask users for JSON or a material pool; paper_input is only for existing programmatic integrations.
+  For new writing from Markdown materials/outlines and SVG/PNG/JPG images, select write_outline first.
+  Do not bind these materials to manuscript_file or transcribe them into paper_input. The step reads the actual conversation attachments and initializes its pool.
+  Use write_outline for new manuscripts and outline requests. It publishes an editable outline and
+  requires user confirmation before write_document. Stop after the outline even when the launch request
+  also asks for a complete manuscript or peer review. Continue only after the user confirms the outline.
+  Choose peer_review only when the user requests a review; uploading or having a manuscript does not request review.
+  Use write_document only to draft from the confirmed outline. Use revise_document for all existing-manuscript edits.
+  Pass the current editing request unchanged through the existing request_context/user_input mechanism.
+  Direct edits go to revise_document and use the public Writer to plan changes from that request.
+  For review followed by revision, run peer_review first and stop for the user's revision instructions.
+  When the user requests revision according to the review, use all current issues by default; honor explicit issue numbers, exclusions, or categories for selective revision.
+  Direct edits must ignore historical review advice. Never broaden a partial-review request to all issues; clarify only ambiguous selections. Missing materials or experiments remain pending and must not block other executable text edits.
+  A manuscript or historical review alone does not request review-driven revision.
+  If the request does not distinguish review from editing, clarify the intended action before execution.
+  Keep the file's request; pass additions through request_context. review_request is for peer review.
   Ask which manuscript to review only when multiple attachments make the target ambiguous.
   Never substitute a filename or summary for the manuscript.
   After the requested steps succeed and their artifacts are published, acknowledge completion in one
@@ -74,6 +88,7 @@ steps:
   - {id: refine_topic, label: "调整选题"}
   - {id: experiment, label: "实验研究"}
   - {id: data_analysis, label: "数据分析"}
+  - {id: write_outline, label: "论文大纲"}
   - {id: write_document, label: "论文写作"}
   - {id: peer_review, label: "模拟审稿"}
   - {id: revise_document, label: "论文修订"}
@@ -81,7 +96,7 @@ steps:
   - {id: finish, label: "结束"}
 slots:
   - {id: experiment_question, label: 实验问题, type: text, cardinality: single, external: true, exposed: false}
-  - {id: manuscript_file, label: 待审论文, type: file, cardinality: single, external: true, exposed: false}
+  - {id: manuscript_file, label: 论文稿件, type: file, cardinality: single, external: true, exposed: false}
   - {id: manuscript_text, label: 论文正文, type: text, cardinality: single, external: true, exposed: false}
   - {id: paper_topic, label: 论文主题, type: text, cardinality: single, external: true, exposed: false}
   - {id: review_request, label: 审稿要求, type: text, cardinality: single, external: true, exposed: false}
@@ -106,6 +121,8 @@ slots:
   - {id: experiment_results, label: "实验结果与来源", type: file, cardinality: single}
   - {id: data_analysis_pool, label: "数据分析材料池", type: file, cardinality: single, exposed: false}
   - {id: data_analysis_document, label: "数据分析", type: file, cardinality: single}
+  - {id: write_outline_pool, label: "论文大纲材料池", type: file, cardinality: single, exposed: false}
+  - {id: write_outline_document, label: "论文大纲", type: file, cardinality: single}
   - {id: write_document_pool, label: "论文写作材料池", type: file, cardinality: single, exposed: false}
   - {id: write_document_document, label: "论文写作", type: file, cardinality: single}
   - {id: peer_review_pool, label: "模拟审稿材料池", type: file, cardinality: single, exposed: false}
@@ -129,6 +146,7 @@ ui:
     refine_topic_document: {widgetType: text-markdown, readOnly: false}
     experiment_document: {widgetType: text-markdown, readOnly: false}
     data_analysis_document: {widgetType: text-markdown, readOnly: false}
+    write_outline_document: {widgetType: text-markdown, readOnly: false}
     write_document_document: {widgetType: text-markdown, readOnly: false}
     peer_review_document: {widgetType: text-markdown, readOnly: false}
     revise_document_document: {widgetType: text-markdown, readOnly: false}
@@ -174,6 +192,13 @@ ui:
       slots:
         - {id: data_analysis_document}
         - {id: analysis_chart}
+    - id: write_outline
+      step_id: write_outline
+      label: "论文大纲"
+      layout: list
+      allow_download: true
+      slots:
+        - {id: write_outline_document}
     - id: write_document
       step_id: write_document
       label: "论文写作"
