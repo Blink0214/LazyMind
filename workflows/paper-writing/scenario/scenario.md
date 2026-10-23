@@ -11,8 +11,8 @@ Use write_document only to draft from the confirmed outline. Use revise_document
 Pass the current editing request unchanged through the existing request_context/user_input mechanism.
 Direct edits go to revise_document and use the public Writer to plan changes from that request.
 For review followed by revision, run peer_review first and stop for the user's revision instructions.
-When continuing to revise_document, preserve the user's selected issue IDs or descriptions exactly;
-do not invent a selection, reuse historical selections, or interpret an empty selection as all issues.
+When the user requests revision according to the review, use the complete current structured report; no issue selection is required.
+Direct edits must ignore historical review advice. Never broaden an explicit partial-review request to all issues; clarify that partial selection is not supported.
 A manuscript or historical review alone does not request review-driven revision.
 If the request does not distinguish review from editing, clarify the intended action before execution. Keep the file's request and pass additions through request_context;
 review_request remains a peer-review requirement.

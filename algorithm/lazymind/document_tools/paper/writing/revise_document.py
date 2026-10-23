@@ -23,30 +23,30 @@ from .common import (
 )
 
 
-def resolve_selected_issues(request, review):
-    """Resolve this turn's instructions without a second Agent-bound input.
+def resolve_review_issues(request, review):
+    """Resolve review use, deriving internal issue IDs from the current report.
 
-    Saved selections are deliberately not an argument. With no review, ordinary
-    edits go straight to the public Writer's locator and modification planner.
+    Version compatibility is checked by the material contract; it is not consent
+    to use a historical review. No saved or model-generated selection is reused.
     """
     if not request.strip():
-        raise contracts.MissingMaterials('请明确本轮需要修改的内容或要处理的审稿意见。')
+        raise contracts.MissingMaterials('请明确本轮修改要求，或说明按当前审稿意见修订。')
     if review is None:
         return []
-    raw = str(AutoModel(model='llm')(REVISION_SCOPE_INSTRUCTIONS + _json({'request': request, 'review': review}))).strip()
+    raw = str(AutoModel(model='llm')(REVISION_SCOPE_INSTRUCTIONS + _json({'request': request}))).strip()
     raw = re.sub(r'^(?:<think\b[^>]*>.*?</think>\s*)+', '', raw, flags=re.I | re.S)
     raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw)
     result = json.loads(raw)
-    if not isinstance(result, dict) or set(result) != {'intent', 'issue_ids'}:
-        raise ValueError('Invalid revision scope response')
-    selected = result['issue_ids']
-    contracts.validate_value('selected_issue_ids', selected)
-    if result['intent'] == 'direct' and not selected:
+    if not isinstance(result, dict) or set(result) != {'intent'}:
+        raise ValueError('Invalid revision intent response')
+    if result['intent'] == 'direct':
         return []
-    known = {item['id'] for item in review['issues']}
-    if result['intent'] != 'review' or not selected or not set(selected) <= known:
-        raise contracts.MissingMaterials('请明确本轮要处理的审稿意见编号或内容；未指定意见不代表全部。')
-    return selected
+    if result['intent'] != 'review':
+        raise contracts.MissingMaterials('请明确直接修改论文，还是按当前完整审稿意见修订；暂不支持选择部分意见。')
+    issue_ids = [issue['id'] for issue in review['issues']]
+    if not issue_ids:
+        raise contracts.MissingMaterials('当前审稿没有待处理意见，无需按审稿修订；如需其他修改，请说明具体要求。')
+    return issue_ids
 
 
 def _operation_ranges(source, plan):
@@ -139,7 +139,7 @@ def _review_plan(source, task, prepared: dict, editor, context_json):
         # genuine planner errors must still propagate unchanged.
         if (not any(i['action_type'] == 'text_revision' for i in issues)
                 and str(exc) == 'modify_plan contains no operations for the located revision scope.'):
-            raise contracts.MissingMaterials('选中意见需要补充材料或实验，未产生可应用的文本修订。') from exc
+            raise contracts.MissingMaterials('审稿意见需要补充材料或实验，未产生可应用的文本修订。') from exc
         raise
     bounds = {}
     for issue in issues:
@@ -176,7 +176,7 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
     editor = editor if editor is not None else WriterRevisionToolkit()
     context_json = _json(prepared['writing_context'])
     if reviewing:
-        report_progress(20, '正在根据选中审稿意见规划修改')
+        report_progress(20, '正在根据当前审稿意见规划修改')
         plan, operation_ranges, issue_bounds = _review_plan(source, task, prepared, editor, context_json)
     else:
         report_progress(20, '正在定位修改范围')
@@ -190,7 +190,7 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
             locate_result_json=located, writing_context_json=context_json,
         )))
     if reviewing and not plan.instructions and not plan.title_instruction:
-        raise contracts.MissingMaterials('选中意见需要补充材料或实验，未产生可应用的文本修订。')
+        raise contracts.MissingMaterials('审稿意见需要补充材料或实验，未产生可应用的文本修订。')
     if plan.title_instruction or not plan.instructions:
         raise ValueError('Writer must return explicit manuscript modification operations.')
     if any(item.visual_instruction for item in plan.instructions):
@@ -233,14 +233,14 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
     # Targeted edits preserve unrelated defects; full-paper review is a separate user choice.
     _validate_manuscript(body, None, prepared['charts'], constraints, toolkit, context_json,
                          candidates=prepared['reference_candidates'], original=source,
-                         check_quality=False)
+                         check_quality=False, check_length=False)
     events = current_events()
     if events:
         events.delta(body)  # Match public Writer targeted revision: show the completed full text once.
     return {'manuscript': body, 'is_demo': False}
 
 def run(inputs):
-    """Revise a manuscript from the current request or explicitly selected review issues."""
+    """Revise a manuscript from the current request or the complete current review."""
     report_progress(10, '正在准备修订材料')
     toolkit = WriterCreateToolkit()
     prepared = prepare_writer_context(inputs, toolkit=toolkit)

@@ -751,9 +751,9 @@ def _run_paper_step(context, stream=None) -> dict:
                 raise MissingMaterials('请先选择至少一篇论文，或上传论文附件，再生成阅读心得。')
         request = _step_request(step, pool, context.params, bound)
         if step == 'revise_document':
-            from .writing.revise_document import resolve_selected_issues
+            from .writing.revise_document import resolve_review_issues
             review = material(pool, 'review_data')
-            pool['selected_issue_ids'] = resolve_selected_issues(
+            pool['selected_issue_ids'] = resolve_review_issues(
                 request, review['content'] if review else None,
             )
         fail = '[mock:fail]' in request + instruction and '[mock:retry]' not in request + instruction

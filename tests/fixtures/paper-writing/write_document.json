@@ -20,13 +20,12 @@
     "question": "# 研究选题\n比较主张与证据对齐的方法。",
     "evidence": "# 文献综述\nP1 关注组织，P2 关注核验。[P1] [P2]",
     "analysis": null,
-    "outline": null,
+    "outline": "# 论文写作 · 检索增强生成的证据可追溯性\n\n## 摘要\n\n## 方法\n\n## 局限",
     "manuscript": null,
     "review": null,
     "charts": []
   },
   "output": {
-    "outline": "# 论文写作 · 检索增强生成的证据可追溯性\n\n## 摘要\n\n## 方法\n\n## 局限",
     "manuscript": "# 论文写作 · 检索增强生成的证据可追溯性\n\n## 摘要\n讨论证据可追溯性。\n\n## 方法\n比较证据组织方式。\n\n## 局限\n无真实实验结论。",
     "is_demo": true
   }

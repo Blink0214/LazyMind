@@ -340,7 +340,7 @@ def prepare_writer_inputs(inputs: dict, *, toolkit=None) -> dict:
     material('charts', 'Chart reference catalog', chart_directory)
     material('outline', 'Existing outline', source['outline'])
     material('manuscript', 'Current complete manuscript', source['manuscript'])
-    material('review', 'Review issues selected for this turn', review)
+    material('review', 'Current review issues for this revision', review)
     resources = json.loads(toolkit.build_resources(input_resources_json=_json(resources)))
     profiles = [{
         'resource_id': resource['resource_id'], 'resource_role': 'background',
@@ -384,9 +384,6 @@ def _heading_signature(markdown):
             raise ValueError('Paper headings must not skip levels or have empty titles.')
         previous = level
     return signature
-
-def _outline_from_markdown(markdown):
-    return '\n\n'.join('#' * level + ' ' + title for level, title in _heading_signature(markdown))
 
 def _outline_budget_descriptions(outline):
     """Remove Writer budget suffixes only from their matching outline descriptions."""
@@ -467,13 +464,13 @@ def _validate_manuscript_structure(body, *, signature=None, charts=None,
     return actual
 
 def _validate_manuscript(body, signature, charts, constraints, toolkit, context_json, *,
-                         candidates, original=None, check_quality=True):
+                         candidates, original=None, check_quality=True, check_length=True):
     """Validate generated Markdown before the optional model quality check."""
     report_progress(87, '正在校验稿件结构与引用')
     _trace_call('validate_structure', _validate_manuscript_structure, body,
                  signature=signature, charts=charts, candidates=candidates, original=original)
     target = constraints['word_target']
-    if target is not None:
+    if check_length and target is not None:
         unit = 'words' if constraints['paper_language'] == 'en' else 'chinese_characters'
         actual = count_academic_units(split_references(body)[0], unit)
         if not target * 0.9 <= actual <= target * 1.1:
@@ -548,5 +545,5 @@ def validate_result(value, inputs):
         original=inputs['manuscript'] if inputs else None)
     if inputs and inputs['mode'] == 'revise':
         return
-    if value['outline'] is None or _heading_signature(value['outline']) != signature:
-        raise ValueError('输出大纲与稿件不一致')
+    if inputs and (not inputs['outline'] or _heading_signature(inputs['outline']) != signature):
+        raise ValueError('确认的大纲与稿件不一致')

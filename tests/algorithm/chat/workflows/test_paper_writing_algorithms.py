@@ -604,6 +604,8 @@ def test_every_path_supplies_exact_current_business_values(path, monkeypatch):
         module = api.ALGORITHMS[contracts.ALIASES.get(step, step)]
         if step == 'write_document':
             pool['current'].pop('manuscript', None)
+            # Drafting now consumes an already confirmed outline.
+            tools.add_material(pool, 'outline', '# 测试论文\n\n## 方法', [], [])
         if step == 'revise_document':
             pool['selected_issue_ids'] = ['R1']
         if step == 'data_analysis':

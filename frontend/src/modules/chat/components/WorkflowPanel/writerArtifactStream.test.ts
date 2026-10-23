@@ -33,6 +33,7 @@ function task(taskId: string, status: SubAgentTask['status'], streams: TaskArtif
 describe('findWriterArtifactStream', () => {
   const stepCases: Array<[string, string]> = [
     ['outline', 'outline_document'],
+    ['write_outline', 'write_outline_document'],
     ['write_flat_document', 'flat_draft_document'],
     ['write_document', 'draft_document'],
     ['write_document', 'write_document_document'],
@@ -56,24 +57,24 @@ describe('findWriterArtifactStream', () => {
     )).toBe(expected);
   });
 
-  it('uses only an unambiguous live fallback for the requested slot', () => {
-    const expected = stream('draft_document', 'draft-stream');
+  it.each(['draft_document', 'write_outline_document'])('uses only an unambiguous live fallback for %s', (slotId) => {
+    const expected = stream(slotId, 'draft-stream');
     const session = { steps: [] } as unknown as WorkflowSession;
 
     expect(findWriterArtifactStream(
       session,
       'write_document',
-      'draft_document',
+      slotId,
       [task('draft-task', 'running', [expected])],
     )).toBe(expected);
 
     expect(findWriterArtifactStream(
       session,
       'write_document',
-      'draft_document',
+      slotId,
       [
         task('draft-task-1', 'running', [expected]),
-        task('draft-task-2', 'pending', [stream('draft_document', 'other-stream')]),
+        task('draft-task-2', 'pending', [stream(slotId, 'other-stream')]),
       ],
     )).toBeUndefined();
   });
@@ -87,7 +88,7 @@ describe('findWriterArtifactStream', () => {
     )).toBeUndefined();
   });
 
-  it.each(['write_document_document', 'revise_document_document'])(
+  it.each(['write_outline_document', 'write_document_document', 'revise_document_document'])(
     'withdraws rejected paper previews for %s, including the live fallback',
     (slotId) => {
       const rejected = { ...stream(slotId, 'rejected'), state: 'aborted' as const };

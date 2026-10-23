@@ -26,7 +26,7 @@ FIELDS['revise_document'] = FIELDS['write_document']
 OUTPUTS = {
     'research_topic': ('question',), 'literature_review': ('evidence', 'papers'),
     'experiment': ('experiment', 'code_files', 'result_meta'), 'data_analysis': ('analysis', 'charts'),
-    'write_outline': ('outline',), 'write_document': ('outline', 'manuscript'), 'peer_review': ('review', 'review_data'),
+    'write_outline': ('outline',), 'write_document': ('manuscript',), 'peer_review': ('review', 'review_data'),
     'reading_reflection': ('reflection',),
 }
 OUTPUTS['revise_document'] = ('manuscript',)

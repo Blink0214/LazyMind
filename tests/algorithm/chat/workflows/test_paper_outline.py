@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from lazymind.document_tools.paper import contracts, workflow
-from lazymind.document_tools.paper.writing import write_outline
+from lazymind.document_tools.paper.writing import write_outline, write_document
 from lazymind.document_tools.paper.runtime_events import bind_runtime_events
 
 OUTLINE = '# Test paper\n\n## Method\n\n## Limitations'
@@ -63,3 +63,28 @@ def test_outline_step_rejects_existing_manuscript():
     inputs = contracts.validate_input('write_outline', {'topic': 'Test', 'manuscript': OUTLINE})
     with pytest.raises(ValueError, match='existing manuscript'):
         write_outline.validate_inputs(inputs)
+
+
+def test_drafting_preserves_confirmed_outline_content_and_version(monkeypatch):
+    outline = OUTLINE + '\nDescribe limitations without inventing results.\n<!-- paper-charts: [] -->'
+    pool = workflow.pool_from_business({'topic': 'Test', 'outline': outline})
+    body = OUTLINE + '\nThe supplied evidence has limitations.'
+    monkeypatch.setattr(write_document, 'run', lambda inputs: {'manuscript': body, 'is_demo': False})
+    result = workflow.execute_step('write_document', pool, 'Write from the confirmed outline.')
+    assert result['pool']['current']['outline'] == pool['current']['outline']
+    assert workflow.material(result['pool'], 'outline')['content'] == outline
+    assert workflow.material(result['pool'], 'manuscript')['content'] == body
+    assert len(result['pool']['history'][-1]['outputs']) == 1
+
+
+def test_drafting_requires_outline_and_checks_confirmed_headings():
+    inputs = contracts.validate_input('write_document', {'topic': 'Test', 'question': 'Compare methods'})
+    with pytest.raises(contracts.MissingMaterials, match='大纲'):
+        write_document.validate_inputs(inputs)
+    inputs['outline'] = OUTLINE
+    write_document.validate_inputs(inputs)
+    result = {'manuscript': OUTLINE + '\nBody text.', 'is_demo': False}
+    contracts.validate_output('write_document', result, inputs)
+    write_document.validate_result(result, inputs)
+    with pytest.raises(ValueError, match='大纲与稿件不一致'):
+        write_document.validate_result({**result, 'manuscript': OUTLINE.replace('Method', 'Other')}, inputs)

@@ -40,7 +40,7 @@ transitions:
     - {to: peer_review, when: "The user explicitly selects peer review"}
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   peer_review:
-    - {to: revise_document, when: "The user requests revision of explicitly selected review issues, or explicitly requests direct edits without using the review"}
+    - {to: revise_document, when: "The user requests revision according to the current review, or explicitly requests direct edits without using the review"}
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   revise_document:
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}

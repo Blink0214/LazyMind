@@ -58,11 +58,7 @@ def paper_simulation(monkeypatch, request):
 
     def writer(inputs):
         body = inputs['manuscript'] or ((inputs['outline'] or '# 测试论文\n\n## 方法') + '\n测试正文。')
-        outline = '\n\n'.join(
-            line for line in body.splitlines() if line.startswith('#'))
         result = {'manuscript': body + '\n测试修订。', 'is_demo': True}
-        if inputs['mode'] != 'revise':
-            result['outline'] = outline
         return result
 
     def reviewer(inputs):

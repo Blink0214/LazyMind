@@ -10,17 +10,23 @@ from .common import (
     _heading_signature,
     _json,
     _materialize_chart_insertions,
-    _outline_from_markdown,
     _prepare_sections,
     _section_callbacks,
     _trace_call,
     _validate_manuscript,
     prepare_writer_context,
-    validate_inputs,
+    validate_inputs as validate_writing_inputs,
     validate_result,
 )
 
 from .write_outline import prepare_outline
+
+def validate_inputs(inputs):
+    validate_writing_inputs(inputs)
+    if not inputs['outline']:
+        from ..contracts import MissingMaterials
+        raise MissingMaterials('请先提供或生成并确认论文大纲，再继续写作。')
+
 
 def _write_draft(inputs, *, toolkit=None, on_delta=None):
     """Internal orchestration; callbacks are not part of the business input."""
@@ -67,7 +73,7 @@ def _write_draft(inputs, *, toolkit=None, on_delta=None):
         raise ValueError('Internal chart ownership leaked into manuscript.')
     _validate_manuscript(body, signature, prepared['charts'], inputs['constraints'], toolkit, context_json,
                          candidates=prepared['reference_candidates'])
-    return {'outline': _outline_from_markdown(body), 'manuscript': body, 'is_demo': False}
+    return {'manuscript': body, 'is_demo': False}
 
 def run(inputs):
     return _write_draft(inputs)

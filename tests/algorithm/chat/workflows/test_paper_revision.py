@@ -59,29 +59,66 @@ def test_revision_keeps_existing_outline_material_version(monkeypatch):
 
 def test_direct_revision_without_review_does_not_call_model(monkeypatch):
     monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: pytest.fail('unnecessary scope model'))
-    assert revise_document.resolve_selected_issues('只缩短讨论段落', None) == []
+    assert revise_document.resolve_review_issues('只缩短讨论段落', None) == []
 
 
-@pytest.mark.parametrize('intent,ids,expected', [
-    ('direct', [], []),
-    ('review', ['R2'], ['R2']),
-    ('review', ['R1', 'R2'], ['R1', 'R2']),
-    ('review', [], None),
-    ('review', ['R9'], None),
-    ('unclear', [], None),
-    ('direct', ['R1'], None),
+@pytest.mark.parametrize('intent,expected', [
+    ('direct', []),
+    ('review', ['R1', 'R2']),
+    ('unclear', None),
 ])
-def test_review_scope_validation(monkeypatch, intent, ids, expected):
+def test_review_intent_uses_all_current_issues(monkeypatch, intent, expected):
     monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt:
-                        json.dumps({'intent': intent, 'issue_ids': ids}))
+                        json.dumps({'intent': intent}))
     review = {'issues': [{'id': 'R1'}, {'id': 'R2'}]}
     if expected is None:
         with pytest.raises(contracts.MissingMaterials):
-            revise_document.resolve_selected_issues('本轮修订要求', review)
+            revise_document.resolve_review_issues('本轮修订要求', review)
     else:
-        assert revise_document.resolve_selected_issues('本轮修订要求', review) == expected
+        assert revise_document.resolve_review_issues('本轮修订要求', review) == expected
+
+
+def test_review_without_issues_does_not_become_direct_revision(monkeypatch):
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt: '{"intent":"review"}')
+    with pytest.raises(contracts.MissingMaterials, match='没有待处理意见'):
+        revise_document.resolve_review_issues('按审稿修订', {'issues': []})
+
+
+def test_intent_model_cannot_supply_issue_selection(monkeypatch):
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt:
+                        '{"intent":"review","issue_ids":["R1"]}')
+    with pytest.raises(ValueError, match='Invalid revision intent'):
+        revise_document.resolve_review_issues('按审稿修订', {'issues': [{'id': 'R1'}]})
 
 
 def test_missing_current_request_does_not_reuse_old_selection():
     with pytest.raises(contracts.MissingMaterials):
-        revise_document.resolve_selected_issues('', {'issues': [{'id': 'R1'}]})
+        revise_document.resolve_review_issues('', {'issues': [{'id': 'R1'}]})
+
+
+@pytest.mark.parametrize('stale', [False, True])
+def test_review_version_is_checked_independently_of_intent(monkeypatch, stale):
+    from lazymind.document_tools.paper.peer_review import build_output
+    from lazymind.document_tools.paper.review_schema import ReviewResult
+    review = build_output(ReviewResult.model_validate({
+        'summary': 'Shorten discussion.', 'limitations': [],
+        'issues': [{'severity': 'minor', 'category': 'language', 'location': 'Discussion',
+                    'quote': 'Shorten this paragraph.', 'problem': 'Verbose discussion.',
+                    'suggestion': 'Shorten discussion.', 'action_type': 'text_revision'}],
+    }), {'topic': 'Paper', 'manuscript': BODY})
+    pool = workflow.pool_from_business({'topic': 'Paper', 'manuscript': BODY, **{
+        key: review[key] for key in ('review', 'review_data')
+    }})
+    if stale:
+        workflow.add_material(pool, 'manuscript', BODY + '\nNew content.', [], [])
+    # Matching or stale review never leaks into direct editing context.
+    direct = workflow.business_input('revise_document', pool, 'Shorten Discussion only.')
+    assert direct['review_data'] is None
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt: '{"intent":"review"}')
+    pool['selected_issue_ids'] = revise_document.resolve_review_issues('按当前审稿修订', review['review_data'])
+    if stale:
+        with pytest.raises(ValueError, match='STALE_MATERIAL'):
+            contracts.validate_input('revise_document', workflow.business_input('revise_document', pool, '按审稿修订'))
+    else:
+        inputs = contracts.validate_input('revise_document', workflow.business_input('revise_document', pool, '按审稿修订'))
+        assert inputs['selected_issue_ids'] == ['R1']

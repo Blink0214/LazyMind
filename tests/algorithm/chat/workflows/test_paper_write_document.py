@@ -323,12 +323,13 @@ def test_invalid_generated_edit_is_rejected_before_application():
     tools.apply_string_replace.assert_not_called()
 
 
-def test_selected_revision_preserves_unselected_sections_and_inputs():
+@pytest.mark.parametrize('word_target', [None, 10000])
+def test_selected_revision_preserves_unselected_sections_and_inputs(word_target):
     data = prepared([('R1', '方法', 'text_revision'), ('R2', '结果', 'needs_experiment')])
     before = copy.deepcopy(data)
     tools = editor([instruction()], [replacement()])
     quality = Mock()
-    result = revision_entry._modify_manuscript(data, {'word_target': None}, quality, editor=tools)
+    result = revision_entry._modify_manuscript(data, {'word_target': word_target, 'paper_language': 'zh-CN'}, quality, editor=tools)
     assert result == dict(manuscript=SOURCE.replace('原方法。', '修订方法。'), is_demo=False)
     assert data == before
     tools.apply_string_replace.assert_called_once()
@@ -426,3 +427,21 @@ def test_completed_revision_streams_full_text_once_after_validation(monkeypatch,
         assert any(e['type'] == 'artifact_stream_end' for e in emitted)
     assert all(e['slot'] == slot for e in emitted if 'slot' in e)
     assert data['manuscript'] == SOURCE
+
+
+def test_new_draft_still_enforces_full_manuscript_length():
+    with pytest.raises(ValueError, match='outside target'):
+        document._validate_manuscript(SOURCE, None, [],
+            {'word_target': 10000, 'paper_language': 'zh-CN'}, Mock(), '{}', candidates=[])
+
+
+@pytest.mark.parametrize('action', ['needs_material', 'needs_experiment'])
+def test_review_without_executable_edits_stops_before_replacement(action):
+    data = prepared([('R1', '方法', action)])
+    tools = Mock()
+    tools.generate_modify_plan.side_effect = ValueError(
+        'modify_plan contains no operations for the located revision scope.')
+    with pytest.raises(contracts.MissingMaterials, match='需要补充材料或实验'):
+        revision_entry._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
+    tools.generate_string_replace_set.assert_not_called()
+    tools.apply_string_replace.assert_not_called()
