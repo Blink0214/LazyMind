@@ -60,7 +60,7 @@ def test_scenarios_preserve_sources_versions_and_inputs(path, reflection_calls):
         assert '演示数据' in result['document']
         assert 'MOCK' not in result['document']
         assert pool['materials'][:len(before['materials'])] == before['materials']
-        assert result['next'] == tools.ROUTES[node] + ['END']
+        assert result['next'] == tools.routes_after(result['pool']) + ['END']
     assert pool['sequence'] == len(path)
     assert original['materials'] == pool['materials'][:len(original['materials'])]
 
@@ -673,16 +673,106 @@ def test_f1_explicit_topic_wins_while_using_conversation_pdfs(runtime, tmp_path,
     assert tools.material(pool, 'papers')['content'][0]['id'] == 'P1'
 
 
-def test_f1_pdf_scan_does_not_change_direct_f2_entry(runtime, tmp_path, monkeypatch):
+def test_f2_explicit_input_does_not_merge_conversation_papers(runtime, tmp_path, monkeypatch):
     ctx, batches = runtime
     monkeypatch.setattr(tools, '_conversation_papers', lambda _history: pytest.fail('F2 scanned PDFs'))
+    monkeypatch.setattr(api.ALGORITHMS['literature_review'], 'run', lambda inputs: {
+        'evidence': '# 指定材料综述', 'papers': inputs['papers'], 'is_demo': False,
+    })
     paper_input = tmp_path / 'paper-input.json'
-    paper_input.write_text(json.dumps({'topic': '文献主题'}, ensure_ascii=False))
+    selected = [{'id': 'P1', 'title': '指定论文', 'text': '指定正文', 'citation': '指定引用'}]
+    paper_input.write_text(json.dumps({'topic': '文献主题', 'papers': selected}, ensure_ascii=False))
     ctx.params = {'step_id': 'literature_review', 'user_input': '先做综述',
                   'remote_inputs': {'paper_input': str(paper_input)},
                   'history_files_per_turn': {'1': ['/uploads/研究论文.pdf']}}
     tools.run_paper_step()
     assert {item['key'] for item in batches[-1]} == {'literature_review_pool', 'literature_review_document'}
+    result = tools._read_bound(next(item['value'] for item in batches[-1]
+                                   if item['key'] == 'literature_review_pool'))
+    assert tools.material(result, 'papers')['content'] == selected
+
+
+@pytest.mark.parametrize('binding', [None, 'research_topic_pool', 'recovery_literature_pool'])
+def test_f2_merges_uploaded_papers_with_saved_materials(binding, runtime, tmp_path, monkeypatch):
+    ctx, batches = runtime
+    existing = {'id': 'P1', 'title': '已有论文', 'text': '原文', 'abstract': '已提炼摘要', 'citation': '原有引用'}
+    uploaded = {'id': 'P2', 'title': '补充论文', 'text': '新上传的完整正文'}
+    calls = []
+
+    def review(inputs):
+        calls.append(copy.deepcopy(inputs))
+        return {'evidence': '# 文献综述', 'papers': [
+            {**paper, 'citation': paper.get('citation', paper['title'])} for paper in inputs['papers']
+        ], 'is_demo': False}
+
+    monkeypatch.setattr(api.ALGORITHMS['literature_review'], 'run', review)
+    pool = tools.pool_from_business({'topic': '已确认主题', 'papers': [existing], 'question': '已确认问题'})
+    if binding:
+        pool = tools.execute_step('research_topic', pool)['pool']
+        if binding == 'recovery_literature_pool':
+            pool = tools.execute_step('literature_review', pool)['pool']
+        path = tmp_path / 'saved-pool.json'
+        path.write_text(json.dumps(pool, ensure_ascii=False))
+    calls.clear()
+    before = copy.deepcopy(pool)
+    history = {'1': ['/uploads/已有论文.pdf'], '3': ['/uploads/补充论文.pdf']}
+
+    def attachments(received):
+        assert received == history
+        # The resolver returns the same stable ID on repeated uploads.
+        return [{key: value for key, value in existing.items() if key != 'abstract'}, uploaded]
+
+    monkeypatch.setattr(tools, '_conversation_papers', attachments)
+    ctx.params = {'step_id': 'literature_review', 'current_user_input': '结合新上传的论文更新综述',
+                  'history_files_per_turn': history,
+                  'remote_inputs': {binding: str(path)} if binding else {}}
+    tools.run_paper_step()
+    outputs = {item['key']: item['value'] for item in batches[-1]}
+    result = tools._read_bound(outputs['literature_review_pool'])
+    expected = [existing, uploaded] if binding else [
+        {key: value for key, value in existing.items() if key != 'abstract'}, uploaded,
+    ]
+    assert calls[-1]['papers'] == expected
+    published = [{**paper, 'citation': paper.get('citation', paper['title'])} for paper in expected]
+    assert tools.material(result, 'papers')['content'] == published
+    assert calls[-1]['request'] == '结合新上传的论文更新综述'
+    if binding:
+        assert calls[-1]['question'] == tools.material(pool, 'question')['content']
+        assert calls[-1]['topic'] == pool['topic']
+        assert result['materials'][:len(before['materials'])] == before['materials']
+        assert tools._read_bound(str(path)) == before
+        merged = result['materials'][len(before['materials'])]
+        assert merged['kind'] == 'papers'
+        assert merged['derived_from'] == [pool['current']['papers']]
+        assert merged['content'] == expected
+
+    # A retry with the published pool must not append the same attachments again.
+    ctx.params['remote_inputs'] = {'literature_review_pool': outputs['literature_review_pool']}
+    tools.run_paper_step()
+    retried = tools._read_bound(next(item['value'] for item in batches[-1]
+                                    if item['key'] == 'literature_review_pool'))
+    assert calls[-1]['papers'] == published
+    assert result['current']['papers'] in retried['history'][-1]['inputs']
+
+
+def test_f2_unreadable_new_attachment_does_not_publish_stale_review(runtime, tmp_path, monkeypatch):
+    ctx, batches = runtime
+    pool = tools.pool_from_business({'topic': '既有主题', 'question': '已确认问题'})
+    path = tmp_path / 'saved-pool.json'
+    path.write_text(json.dumps(pool))
+
+    def unreadable(_history):
+        raise tools.MissingMaterials('论文附件无法解析')
+
+    monkeypatch.setattr(tools, '_conversation_papers', unreadable)
+    monkeypatch.setattr(api.ALGORITHMS['literature_review'], 'run',
+                        lambda *_: pytest.fail('missing attachment reached algorithm'))
+    ctx.params = {'step_id': 'literature_review', 'remote_inputs': {'research_topic_pool': str(path)},
+                  'history_files_per_turn': {'2': ['/uploads/坏论文.pdf']}}
+    with pytest.raises(tools.MissingMaterials, match='论文附件无法解析'):
+        tools.run_paper_step()
+    assert not batches
+    assert tools._read_bound(str(path)) == pool
 
 
 def test_f1_unreadable_pdf_stops_before_publication(runtime, monkeypatch):
@@ -741,6 +831,8 @@ def test_config_logical_edges_and_no_real_external_calls():
         actual = {tools.STEP_NODE[e['to']] for e in state['transitions'][step] if e['to'] != 'finish'}
         if step == 'refine_topic':
             actual.add('F2')  # Native rewind, not a cyclic control edge.
+            assert actual == {'F2', 'F3'}
+            continue
         if step == 'revise_document':
             actual.add('F6')
         if step in {'write_outline', 'write_document', 'data_analysis', 'literature_review'}:

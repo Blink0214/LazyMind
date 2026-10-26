@@ -10,6 +10,10 @@
 
 ## 当前实验接口
 
+2026-10-26 补充：模型生成字段为 `code: str`、`config: dict`、`dependencies: list[str]`，以及原有方案、讲解、执行需求和预览字段；固定四个文件由 `experiment/generation.py` 组装，README 复用 explanation，标准库实验显式返回空依赖列表。公共返回的 `code_files`、执行器和 F4 交接格式不变。下方 examples 的 `model_response` 是打包后的内部 ExperimentDraft 样例，不再是原始模型响应；公共 input/output 样例仍有效。每次 F3 至多一次局部模型修复：设计字段修复或模拟预览修复二选一，修复后再次校验失败直接报错，不整步重生成。
+
+流程补充：`文献综述 → 调整选题 → 实验研究` 是合法前向路径。实验节点接收 refine_topic_pool/document，复用现有 sequence 选择最新材料池，保留原论文与综述；初次研究选题仍需经过综述。调整选题后如需查文献，仍走已有原生 rewind。
+
 2026-10-22：F3 一次生成方案、代码、执行需求和模拟预览；程序根据本次许可、依赖和 30 秒预算决定是否复用现有受限执行器运行。复杂/未允许/执行失败时交付标记来源的预览，实际成功时使用计算结果。入口 `api.run_algorithm('experiment', inputs, allow_execution=False)`，Runtime 根据 ask_user 回答传入关键字参数；业务 inputs 中不能自行增加授权字段。完整样例见 [examples/experiment.json](examples/experiment.json)，与 tests/fixtures/paper-writing/experiment.json 相同。
 
 目录：F3 内部在 `paper/experiment/`，公共入口为 `run(inputs, *, on_event=None, allow_execution=False)`；executor/worker 接现有 paper/execution，handoff 转换新 F4 输入并保留来源。英文 Prompt 仍在统一的 paper/prompts。生成、预览修正、执行分别有阶段状态，执行不增加模型调用。
@@ -59,6 +63,13 @@ execution_status 为 not_run/succeeded/failed/timeout；只有 succeeded 对应 
 - ZIP 包含四个算法文件、公共 run_experiment.py、结果 Schema、来源说明、固定未执行警告；有数据时附 input.csv，有模拟结果时附 preview_results.json/csv。预览 CSV 防公式注入；原始 input.csv 保留输入值。不会把业务环境变量、凭证、整个材料池打包。
 - F3→F4：handoff.to_analysis 将结果转为现有 F4.data={columns,column_types,units,rows}，类型映射按列排序，单位按指标匹配；方案/假设/来源写入 data_context。result_meta 留在材料池，不作为 F4 未声明字段透传。F4 现有真实算法执行统计与绘图；产出 limitations/caption 确定性保留来源，再沿用结构化 analysis/charts 交给 F5/F6。
 - 模拟来源也记入原有材料版本链，重新导入带 synthetic 标记的业务输入仍保留演示属性。不另建授权系统，不修改通用 Chat。
+
+### F4 内部统计计划恢复（2026-10-26）
+
+- 公共 `run(inputs)`、`analysis`、`charts` 与 F3/F5 交接格式不变。仅模型规划响应不再包含 `jobs[].id`，图表使用 `finding_indices: int[]`（从0开始的任务序号）；`analysis/job_identity.py` 分配规范 ID、合并完全相同的任务，转换为内部既有 `finding_ids`。后续代码、结果校验和发布都使用规范 ID。
+- 旧模型响应中的临时 ID 仍兼容；同名且计算相同直接合并，同名但计算不同不能猜测图表归属。此时最多一次仅修正图表任务序号的模型调用，不重生成整份分析计划。单位及证据正文仍由来源绑定，不因图表局部修复而改名。
+- 均值/独立或配对差值的区间、t 检验遇到样本不足或零方差时，保留同一观测范围的描述性点估计，`interval/test` 为 null；限制写入 `analysis.limitations` 与受影响图表说明。不能编造噪声、误差条、p值，也不能说“无显著差异”。仍核验数据来源、缺失值、配对和数值；不把坏数据或不可估计的其他模型一概包装成成功。
+- 代码生成输入显式保留 `interval_level=null` 和 `correlation_test=false`，禁止模型默认补95%区间。运行结果中多算的未请求区间/检验由程序置空，保留原始结果及规范化结果用于追溯；仍严格复核点估计、已请求推断、任务集合和字段结构。不会拿独立复核器的答案替代实际计算。
 
 ### 当前审稿到修订的交接
 

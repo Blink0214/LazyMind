@@ -81,10 +81,46 @@ vi.mock('./WriterDownloadFormat', () => ({
 }));
 
 import { useSlotImageUrl, resolveSnapshotDiffText, SlotEditingContext, SlotRenderer, SlotVersionPopover } from './SlotComponents';
-import { WriterProviderChoice } from './SlotComponents';
+import { SlotMarkdownStream, WriterProviderChoice } from './SlotComponents';
+import type { TaskArtifactStream } from '@/modules/chat/store/taskCenter';
 import type { SlotFooterAction } from './slotEditingContext';
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe('completed artifact stream', () => {
+  it.each(['ended', 'aborted', 'ready', 'no-deltas'] as const)(
+    'flushes buffered text immediately on %s and cancels its animation', (completion) => {
+      const pending = new Map<number, FrameRequestCallback>();
+      let frame = 0;
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        pending.set(++frame, callback);
+        return frame;
+      });
+      const cancel = vi.fn((id: number) => pending.delete(id));
+      vi.stubGlobal('cancelAnimationFrame', cancel);
+      const stream: TaskArtifactStream = {
+        task_id: 'experiment', slot: 'report', content_type: 'text/markdown',
+        stream_id: 'experiment-report', chunk_index: 4, state: 'streaming',
+        content: 'ABCDE', deltas: ['A', 'B', 'C', 'D', 'E'],
+      };
+      const view = render(<SlotMarkdownStream stream={stream} />);
+      expect(screen.queryByText('ABCDE')).not.toBeInTheDocument();
+      const previousFrames = [...pending.keys()];
+      expect(previousFrames.length).toBeGreaterThan(0);
+      view.rerender(<SlotMarkdownStream stream={completion === 'no-deltas'
+        ? { ...stream, deltas: undefined }
+        : { ...stream, state: completion }} />);
+      expect(screen.getByText('ABCDE')).toBeInTheDocument();
+      for (const id of previousFrames) expect(cancel).toHaveBeenCalledWith(id);
+      act(() => {
+        for (const callback of pending.values()) callback(0);
+        pending.clear();
+      });
+      expect(screen.getByText('ABCDE')).toBeInTheDocument();
+      view.unmount();
+    },
+  );
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

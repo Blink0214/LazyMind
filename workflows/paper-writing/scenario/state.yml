@@ -24,6 +24,7 @@ transitions:
     - {to: reading_reflection, when: "The user explicitly selects reading reflection"}
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   refine_topic:
+    - {to: experiment, when: "The user explicitly selects experimental research after refining the topic"}
     - {to: finish, when: "The user explicitly chooses to finish this workflow"}
   experiment:
     - {to: data_analysis, when: "The user explicitly selects data analysis"}
@@ -179,6 +180,8 @@ steps:
       - {material: literature_review_document, required: false, transport: path}
       - {material: experiment_execution, required: false, transport: path}
       - {material: experiment_question, required: false, transport: path}
+      - {material: refine_topic_pool, required: false, transport: path}
+      - {material: refine_topic_document, required: false, transport: path}
     outputs:
       - {material: experiment_pool, required: true}
       - {material: experiment_document, required: true}

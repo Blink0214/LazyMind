@@ -4469,7 +4469,7 @@ interface SlotMarkdownFileProps {
 export function SlotMarkdownStream({ stream }: { stream: TaskArtifactStream }) {
   const streamedContent = useArtifactStreamContent(
     stream.stream_id,
-    stream.deltas,
+    stream.state === 'streaming' && stream.final_content === undefined ? stream.deltas : undefined,
     stream.content,
   );
   const content = stream.final_content ?? streamedContent;

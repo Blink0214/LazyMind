@@ -324,13 +324,25 @@ def render_material(kind: str, content: Any) -> str:
     return '# ' + kind + '\n\n```json\n' + json.dumps(content, ensure_ascii=False, indent=2) + '\n```'
 
 
+def routes_after(pool: dict) -> list[str]:
+    """Refinement can continue to experiments; initial topic selection still requires literature."""
+    history = pool['history']
+    if not history:
+        return []
+    last = history[-1]
+    refined = last.get('step') == 'refine_topic' or (
+        'step' not in last and len(history) >= 2
+        and history[-2]['node'] == 'F2' and last['node'] == 'F1')
+    return ['F2', 'F3'] if refined else ROUTES[last['node']]
+
+
 def execute_step(step: str, pool: dict, request: str = '', fail: bool = False, *,
                  on_event=None, allow_execution=False) -> dict:
     """Infrastructure owns lineage and atomic validation; algorithms own content."""
     validate_pool(pool)
     node = STEP_NODE[step]
     previous = pool['history'][-1]['node'] if pool['history'] else None
-    if previous and node != previous and node not in ROUTES[previous]:
+    if previous and node != previous and node not in routes_after(pool):
         raise ValueError(f'不允许的流程路径: {previous}→{node}')
     if fail:
         raise RuntimeError('[示例] 模拟执行失败；可重试。')
@@ -408,12 +420,12 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False, *
     if step == 'peer_review':
         result['selected_issue_ids'] = []
     result['sequence'] += 1
-    result['history'].append({'node': node, 'request': request, 'inputs': inputs, 'outputs': outputs})
+    result['history'].append({'node': node, 'step': step, 'request': request, 'inputs': inputs, 'outputs': outputs})
     if execution_records:
         result['history'][-1]['analysis_execution'] = execution_records
     validate_pool(result)
     return {'status': 'completed', 'pool': result, 'document': document,
-            'next': ROUTES[node] + ['END'], 'mock': is_demo}
+            'next': routes_after(result) + ['END'], 'mock': is_demo}
 
 
 def execute_mock(node: str, pool: dict, request: str = '', fail: bool = False) -> dict:
@@ -611,7 +623,7 @@ def _step_request(step: str, pool: dict, params: dict, bound: dict | None = None
     saved = next((_business_request(item.get('request')) for item in reversed(pool['history'])
                   if item['node'] == STEP_NODE[step] and _business_request(item.get('request'))), '')
     initial = not any(key.endswith('_pool') for key in bound)
-    if initial and not current:
+    if initial and not current and not retry and not (step == 'peer_review' and 'review_request' in bound):
         current = _business_request(params.get('user_input') or params.get('launch_user_input'))
     base = _business_request(pool.get('request')) if initial else ''
     if step == 'peer_review' and 'review_request' in bound:
@@ -735,7 +747,9 @@ def _run_paper_step(context, stream=None) -> dict:
                 pool = initialize_pool(bound, request)
         else:
             pool = initialize_pool(bound, request)
-        if step == 'literature_review' and not any(key.endswith('_pool') for key in bound):
+        # Saved upstream materials do not include papers uploaded in later turns.
+        # An explicit programmatic input still owns its selected paper scope.
+        if step == 'literature_review' and 'paper_input' not in bound:
             uploaded = _conversation_papers(context.params.get('history_files_per_turn'))
             current = material(pool, 'papers')
             papers = copy.deepcopy(current['content']) if current else []

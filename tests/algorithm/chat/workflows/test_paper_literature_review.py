@@ -7,6 +7,7 @@ import pytest
 
 from lazymind.common.token_estimation import estimate_tokens
 from lazymind.document_tools.paper import api, contracts, literature_review, workflow
+from lazymind.document_tools.paper.material_bindings import MaterialBindings
 
 
 TOPIC = '时间同步系统的组合学习（形式化方法与时间自动机的组合式主动学习）'
@@ -61,11 +62,76 @@ def test_materials_preserve_papers_and_citations_for_downstream_steps(paper):
             assert workflow.material(pool, 'papers')['content'] == [paper]
 
 
+def test_review_scope_excludes_old_papers_and_separates_background(paper):
+    sources = [paper, {'id': 'STORM', 'title': 'STORM', 'text': 'Uploaded paper'},
+               {'id': 'BRIEF', 'title': 'System description', 'text': 'CPU limits apply to experiments.'}]
+    before = copy.deepcopy(sources)
+    bindings = MaterialBindings(sources)
+    plan = literature_review._review_plan_schema(bindings)(
+        queries={'unwanted search': 5}, material_roles={'M1': 'exclude', 'M2': 'paper', 'M3': 'background'},
+        supplied_only=True, paper_limit=None,
+    )
+    selected, background = literature_review._select_materials(plan, bindings)
+    assert [item['id'] for item in selected] == ['STORM']
+    assert [item['id'] for item in background] == ['BRIEF']
+    assert plan.queries == {}
+    assert sources == before
+
+
+@pytest.mark.parametrize('roles', [{'unknown': 'paper'}, {}, {'M1': 'invented'},
+                                 {'M1': 'paper', 'M2': 'background'}])
+def test_review_roles_are_fixed_by_host(paper, roles):
+    with pytest.raises(ValueError):
+        literature_review._review_plan_schema(MaterialBindings([paper]))(
+            queries={}, material_roles=roles, supplied_only=True, paper_limit=None)
+
+
+def test_background_is_not_a_supplied_paper(paper):
+    bindings = MaterialBindings([paper])
+    plan = literature_review._review_plan_schema(bindings)(
+        queries={}, material_roles={'M1': 'background'}, supplied_only=True, paper_limit=None)
+    with pytest.raises(contracts.MissingMaterials):
+        literature_review._select_materials(plan, bindings)
+
+
+def test_review_scope_allows_search_without_uploaded_papers():
+    bindings = MaterialBindings([])
+    plan = literature_review._review_plan_schema(bindings)(
+        queries={'academic writing agents': 5}, material_roles={}, supplied_only=False, paper_limit=None,
+    )
+    assert literature_review._select_materials(plan, bindings) == ([], [])
+    assert plan.queries == {'academic writing agents': 5}
+
+
+def test_background_only_can_start_retrieval_without_recopying_identity():
+    source = {'id': 'upload-17cae16226173b1c269c5a71cde4c14c6a34c189ed9e69380936615c861bc78a',
+              'title': 'System brief', 'text': 'Actual implementation and resource constraints.'}
+    bindings = MaterialBindings([source])
+    plan = literature_review._review_plan_schema(bindings)(
+        queries={'academic writing agents': 5}, material_roles={'M1': 'background'},
+        supplied_only=False, paper_limit=None)
+    selected, background = literature_review._select_materials(plan, bindings)
+    assert selected == []
+    assert background == [source]
+    assert plan.queries == {'academic writing agents': 5}
+
+
+def test_review_output_preserves_long_evidence_for_downstream(paper):
+    evidence = ('# 文献综述\n\n' + '有依据的比较与局限。' * 100
+                + '\n\n[SRC-001]\n\n## 参考文献\n\n' + paper['citation'])
+    result = {'evidence': evidence, 'papers': [paper], 'is_demo': False}
+    validated = contracts.validate_output('literature_review', result)
+    assert validated['evidence'] == evidence
+    assert validated['papers'] == [paper]
+
+
 @pytest.mark.parametrize('instruction,group,field', [
     (literature_review.SEARCH_PLAN_PROMPT, 'papers', 'note'),
     (literature_review.COVERAGE_PROMPT, 'sources', 'note'),
     (literature_review.SYNTHESIS_PROMPT, 'sources', 'note'),
     (literature_review.CANDIDATE_SELECTION_PROMPT, 'candidates', 'text'),
+    (literature_review.SEARCH_PLAN_PROMPT, 'papers', 'snippet'),
+    (literature_review.SYNTHESIS_PROMPT, 'background', 'note'),
 ])
 def test_prompts_share_text_budget_and_preserve_source_fields(paper, instruction, group, field):
     data = {group: [
@@ -102,7 +168,8 @@ def test_prompts_share_text_budget_and_preserve_source_fields(paper, instruction
     for original, item in zip(data[group], bounded[group]):
         assert item['id'] == original['id']
         assert item['citation'] == original['citation']
-        assert 'snippet' not in item
+        if group == 'candidates':
+            assert 'snippet' not in item
         assert 0 < len(item[field]) < len(original[field])
         assert original[field].startswith(item[field])
     sizes = [estimate_tokens(item[field]) for item in bounded[group]]

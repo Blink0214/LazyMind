@@ -50,6 +50,17 @@ _SERIAL_WORKFLOW_EXECUTION_POLICY = (
     'starting the next Workflow SubAgent. '
 )
 
+_USER_BOUNDARY_HANDOFF_POLICY = (
+    'When the user explicitly asks to stop after a particular step or to show its result before '
+    'continuing, execute that last requested target with advance_step_and_hand_off, including '
+    'retryable and rewindable targets. This explicit boundary takes precedence over default '
+    'approval settings. For earlier steps of a requested multi-step path, use advance_step and '
+    'continue serially; do not hand off early. The Host publishes the result and owns the checkpoint. '
+    'Do not reread successfully published artifacts merely to confirm or summarize completion. '
+    'If the user explicitly requests analysis or explanation of the result in Chat, use advance_step '
+    'and provide that requested response instead of handing off. '
+)
+
 
 @dataclass
 class WorkflowAgentContribution:
@@ -259,8 +270,12 @@ def _handoff_tool(
         raise AssertionError('unreachable')
 
     advance_step_and_hand_off.__doc__ = (
-        'Execute a Ready Workflow step and end this LazyMind turn only after the '
-        'Host acknowledges durable ownership of the post-execution approval checkpoint.'
+        'Execute one exact Runtime-returned ready, retryable, rewindable, or continue target '
+        'and end this Chat turn after the Host accepts the post-execution checkpoint. '
+        'Use for the LAST step the user asks to run before stopping or viewing results, '
+        'including reruns and regardless of automatic approval defaults. Use advance_step '
+        'for earlier steps in a requested multi-step path or when the user requests a Chat '
+        'explanation afterward. Results and failures remain visible in the Workflow.'
     )
     return advance_step_and_hand_off
 
@@ -1966,6 +1981,7 @@ def resolve_workflow_injection(
             + 'state_version or expected_state_version. '
             + _SERIAL_WORKFLOW_EXECUTION_POLICY
             + _WORKFLOW_EDIT_SCOPE_POLICY
+            + _USER_BOUNDARY_HANDOFF_POLICY
             + 'If a Workflow tool returns user_notice, explicitly relay that notice to the '
             + 'user. advance_step waits for '
             + 'terminal execution. A failed result never means success and never permits a '
@@ -1981,12 +1997,14 @@ def resolve_workflow_injection(
             + 'it is not permission to start the step. Decide approval checkpoints by priority: '
             + 'first obey explicit user instructions in the current request; when absent, use '
             + 'the effective requires_approval flag from ready_step_details or projection.nodes[step_id]. '
-            + 'requires_approval=false overrides a package mode=human: use advance_step and continue. '
+            + 'Absent an explicit user boundary, requires_approval=false overrides a package '
+            + 'mode=human: use advance_step and continue. '
             + 'Only when that flag is absent, fall back to the step mode/default_approval. '
             + 'mode=human/default_approval=required '
             + 'means execute that Ready step with advance_step_and_hand_off so the Host stops '
             + 'after execution for human review of its outputs. mode=auto/default_approval=not_required '
-            + 'means execute with advance_step and continue. Never ask whether to execute a Ready '
+            + 'means execute with advance_step and continue unless an explicit user boundary '
+            + 'requires advance_step_and_hand_off. Never ask whether to execute a Ready '
             + 'step merely because it requires approval; the approval checkpoint belongs to its result. '
             + 'Do not replace continued execution with a promise that later steps will run. '
             + completed_followup
@@ -2033,6 +2051,7 @@ def resolve_workflow_injection(
             + 'selected and authorized this exact procedure. '
             + _SERIAL_WORKFLOW_EXECUTION_POLICY
             + _WORKFLOW_EDIT_SCOPE_POLICY
+            + _USER_BOUNDARY_HANDOFF_POLICY
             + entry_instruction
             + 'Conversation attachments are optional unless the selected Workflow Runtime '
             + 'explicitly returns a required-input result. Never infer that an upload is '
@@ -2048,7 +2067,8 @@ def resolve_workflow_injection(
             + 'Explicit user approval instructions override step defaults; otherwise use '
             + 'the effective requires_approval flag in ready_step_details/projection.nodes, '
             + 'falling back to mode only when the flag is absent. requires_approval=false '
-            + 'overrides a package mode=human: use advance_step and continue. If a Ready '
+            + 'overrides a package mode=human unless the user explicitly asks to stop at this '
+            + 'target: then use advance_step_and_hand_off. Otherwise use advance_step and continue. If a Ready '
             + 'Workflow step requires human approval, execute it with advance_step_and_hand_off so '
             + 'the Host stops after execution for output review. Do not ask whether to execute it, '
             + 'and do not merely announce that later steps will run. For recovery, '

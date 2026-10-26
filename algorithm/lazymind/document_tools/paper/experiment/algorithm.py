@@ -9,7 +9,7 @@ from lazyllm.tools.writer.tools.base import WriterToolBase
 from lazymind.common.token_estimation import estimate_tokens
 from ..contracts import validate_input, validate_output
 from .schema import ExperimentDraft, Metric, ResultMeta, code_column_types
-from .preview_repair import repair_preview
+from .generation import GeneratedExperiment, validate_generation
 from ..prompts.experiment_prompt import EXPERIMENT_PROMPT
 
 LOG = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ def run(inputs: dict, *, on_event=None, allow_execution=False) -> dict:
     # A private sink keeps generated JSON out of the Agent's chat/event queue.
     stream = {'_stream_sink': on_event or (lambda _event: None)}
     model = writer._build_structured_llm(
-        writer._structured_output_prompt(ExperimentDraft), stream_output=stream, apply_formatter=False)
+        writer._structured_output_prompt(GeneratedExperiment), stream_output=stream, apply_formatter=False)
     started = time.monotonic()
     response = model(prompt)
     LOG.info('paper_experiment generation elapsed=%.3fs', time.monotonic() - started)
@@ -75,13 +75,8 @@ def run(inputs: dict, *, on_event=None, allow_execution=False) -> dict:
     # model again. The complete strict schema and code syntax still validate next.
     if on_event:
         on_event({'tag': 'phase', 'phase': '校验字段、结果类型与代码接口'})
-    parsed = writer._parse_structured_response(response, ExperimentDraft)
-    try:
-        draft = ExperimentDraft.model_validate(parsed)
-    except ValueError as error:
-        # This also validates all non-preview fields. Broken code/plan and absent
-        # results fail immediately, rather than causing an entire generation retry.
-        draft = repair_preview(writer, parsed, inputs, error, on_event)
+    parsed = writer._parse_structured_response(response, GeneratedExperiment)
+    draft = validate_generation(writer, parsed, inputs, on_event)
     from .executor import execute
     execution = execute(draft, inputs, allowed=allow_execution, on_event=on_event)
     return build_output(draft, inputs, execution)

@@ -21,6 +21,7 @@ from lazymind.config import config
 from lazymind.model_config import _role_entry, load_model_config
 
 from .contracts import MissingMaterials, validate_input
+from .material_bindings import MaterialBindings
 from .prompts.literature_review_prompt import (
     CANDIDATE_SELECTION_PROMPT,
     COVERAGE_PROMPT,
@@ -48,6 +49,28 @@ class _ReadingNote(BaseModel):
     citation: str
 
 
+def _review_plan_schema(bindings: MaterialBindings):
+    # The host fixes one field per existing object. Models assign roles, not identities.
+    roles = create_model(
+        'MaterialRoles', __config__=ConfigDict(extra='forbid'),
+        **{key: (Literal['paper', 'background', 'exclude'], ...)
+           for key in bindings.materials},
+    )
+    return create_model('ReviewPlan', __base__=_SearchPlan,
+                        material_roles=(roles, ...), supplied_only=(bool, ...))
+
+
+def _select_materials(plan, bindings: MaterialBindings) -> tuple[list[dict], list[dict]]:
+    roles = plan.material_roles.model_dump()
+    selected = [copy.deepcopy(paper) for key, paper in bindings.materials.items() if roles[key] == 'paper']
+    background = [copy.deepcopy(paper) for key, paper in bindings.materials.items() if roles[key] == 'background']
+    if plan.supplied_only:
+        plan.queries = {}
+        if not selected:
+            raise MissingMaterials('指定范围内没有可综述的论文，请提供对应论文。')
+    return selected, background
+
+
 def _input_budget() -> int:
     injected = lazyllm.globals['config'].get('dynamic_model_configs', {})
     role = injected.get('llm', {}).get('chat') or _role_entry(load_model_config().get('llm'))
@@ -68,7 +91,7 @@ def _prompt(instruction: str, data: dict) -> str:
         return prompt
     data['truncated'] = True
     passages = []
-    for key in ('papers', 'sources', 'candidates'):
+    for key in ('papers', 'sources', 'candidates', 'background'):
         for paper in data.get(key, []):
             field = max((name for name in ('note', 'text', 'abstract', 'snippet') if paper.get(name)),
                         key=lambda name: estimate_tokens(paper[name]), default=None)
@@ -332,32 +355,40 @@ def _retrieve(providers: list, plan: _SearchPlan, sources: list[dict],
         return list(executor.map(lambda source: _content(provider, source), selected))
 
 
-def _render(inputs: dict, notes: list[dict]) -> str:
-    return WriterToolBase(llm=AutoModel(model='llm'))._call_llm_text(
+def _render(inputs: dict, notes: list[dict], background: list[dict]) -> str:
+    bindings = MaterialBindings(notes + background)
+    text = WriterToolBase(llm=AutoModel(model='llm'))._call_llm_text(
         _prompt(SYNTHESIS_PROMPT,
-            {'sources': notes,
-             'research': {k: inputs.get(k) for k in ('topic', 'request', 'question')}}),
+            bindings.model_view({'research': {k: inputs.get(k) for k in ('topic', 'request', 'question')},
+                                 'sources': notes, 'background': background})),
     ).strip()
+    return bindings.restore_citations(text)
 
 
 def run(inputs: dict) -> dict:
     inputs = validate_input('literature_review', inputs)
     sources = inputs['papers'] or []
+    bindings = MaterialBindings(sources)
     context = {key: inputs.get(key) for key in ('topic', 'request', 'question')}
     context['knowledge_base_ids'] = ((lazyllm.globals.get('agentic_config') or {}).get('filters') or {}).get('kb_id', [])
     writer = WriterToolBase(llm=AutoModel(model='llm'))
-    notes = _notes(sources, context)
     plan = writer._call_llm_structured(
         _prompt(SEARCH_PLAN_PROMPT,
-            {'research': context, 'previous_evidence': inputs.get('evidence'), 'papers': notes,
-             'paper_count': len(sources), 'today': date.today().isoformat()}),
-        _SearchPlan,
+            bindings.model_view({'research': context,
+             'papers': [{**{key: value for key, value in paper.items() if key not in ('text', 'abstract')},
+                         'snippet': (paper.get('abstract') or paper.get('text') or '')[:1200]}
+                        for paper in sources],
+             'paper_count': len(sources), 'today': date.today().isoformat()})),
+        _review_plan_schema(bindings),
     )
+    sources, background = _select_materials(plan, bindings)
+    notes = _notes(sources, context)
+    background_notes = _notes(background, context) if background else []
     context['paper_limit'] = plan.paper_limit
     if plan.queries:
         providers = [] if plan.knowledge_base_only else _providers(inputs.get('request', ''))
         seen = {key: source for source in sources for key in _identity(source)}
-        used_ids = {paper['id'] for paper in sources}
+        used_ids = {paper['id'] for paper in bindings.materials.values()}
         searched = set()
         for round_index in range(2):
             if plan.year_from and plan.year_to and plan.year_from > plan.year_to:
@@ -382,5 +413,5 @@ def run(inputs: dict) -> dict:
                 break
     if not sources:
         raise MissingMaterials('没有可用于综述的论文或知识库材料，请调整研究范围或提供论文。')
-    evidence = _render(inputs, notes)
+    evidence = _render(inputs, notes, background_notes)
     return {'evidence': evidence, 'papers': sources, 'is_demo': False}

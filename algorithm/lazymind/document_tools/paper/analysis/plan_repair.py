@@ -57,10 +57,10 @@ def preserve_scope(job, changed, issue):
 
 def apply_updates(plan, response, issues):
     """Patch rejected jobs and their dependencies, keeping unrelated plan content immutable."""
-    if (not isinstance(response, dict) or 'updates' not in response
+    if (not isinstance(response, dict) or not response
             or set(response) - {'updates', 'model_updates', 'figure_updates'}
-            or not isinstance(response['updates'], list)):
-        raise ValueError('局部修复必须只返回 updates 列表')
+            or not isinstance(response.get('updates', []), list)):
+        raise ValueError('局部修复须返回 updates/model_updates/figure_updates 列表，不能返回完整计划')
     job_issues = [item for item in issues if 'job_id' in item]
     local_figures = {item['figure_id'] for item in issues if 'figure_id' in item}
     language_figures = {item['figure_id'] for item in issues if item.get('field') == 'display_language'}
@@ -70,7 +70,7 @@ def apply_updates(plan, response, issues):
     if not whole_jobs and (response.get('model_updates') or (response.get('figure_updates') and not local_figures)):
         raise ValueError('字段补全不能修改模型或图表')
     updates = {}
-    for item in response['updates']:
+    for item in response.get('updates', []):
         if not isinstance(item, dict) or set(item) != {'job_id', 'field', 'value'}:
             raise ValueError('每个修复项须包含 job_id/field/value')
         key = (item['job_id'], item['field'])
@@ -101,9 +101,8 @@ def apply_updates(plan, response, issues):
             jobs.extend(changed)
         else:
             jobs.append(job)
-    ids = [job['id'] for job in jobs]
-    if len(set(ids)) != len(ids):
-        raise ValueError('修复后的任务 ID 重复')
+    # Model names are temporary references. The model boundary assigns real IDs
+    # and resolves duplicate/ambiguous aliases after dependencies are updated.
     result['jobs'] = jobs
     affected_models = {job.get('model_id') for job in plan['jobs'] if job['id'] in whole_jobs} - {None}
     shared_models = {job.get('model_id') for job in plan['jobs'] if job['id'] not in whole_jobs}

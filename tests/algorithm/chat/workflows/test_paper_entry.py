@@ -40,6 +40,41 @@ def test_retry_does_not_replace_bound_review_request():
     assert workflow._step_request('peer_review', pool, params) == '检查可复现性'
 
 
+@pytest.mark.parametrize('step', ['refine_topic', 'experiment', 'peer_review'])
+def test_forward_step_uses_current_user_input_from_runtime(step):
+    pool = workflow.pool_from_business({'topic': 'T', 'request': '最初只做选题'})
+    pool['history'] = [{'node': 'F2', 'request': '上轮综述要求'}]
+    params = {'step_id': step, 'user_input': '最初只做选题',
+              'current_user_input': '综述之后调整选题，只研究失败恢复，不做实验',
+              'remote_inputs': {'literature_review_pool': '/saved/pool.json'}}
+    assert workflow._step_request(step, pool, params) == params['current_user_input']
+    assert pool['request'] == '最初只做选题'
+
+
+def test_retry_uses_saved_refinement_requirements():
+    pool = workflow.pool_from_business({'topic': 'T', 'request': '最初选题'})
+    pool['history'] = [{'node': 'F1', 'request': '聚焦失败恢复'}]
+    assert workflow._step_request('refine_topic', pool, {'current_user_input': '重试'}) == '聚焦失败恢复'
+
+
+def test_launch_intent_does_not_override_explicit_bound_requirements(tmp_path):
+    pool = workflow.pool_from_business({'topic': 'T', 'request': '只检查引用'})
+    request_file = tmp_path / 'review-request.txt'
+    request_file.write_text('只检查引用')
+    params = {'step_id': 'peer_review', 'user_input': '审稿', 'launch_user_input': '审稿',
+              'current_user_input': ''}
+    assert workflow._step_request('peer_review', pool, params,
+                                  {'review_request': str(request_file)}) == '只检查引用'
+
+
+def test_recovery_request_wins_over_restored_launch_input():
+    pool = workflow.pool_from_business({'topic': 'T', 'request': '最初选题'})
+    pool['history'] = [{'node': 'F2', 'request': '旧综述'}]
+    params = {'user_input': '最初选题', 'retry_hint': 'Recovery request for this rerun only: 只调整恢复机制',
+              'remote_inputs': {'literature_review_pool': '/saved/pool.json'}}
+    assert workflow._step_request('refine_topic', pool, params) == '只调整恢复机制'
+
+
 def test_text_upload_initializes_without_pool_or_json(tmp_path):
     source = tmp_path / 'paper.md'
     source.write_text('# My paper\n## Results\n12 of 20 questions were correct.')

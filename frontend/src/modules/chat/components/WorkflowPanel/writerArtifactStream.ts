@@ -18,10 +18,16 @@ export function findWriterArtifactStream(
 ): TaskArtifactStream | undefined {
   if (!stepId) return undefined;
 
-  const findStream = (task: SubAgentTask | undefined) => task?.artifact_streams
+  const findStream = (task: SubAgentTask | undefined) => {
+    const stream = task?.artifact_streams
     ?.slice()
     .reverse()
     .find((candidate) => candidate.slot === slotId && candidate.content_type === 'text/markdown');
+    // Rendering must not keep replaying a backlog after computation has finished.
+    // Keep publication/error state intact; only bypass the presentation queue.
+    return stream && task && (task.progress_pct >= 100 || !['pending', 'running'].includes(task.status))
+      ? { ...stream, deltas: undefined } : stream;
+  };
 
   const steps = (session.steps ?? [])
     .filter((step) => step.step_id === stepId)

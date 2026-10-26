@@ -31,6 +31,21 @@ function task(taskId: string, status: SubAgentTask['status'], streams: TaskArtif
 }
 
 describe('findWriterArtifactStream', () => {
+  it.each(['running', 'succeeded', 'failed', 'interrupted', 'canceled'] as const)(
+    'flushes the display backlog at 100%% or terminal status: %s', (status) => {
+      const original = { ...stream('experiment_document', 's'), deltas: ['pre', 'view'] };
+      const owner = task('owner', status, [original]);
+      owner.progress_pct = status === 'running' ? 100 : 50;
+      const result = findWriterArtifactStream(
+        { steps: [{ step_id: 'experiment', task_id: 'owner' }] } as WorkflowSession,
+        'experiment', 'experiment_document', [owner],
+      );
+      expect(result?.content).toBe('preview');
+      expect(result?.deltas).toBeUndefined();
+      expect(result?.state).toBe('streaming');
+      expect(original.deltas).toEqual(['pre', 'view']);
+    },
+  );
   const stepCases: Array<[string, string]> = [
     ['outline', 'outline_document'],
     ['write_outline', 'write_outline_document'],

@@ -118,12 +118,9 @@ def bind_job_fields(job, tables, catalog):
         unit = expected_unit(job, tables)
     except (KeyError, ValueError):
         return issues  # Invalid source columns are reported by the job validator.
-    if job['unit'] is None:
-        job['unit'] = unit
-    elif job['unit'] != unit:
-        issues.append(dict(job_id=job['id'], field='unit', expected=unit,
-                           message=('该统计量无量纲，应省略 unit 或使用 null' if unit is None else
-                                    f'单位由统计量及源列确定，应为 {unit!r}；不允许自动换算数值')))
+    # This is derived metadata, not a model choice. No observation or numeric value
+    # is converted: source column units and the selected operation remain authoritative.
+    job['unit'] = unit
     return issues
 
 
@@ -164,10 +161,20 @@ def bind_figure_mapping(figure, jobs, sources):
                       if name in (job['column'], job['table_id'] + '.' + job['column'])}
         return next(iter(candidates)) if len(candidates) == 1 else name
 
-    labels = {metric_name(name): value for name, value in mapping.get('value_labels', {}).items()}
-    mapping['value_labels'] = labels
-    if set(labels) - metrics or (len(metrics) > 1 and set(labels) != metrics):
-        errors.append('多指标图须为每个实际指标提供 value_labels 短名称；不能共用模糊的数值轴名称')
+    # Labels are presentation hints, not a model-authored inventory of the data.
+    # Derive the inventory from bound jobs and accept only unambiguous hints.
+    hints = {}
+    for name, label in mapping.get('value_labels', {}).items():
+        metric = metric_name(name)
+        if metric not in metrics:
+            matched = {job['column'] for job, _ in rows if job['id'] == name}
+            metric = next(iter(matched)) if len(matched) == 1 else None
+        if metric in metrics and isinstance(label, str) and label.strip():
+            hints.setdefault(metric, set()).add(label.strip())
+    mapping['value_labels'] = {
+        metric: next(iter(hints[metric])) if len(hints.get(metric, ())) == 1 else display_name(metric)
+        for metric in sorted(metrics)
+    }
 
     def resolve(value):
         if value is None or value in dimensions:

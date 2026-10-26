@@ -132,13 +132,17 @@ class ExecutionRequirements(StrictModel):
     reason: str = ''
 
 
-class ExperimentDesign(StrictModel):
-    """The fixed design/code package, independently validatable before preview repair."""
+class ExperimentPlan(StrictModel):
+    """Research content shared by generation and the host-built deliverable."""
     plan: Text = Field(description='Question, hypotheses, evidence, controls, metrics and procedure')
     explanation: Text = Field(description='Code explanation, data requirements, limitations and run commands')
-    code_files: list[CodeFile] = Field(min_length=4, max_length=4)
     execution_requirements: ExecutionRequirements = Field(default_factory=ExecutionRequirements)
     metrics: list[Metric] = Field(default_factory=list, max_length=30)
+
+
+class ExperimentDesign(ExperimentPlan):
+    """The fixed design/code package, independently validatable before preview repair."""
+    code_files: list[CodeFile] = Field(min_length=4, max_length=4)
 
     @model_validator(mode='after')
     def check_design(self):
@@ -152,13 +156,15 @@ class ExperimentDesign(StrictModel):
         return self
 
 
-class ExperimentDraft(ExperimentDesign):
+class ExperimentPreview(StrictModel):
     results: Preview | None
     assumptions: list[Text] = Field(min_length=1, max_length=20)
     seed: int | None
     method: Literal['empirical', 'simulation']
     no_results_reason: Text | None
 
+
+class ExperimentDraft(ExperimentDesign, ExperimentPreview):
     @model_validator(mode='before')
     @classmethod
     def discard_extra_model_fields(cls, value):

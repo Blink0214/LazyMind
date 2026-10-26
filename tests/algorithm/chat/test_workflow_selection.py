@@ -112,6 +112,11 @@ def test_mentioned_workflow_is_injected_as_authoritative_selection():
     assert 'builtin:image-workflow' in contribution.runtime_context
     assert 'revision-1' in contribution.runtime_context
     assert '"current_query": "run it now"' in contribution.runtime_context
+    assert 'including retryable and rewindable targets' in contribution.runtime_context
+    assert 'do not hand off early' in contribution.runtime_context
+    assert 'explanation of the result in Chat' in contribution.runtime_context
+    assert 'rewindable' in _tool(contribution, 'advance_step_and_hand_off').__doc__
+    assert 'LAST step' in _tool(contribution, 'advance_step_and_hand_off').__doc__
     assert list(inspect.signature(
         _tool(contribution, 'trigger_image_workflow'),
     ).parameters) == ['request_context']
@@ -875,6 +880,9 @@ def test_active_workflow_forwards_current_edit_request_and_focus_to_step():
             ],
         )
         # resolve_workflow_injection's patch is applied to agentic_config by ChatService.
+        assert 'including retryable and rewindable targets' in contribution.runtime_context
+        assert 'do not hand off early' in contribution.runtime_context
+        assert 'explanation of the result in Chat' in contribution.runtime_context
         lazyllm.globals['agentic_config'].update(contribution.agentic_config_patch)
         result = _tool(contribution, 'advance_step')(['generate_ppt'])
 

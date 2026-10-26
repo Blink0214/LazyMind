@@ -12,6 +12,7 @@ import pytest
 from lazymind.chat.engine.subagent.context import SubAgentContext
 from lazymind.document_tools.paper import workflow
 from lazymind.document_tools.paper.analysis import model
+from lazymind.document_tools.paper.analysis.job_identity import bind_jobs
 from lazymind.document_tools.paper.analysis.schema import ContractError
 from lazymind.document_tools.paper.plotting import analysis as plots
 
@@ -80,10 +81,13 @@ def replay(monkeypatch, tmp_path):
                       columns=columns, instructions='Compare observed group means.',
                       data_mapping=dict(category_column='data.method'))],
     )
+    # Interpretation consumes the host-assigned IDs, not the planner's aliases.
+    plan = bind_jobs(plan)
+    finding_ids = [job['id'] for job in plan['jobs']]
     conclusion = dict(
         summary='候选方法在这组模拟观测中的平均得分较高。',
         answers=[dict(target_id='comparison', conclusion='结果仅反映当前样本的描述性差异。',
-                      finding_ids=list(groups), key_finding_ids=list(groups))],
+                      finding_ids=finding_ids, key_finding_ids=finding_ids)],
         mechanism_explanation='当前数据不足以解释差异机制。',
         limitations=['模拟观测不能证明因果关系或泛化能力。'],
     )

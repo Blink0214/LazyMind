@@ -14,6 +14,39 @@ from .views import materialize
 from .plan_repair import AnalysisFeasibilityError
 
 
+class InferenceUnavailable(ValueError):
+    """A point estimate exists but its frequentist uncertainty is undefined."""
+
+
+def reference_with_fallback(job, inputs, models, views, plan):
+    """Keep the estimand and observations; disclose unavailable inference locally."""
+    try:
+        return reference(job, inputs, models, views)
+    except InferenceUnavailable as error:
+        import copy
+        descriptive = copy.deepcopy(job)
+        descriptive['operation'] = {'paired_t': 'paired_difference', 'welch_t': 'difference'}.get(
+            job['operation'], job['operation'])
+        descriptive['interval_level'] = None
+        # Verify before committing the fallback; missing data, bad matching,
+        # overlapping cohorts and unsupported methods still cannot be fabricated.
+        result = reference(descriptive, inputs, models, views)
+        note = (f'{job["id"]} ({job["operation"]}, {job["column"]}): {error}。'
+                '仅交付相同观测范围的描述性点估计；原请求的置信区间/检验不可估计，'
+                '不返回 p 值、不补造误差条，不能解释为无显著差异或证明真实效果。')
+        job.update(descriptive)
+        plan['limitations'].append(note)
+        for figure in plan['figures']:
+            if job['id'] in figure['finding_ids']:
+                warning = (' Inference unavailable for ' + job['id']
+                           + ': insufficient observations or zero variance. Descriptive estimate only; '
+                           'do not display significance or invent uncertainty bounds for this finding.')
+                figure['instructions'] += warning
+                if 'Some requested intervals/tests are unavailable' not in figure['caption']:
+                    figure['caption'] += ' Some requested intervals/tests are unavailable; affected estimates are descriptive only.'
+        return result
+
+
 def regression_support(job, table, selected, used, rank):
     from .profiles import support
     columns, rows = table['columns'], table['rows']
@@ -159,19 +192,19 @@ def reference(job, inputs, models, views=None):
             if paired or not comparison:
                 values = x - y if paired else x
                 if len(values) < 2:
-                    raise ValueError('推断所需观测数不足')
+                    raise InferenceUnavailable('推断所需观测数不足')
                 df = len(values) - 1
                 se = float(values.std(ddof=1) / math.sqrt(len(values)))
             else:
                 if min(len(x), len(y)) < 2:
-                    raise ValueError('两组推断所需观测数不足')
+                    raise InferenceUnavailable('两组推断所需观测数不足')
                 a, b = x.var(ddof=1) / len(x), y.var(ddof=1) / len(y)
                 se = float(math.sqrt(a + b))
                 if a + b <= 0:
-                    raise ValueError('检验方差为零')
+                    raise InferenceUnavailable('检验方差为零')
                 df = float((a + b)**2 / (a * a / (len(x) - 1) + b * b / (len(y) - 1)))
             if se <= 0 or not math.isfinite(se):
-                raise ValueError('推断标准误为零或不可定义')
+                raise InferenceUnavailable('推断标准误为零或不可定义')
             if level:
                 radius = float(stats.t.ppf((1 + level) / 2, df) * se)
                 numeric.update(lower=numeric['value'] - radius, upper=numeric['value'] + radius)
@@ -230,6 +263,25 @@ def reference(job, inputs, models, views=None):
             provenance.setdefault(table_id, set()).add(source_row)
     return numeric, {'source_rows': [{'table_id': key, 'count': len(provenance[key])} for key in sorted(provenance)],
                      'n': n, 'unit': unit, 'excluded_n': None if dropped.get(job['table_id']) else excluded}
+
+
+def normalize_inference_fields(result, plan):
+    """Unrequested uncertainty is not an algorithm-owned output choice."""
+    if not isinstance(result, dict):
+        return result
+    normalized = dict(result)
+    for job in plan['jobs']:
+        numeric = result.get(job['id'])
+        if not isinstance(numeric, dict) or set(numeric) != {'value', 'lower', 'upper', 'statistic', 'p_value'}:
+            continue  # The verifier still reports malformed or missing results.
+        numeric = dict(numeric)
+        if job['interval_level'] is None:
+            numeric.update(lower=None, upper=None)
+        if (job['operation'] not in ('welch_t', 'paired_t')
+                and not (job['operation'] in ('pearson', 'spearman') and job['correlation_test'])):
+            numeric.update(statistic=None, p_value=None)
+        normalized[job['id']] = numeric
+    return normalized
 
 
 def verify(result, plan, inputs, references=None):

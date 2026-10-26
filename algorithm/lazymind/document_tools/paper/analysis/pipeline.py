@@ -11,9 +11,10 @@ import os
 from . import model
 from . import generated_executor as executor
 from .plan import validate_plan
+from .job_identity import JobReferenceError
 from .plan_repair import PlanRepairError, AnalysisFeasibilityError, UnverifiedMaterialClaim
 from .figure_plan import check_figure_plan, FigurePlanRepairError
-from .reference import verify, reference, select
+from .reference import verify, reference, reference_with_fallback, normalize_inference_fields, select
 from .schema import (
     ContractError, binding, digest, normalize_input, table_map, validate_analysis, validate_charts, VERSION,
 )
@@ -181,6 +182,10 @@ def execute_locked(inputs, plan, references, attempts):
                 rendered = executor.execute(payload)
                 diagnostics.save(f'computed-results-{attempt}.json', rendered['results'])
             with diagnostics.stage('numerical_verification', attempt=attempt):
+                normalized = normalize_inference_fields(rendered['results'], plan)
+                if normalized != rendered['results']:
+                    diagnostics.save(f'normalized-results-{attempt}.json', normalized)
+                rendered['results'] = normalized
                 checked = verify(rendered['results'], plan, inputs, references)
             history.append(dict(attempt=attempt, outcome='passed',
                                 code_sha256=hashlib.sha256(code.encode()).hexdigest()))
@@ -224,7 +229,7 @@ def run(raw_inputs):
                 figure_issues = []
             elif issues and candidate is not None:
                 with diagnostics.stage('plan_repair', attempt=attempt):
-                    candidate = model.repair_plan(inputs, candidate, issues)
+                    candidate = model.repair_plan(inputs, candidate, issues, previous_error=error)
                     diagnostics.save(f'plan-attempt-{attempt}.json', candidate)
             else:
                 with diagnostics.stage('plan_generation', attempt=attempt):
@@ -238,7 +243,7 @@ def run(raw_inputs):
                 references, failed_jobs = {}, []
                 for job in candidate['jobs']:
                     try:
-                        references[job['id']] = reference(job, inputs, models, views)
+                        references[job['id']] = reference_with_fallback(job, inputs, models, views, candidate)
                     except AnalysisFeasibilityError as exc:
                         failed_jobs.append(dict(job_id=job['id'], field=None, message=str(exc),
                                                 reason_code=exc.code, repair_scope='analytical_choice',
@@ -274,6 +279,8 @@ def run(raw_inputs):
             error = str(exc)[-4000:]
             planning.append(dict(attempt=attempt, outcome='failed', error=error,
                                  unverified_material_claims=exc.claims))
+        except JobReferenceError as exc:
+            raise ContractError('EXECUTION_FAILED', 'analysis.plan.references', str(exc)) from exc
         except ContractError as exc:
             if exc.code in ('MISSING_MATERIAL', 'EXECUTION_FAILED'):
                 raise

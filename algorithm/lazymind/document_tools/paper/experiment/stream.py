@@ -80,6 +80,8 @@ class ExperimentStream:
             return
         if not isinstance(candidate, dict):
             return
+        # Model fields are projected to the same preview filenames as host packaging.
+        code, config, dependencies = (candidate.get(k) for k in ('code', 'config', 'dependencies'))
         candidate = ExperimentDraft.discard_extra_model_fields(candidate)
         plan, explanation = candidate.get('plan'), candidate.get('explanation')
         if isinstance(plan, str) and plan:
@@ -89,6 +91,12 @@ class ExperimentStream:
                 self.phase('正在生成实验代码与运行说明', 30)
             self.publish('experiment_document', text)
         files = candidate.get('code_files')
+        if isinstance(code, str):
+            files = [{'path': 'experiment.py', 'content': code}]
+            if isinstance(config, dict):
+                files.append({'path': 'config.json', 'content': json.dumps(config, ensure_ascii=False, indent=2)})
+            if isinstance(dependencies, list) and all(isinstance(v, str) for v in dependencies):
+                files.append({'path': 'requirements.txt', 'content': '\n'.join(dependencies)})
         if isinstance(files, list):
             languages = {'experiment.py': 'python', 'config.json': 'json',
                          'requirements.txt': 'text', 'README.md': 'markdown'}

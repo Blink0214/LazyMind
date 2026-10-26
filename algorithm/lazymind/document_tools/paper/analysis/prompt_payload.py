@@ -21,6 +21,10 @@ def execution_plan(plan):
     defaults = {name: field.get_default(call_default_factory=True)
                 for name, field in Job.model_fields.items() if not field.is_required()}
     for job in jobs:
+        # Keep scientific execution switches explicit even when equal to defaults.
+        # Null means no interval, not permission for the model to choose 95%.
+        job.setdefault('interval_level', None)
+        job.setdefault('correlation_test', False)
         if 'alternative' in job:
             job['alternative'] = job['alternative'].replace('_', '-')
     defaults['alternative'] = defaults['alternative'].replace('_', '-')

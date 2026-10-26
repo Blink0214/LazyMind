@@ -177,7 +177,7 @@ def _paper_chunks(text: str, paper: dict, prompt_limit: int) -> list[str]:
 
 def _note_prompt(source: str, paper: dict) -> str:
     return PAPER_NOTE_PROMPT + '\n' + json.dumps(
-        {'paper_id': paper['id'], 'title': paper['title'], 'source': source}, ensure_ascii=False,
+        {'title': paper['title'], 'source': source}, ensure_ascii=False,
     )
 
 
@@ -253,6 +253,9 @@ def run(inputs: dict) -> dict:
     papers = prepare_papers(inputs.get('papers', []) or [], prompt_limit)
     material = {key: inputs.get(key) for key in ('topic', 'request', 'papers', 'question', 'evidence', 'mode')}
     material['papers'] = [{key: paper[key] for key in ('id', 'title', 'abstract')} for paper in papers]
+    from .material_bindings import MaterialBindings
+    bindings = MaterialBindings(papers)
+    material = bindings.model_view(material)
     guidance = ABSTRACT_PAPER_GUIDANCE if papers else NO_PAPER_GUIDANCE
     prompt = QUESTION_PROMPT.format(paper_guidance=guidance, topics='; '.join(CONTENT_TOPICS)) + (
         'Input materials (JSON):\n' + json.dumps(material, ensure_ascii=False)
@@ -265,4 +268,4 @@ def run(inputs: dict) -> dict:
     if re.match(r'^<think\b', markdown, flags=re.IGNORECASE):
         raise ValueError('研究选题输出格式错误：存在未闭合的思考内容。')
     _validate_question_markdown(markdown, inputs['mode'])
-    return {'question': markdown, 'is_demo': False}
+    return {'question': bindings.restore_citations(markdown), 'is_demo': False}
