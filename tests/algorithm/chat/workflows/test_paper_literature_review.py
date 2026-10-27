@@ -250,7 +250,7 @@ def test_workflow_streams_evidence_before_publication(tmp_path, monkeypatch, wit
     assert workflow.run_paper_step()['status'] == 'completed'
     published = next(e for e in events if e['type'] == 'artifact' and e['slot'] == slots[1])
     assert Path(published['value']['path']).read_text() == body
-    assert events.index(published) < next(i for i, e in enumerate(events) if e['type'] == 'artifact_stream_end')
+    assert next(i for i, e in enumerate(events) if e['type'] == 'artifact_stream_end') < events.index(published)
     assert all(e['slot'] == slots[1] for e in events if e['type'].startswith('artifact_stream'))
     assert any(e['type'] == 'progress' for e in events)
     assert any(e['type'] == 'text' and '正在生成' in e['text'] for e in events)

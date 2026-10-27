@@ -137,6 +137,19 @@ class ResponsePreview:
         self.reasoning_bytes = 0
         self.reasoning_truncated = False
         self.received_reasoning = False
+        from ..runtime_events import StructuredPreview
+        owner = next((s for s in recorder.summary['stages'] if s['id'] == self.owner), {})
+        self.document_preview = StructuredPreview(self._interpretation_preview) if owner.get('stage') == 'interpretation' else None
+
+    @staticmethod
+    def _interpretation_preview(value):
+        parts = ['# 数据分析', '', '> 结论生成中，尚未完成最终校验。']
+        if isinstance(value.get('summary'), str):
+            parts.extend(['', '## 分析结论', value['summary']])
+        for answer in value.get('answers', []) if isinstance(value.get('answers'), list) else []:
+            if isinstance(answer, dict) and isinstance(answer.get('conclusion'), str):
+                parts.extend(['', answer['conclusion']])
+        return '\n'.join(parts) if len(parts) > 3 else ''
 
     def _append_reasoning(self, text):
         if not text:
@@ -243,6 +256,10 @@ class ResponsePreview:
             self.text += self.buffer[:MAX_OUTPUT - len(self.text)]
         self.buffer = ''
         self._publish('streaming')
+        if self.document_preview:
+            self.document_preview.buffer = self.text
+            if time.monotonic() - self.document_preview.last_parse >= 0.2:
+                self.document_preview.flush()
 
     def finish(self, raw):
         from ..plotting.code_response import response_text
@@ -268,6 +285,9 @@ class ResponsePreview:
         self.truncated = len(text.encode('utf-8')) > MAX_OUTPUT
         self.text = text[:MAX_OUTPUT]
         self._publish('complete' if self.received_text and not self.leading else 'buffered', force=True)
+        if self.document_preview:
+            self.document_preview.buffer = text
+            self.document_preview.flush()
 
     def abort(self):
         self._publish_reasoning('interrupted', force=True)

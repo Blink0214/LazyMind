@@ -11,6 +11,72 @@ from lazymind.document_tools.paper.runtime_events import bind_runtime_events
 OUTLINE = '# Test paper\n\n## Method\n\n## Limitations'
 
 
+@pytest.mark.parametrize('publication_fails', [False, True])
+def test_completed_revision_is_one_delta_and_still_supports_publication_failure(publication_fails):
+    emitted = []
+    body = '# Revised manuscript\n\n' + '完整修订结果。' * 3000
+    with bind_runtime_events(emitted.append, 'revise_document_document') as events:
+        events.completed_preview(body)
+        assert [e['type'] for e in emitted] == [
+            'artifact_stream_start', 'artifact_stream', 'artifact_stream_end',
+        ]
+        assert emitted[1]['delta'] == body
+        assert not any(e.get('progress') == 100 for e in emitted)
+        if publication_fails:
+            events.abort()
+            assert emitted[-1]['type'] == 'artifact_stream_abort'
+        else:
+            events.complete()
+            assert emitted[-1]['progress'] == 99  # Core confirms publication separately.
+        count = len(emitted)
+        events.completed_preview('late text')
+        events.delta('late delta')
+        assert len(emitted) == count
+
+
+@pytest.mark.parametrize('validation_fails', [False, True])
+def test_finished_draft_preview_flushes_before_publication(validation_fails):
+    emitted = []
+    with bind_runtime_events(emitted.append, 'write_document_document') as events:
+        events.progress(80, '正文已生成')
+        events.delta(OUTLINE)
+        events.finish_preview()
+        events.finish_preview()
+        assert sum(e['type'] == 'artifact_stream_end' for e in emitted) == 1
+        assert not any(e.get('progress') == 100 for e in emitted)
+        # Validation still runs after the display queue is flushed.
+        events.progress(90, '正在检查全文')
+        if validation_fails:
+            events.abort()
+            events.abort()
+            assert sum(e['type'] == 'artifact_stream_abort' for e in emitted) == 1
+            assert not any(e.get('progress') == 100 for e in emitted)
+        else:
+            events.complete()
+            assert emitted[-1]['progress'] == 99  # Core confirms publication separately.
+            assert sum(e['type'] == 'artifact_stream_end' for e in emitted) == 1
+    streams = [e for e in emitted if e['type'].startswith('artifact_stream')]
+    assert len({e['stream_id'] for e in streams}) == 1
+    assert [e['chunk_index'] for e in streams] == sorted({e['chunk_index'] for e in streams})
+    assert ''.join(e['delta'] for e in streams if 'delta' in e) == OUTLINE
+
+
+def test_finished_preview_can_restart_without_reusing_old_content():
+    emitted = []
+    with bind_runtime_events(emitted.append, 'write_document_document') as events:
+        events.delta('old')
+        events.finish_preview()
+        events.restart('new')
+        events.delta(' draft')
+        events.finish_preview()
+        events.abort()
+    starts = [e for e in emitted if e['type'] == 'artifact_stream_start']
+    assert len(starts) == 2
+    latest = [e for e in emitted if e.get('stream_id') == starts[-1]['stream_id']]
+    assert ''.join(e['delta'] for e in latest if 'delta' in e) == 'new draft'
+    assert latest[-1]['type'] == 'artifact_stream_abort'
+
+
 def test_outline_step_only_calls_public_outline_generation(monkeypatch):
     toolkit = Mock()
     def stream_outline(**kwargs):
@@ -30,7 +96,7 @@ def test_outline_step_only_calls_public_outline_generation(monkeypatch):
         result = write_outline.run(inputs)
         events.complete()
     assert any(event.get('current_phase') == '正在输出大纲内容' for event in emitted)
-    assert emitted[-1]['current_phase'] == '大纲已保存，等待确认'
+    assert emitted[-1]['current_phase'] == '产物已生成，正在确认发布'
     deltas = [event for event in emitted if event.get('type') == 'artifact_stream']
     assert deltas
     assert ''.join(event['delta'] for event in deltas) == OUTLINE

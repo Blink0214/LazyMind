@@ -1,6 +1,7 @@
 """Offline checks for passing F4 materials into writing, review and revision."""
 import copy
 import json
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -8,6 +9,34 @@ import pytest
 from lazymind.document_tools.paper import api, contracts, peer_review, workflow
 from lazymind.document_tools.paper.writing import write_document, revise_document
 from lazymind.document_tools.paper.analysis.schema import binding, normalize_input
+
+
+@pytest.mark.parametrize('origin', ['synthetic', 'executed', 'legacy', 'real'])
+def test_unchanged_analysis_document_survives_restore(f4_result, origin):
+    from lazymind.document_tools.paper.analysis.render import render
+
+    inputs, output = f4_result
+    pool = workflow.pool_from_business(inputs)
+    is_demo = origin in {'synthetic', 'executed', 'legacy'}
+    provenance = None
+    if origin in {'synthetic', 'executed'}:
+        example = json.loads((Path(__file__).resolve().parents[4]
+                              / 'tests/fixtures/paper-writing/experiment.json').read_text())
+        provenance = copy.deepcopy(example['output']['result_meta'])
+        if origin == 'executed':
+            provenance['execution_status'] = 'succeeded'
+        workflow.add_material(pool, 'result_meta', provenance, [], [], is_demo=is_demo)
+    ref = workflow.add_material(pool, 'analysis', output['analysis'], [], [], is_demo=is_demo)
+    pool['history'].append({'node': 'F4', 'inputs': [], 'outputs': [ref]})
+    pool['sequence'] = 1
+    document = workflow.with_source_notice(
+        render(output['analysis'], '数据分析 · ' + pool['topic']), is_demo, provenance)
+    restored = workflow.pool_from_inputs({'data_analysis_pool': pool, 'data_analysis_document': document})
+    assert restored == pool
+    assert workflow.business_input('write_outline', restored)['analysis'] == output['analysis']
+    with pytest.raises(ValueError, match='STALE_MATERIAL'):
+        workflow.pool_from_inputs({'data_analysis_pool': pool,
+                                  'data_analysis_document': document + '\n改写后的结论'})
 
 
 @pytest.fixture
@@ -39,7 +68,6 @@ def test_f4_materials_reach_writing_review_and_revision(f4_result, monkeypatch, 
     monkeypatch.setattr(api.ALGORITHMS['data_analysis'], 'run', lambda _: copy.deepcopy(output))
     # Contract handoff test: generation is isolated; real Writer has separate coverage.
     writing = Mock(side_effect=lambda value: dict(
-        outline=value['outline'] or '# 稿件\n\n## 结果',
         manuscript=(value['manuscript'] or '# 稿件\n\n## 结果\n\n当前样本平均得分为二分。') + '\n补充样本范围。',
         is_demo=False))
     monkeypatch.setattr(write_document, 'run', writing)
@@ -51,6 +79,7 @@ def test_f4_materials_reach_writing_review_and_revision(f4_result, monkeypatch, 
     monkeypatch.setattr(peer_review, 'call_once', review_call)
 
     f4_pool = workflow.execute_step('data_analysis', workflow.pool_from_business(inputs))['pool']
+    workflow.add_material(f4_pool, 'outline', '# 稿件\n\n## 结果', [], [])
     f4_before = copy.deepcopy(f4_pool)
     written = workflow.execute_step('write_document', f4_pool)['pool']
     received = writing.call_args.args[0]

@@ -170,6 +170,29 @@ def test_csv_preview_escapes_formulas_but_input_is_preserved():
     assert "'=1+1" not in csv_text(table, spreadsheet_safe=False)
 
 
+def test_downloaded_results_can_enter_f4_without_reauthoring(example, tmp_path):
+    files = export_experiment(example['output'], str(tmp_path), preference='allow_local')
+    manifest = json.loads(Path(files['experiment_results']).read_text())
+    before = copy.deepcopy(manifest)
+    # The attachment validator and the runtime initializer must both accept the original file.
+    workflow.pool_from_business(manifest)
+    request = '分析附件中的实验结果，不运行实验'
+    pool = workflow.initialize_pool({'paper_input': files['experiment_results']}, request)
+    value = workflow.business_input('data_analysis', pool)
+    assert value['data']['rows'] == manifest['experiment']['results']['rows']
+    assert value['data']['columns'] == manifest['experiment']['results']['columns']
+    assert workflow.material(pool, 'result_meta')['content'] == manifest['result_meta']
+    assert '模型生成' in value['data_context']['description']
+    assert not {'execution_preference', 'execution_available', 'notice'} & pool.keys()
+    assert manifest == before
+    with pytest.raises(ValueError, match='未知字段'):
+        workflow.pool_from_business({**manifest, 'unexpected': True})
+    invalid = copy.deepcopy(manifest)
+    invalid['experiment']['results']['rows'][0].append(123)
+    with pytest.raises(ValueError):
+        workflow.pool_from_business(invalid)
+
+
 def experiment_pool(example):
     pool = workflow.pool_from_business(dict(example['input'], data={'columns': ['old'], 'rows': [[999]]}))
     derived = list(pool['current'].values())
@@ -446,20 +469,20 @@ def test_streams_research_code_and_results_before_final_response(example):
     assert stream.contents['experiment_document'] == example['output']['experiment']['report']
     stream.close()
     assert not any(e['type'] == 'artifact' for e in events)  # previews never publish a committed result
-    assert all(len(e['delta']) == 1 for e in events if e['type'] == 'artifact_stream')
+    assert all(len(e['delta']) <= 4096 for e in events if e['type'] == 'artifact_stream')
     assert all(emitter._closed for emitter in stream.streams.values())
     progress = [e['progress'] for e in events if e['type'] == 'progress']
     assert progress == sorted(progress)
 
 
-def test_stream_reveals_each_character_even_for_a_whole_model_paragraph():
+def test_stream_preserves_model_chunks_without_character_replay():
     from lazymind.document_tools.paper.experiment.stream import ExperimentStream
     events = []
     stream = ExperimentStream(events.append, 'T', ['experiment_document'])
     text = '逐字打印，中英文 mixed，emoji 😀。\n第二行。'
     stream.publish('experiment_document', text)
     deltas = [event['delta'] for event in events if event['type'] == 'artifact_stream']
-    assert deltas == list(text)
+    assert deltas == [text]
     assert ''.join(deltas) == text
     stream.close()
 
@@ -600,7 +623,7 @@ def test_validated_stream_replaces_invalid_preview_with_repaired_result(example)
     stream.validated(example['output'])
     assert '"trial"' in stream.contents['experiment_results']
     assert 'incomplete preview' not in stream.contents['experiment_results']
-    assert all(len(e['delta']) == 1 for e in events if e['type'] == 'artifact_stream')
+    assert all(len(e['delta']) <= 4096 for e in events if e['type'] == 'artifact_stream')
     stream.close()
 
 

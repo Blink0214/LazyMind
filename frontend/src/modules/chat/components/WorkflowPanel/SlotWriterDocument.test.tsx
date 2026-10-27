@@ -87,39 +87,29 @@ import type { SlotFooterAction } from './slotEditingContext';
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('completed artifact stream', () => {
-  it.each(['ended', 'aborted', 'ready', 'no-deltas'] as const)(
-    'flushes buffered text immediately on %s and cancels its animation', (completion) => {
-      const pending = new Map<number, FrameRequestCallback>();
-      let frame = 0;
-      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-        pending.set(++frame, callback);
-        return frame;
-      });
-      const cancel = vi.fn((id: number) => pending.delete(id));
-      vi.stubGlobal('cancelAnimationFrame', cancel);
-      const stream: TaskArtifactStream = {
-        task_id: 'experiment', slot: 'report', content_type: 'text/markdown',
-        stream_id: 'experiment-report', chunk_index: 4, state: 'streaming',
-        content: 'ABCDE', deltas: ['A', 'B', 'C', 'D', 'E'],
-      };
-      const view = render(<SlotMarkdownStream stream={stream} />);
-      expect(screen.queryByText('ABCDE')).not.toBeInTheDocument();
-      const previousFrames = [...pending.keys()];
-      expect(previousFrames.length).toBeGreaterThan(0);
-      view.rerender(<SlotMarkdownStream stream={completion === 'no-deltas'
-        ? { ...stream, deltas: undefined }
-        : { ...stream, state: completion }} />);
-      expect(screen.getByText('ABCDE')).toBeInTheDocument();
-      for (const id of previousFrames) expect(cancel).toHaveBeenCalledWith(id);
-      act(() => {
-        for (const callback of pending.values()) callback(0);
-        pending.clear();
-      });
-      expect(screen.getByText('ABCDE')).toBeInTheDocument();
-      view.unmount();
-    },
-  );
+describe('artifact stream rendering', () => {
+  it('shows an entire network batch immediately, including its final character', () => {
+    const raf = vi.fn(() => 1);
+    vi.stubGlobal('requestAnimationFrame', raf);
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    const content = '# 完整结果\n' + '完整修订正文。'.repeat(3000) + '全文结束';
+    const stream: TaskArtifactStream = {
+      task_id: 'revision', slot: 'revise_document_document', content_type: 'text/markdown',
+      stream_id: 'revision-preview', chunk_index: 10000, state: 'streaming',
+      content, deltas: Array.from(content),
+    };
+    const view = render(<SlotMarkdownStream stream={stream} />);
+    expect(view.container.querySelector('.workflow-slot__artifact-body')?.textContent).toBe(content);
+    // Only scroll following uses a frame; no text playback is scheduled.
+    expect(raf).toHaveBeenCalledTimes(1);
+    view.rerender(<SlotMarkdownStream stream={{ ...stream, state: 'ended' }} />);
+    expect(view.container.querySelector('.workflow-slot__artifact-body')?.textContent).toBe(content);
+    view.rerender(<SlotMarkdownStream stream={{ ...stream, state: 'ready', final_content: '已发布完整正文' }} />);
+    expect(screen.getByText('已发布完整正文')).toBeInTheDocument();
+    view.rerender(<SlotMarkdownStream stream={{ ...stream, stream_id: 'retry', content: '新执行', deltas: ['新', '执行'] }} />);
+    expect(screen.getByText('新执行')).toBeInTheDocument();
+    expect(screen.queryByText('已发布完整正文')).not.toBeInTheDocument();
+  });
 });
 
 function deferred<T>() {

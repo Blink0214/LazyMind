@@ -232,6 +232,8 @@ export const draftStore = {
 };
 
 export interface SlotRevision {
+  producer_attempt_id?: string;
+  attempt?: number;
   artifact_id?: string;
   document?: Descriptor;
   document_error?: { code: string; retryable: boolean };
@@ -879,6 +881,7 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => ({
         // Steps are attempt history only; they never define Past/Ready locally.
         if (session?.session_id) {
           try {
+            const loadedVersion = session.state_version ?? 0;
             const projectionRes = await WorkflowSessionApi().getProjection(
               session.session_id, { silentError: true } as never,
             );
@@ -889,6 +892,12 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => ({
             session.steps = workflowSnapshotSteps(session.session_id, snapshot.attempt_history) ?? [];
             session.current_step_id = snapshot.current_step_id ?? session.current_step_id;
             session.status = reconcileWorkflowSessionStatus(snapshot.status ?? session.status, session.projection);
+            // Publication may commit between the session and projection reads.
+            // Fetch slots after that commit instead of pairing new success with old content.
+            if ((snapshot.state_version ?? 0) > loadedVersion) {
+              const result = await WorkflowSessionApi().getSlots(session.session_id);
+              session.slots = result?.data?.data?.slots ?? session.slots;
+            }
           } catch (error) {
             const cached = get().sessionByConversation[conversationId];
             session.steps = cached?.session_id === session.session_id ? cached.steps : [];
@@ -936,11 +945,17 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => ({
 
   refreshSlots: async (conversationId, sessionId) => {
     try {
+      const version = get().sessionByConversation[conversationId]?.state_version ?? 0;
       const res = await WorkflowSessionApi().getSlots(sessionId);
       const slots: SlotRevision[] = res?.data?.data?.slots ?? [];
+      const current = get().sessionByConversation[conversationId];
+      if (current?.session_id === sessionId && (current.state_version ?? 0) > version) {
+        await get().loadActiveSession(conversationId, { silentError: true });
+        return;
+      }
       set((state) => {
         const session = state.sessionByConversation[conversationId];
-        if (!session) return state;
+        if (!session || session.session_id !== sessionId) return state;
         return {
           sessionByConversation: {
             ...state.sessionByConversation,
@@ -1143,11 +1158,9 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => ({
       // Closing and reconnecting without Last-Event-ID asks the server for a fresh snapshot.
       workflowStreams.get(sessionId)?.subscription.resync();
     }
-    if (event.type === 'attempt.patch' || event.type === 'step.patch' || event.type === 'workflow.patch') {
+    if (['attempt.patch', 'step.patch', 'workflow.patch', 'workflow.snapshot', 'workflow.waiting',
+      'workflow.completed', 'artifact.upsert', 'artifact.stale'].includes(event.type)) {
       void get().loadActiveSession(conversationId, { silentError: true });
-    }
-    if (event.type === 'artifact.upsert') {
-      void get().refreshSlots(conversationId, sessionId);
     }
     void get().refreshOrdinarySession(conversationId, sessionId);
   },

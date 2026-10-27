@@ -1068,3 +1068,17 @@ func TestSaveWorkflowDraftRejectsEditsDuringGeneration(t *testing.T) {
 		})
 	}
 }
+
+func TestSlotDTOExposesAttemptIdentityForPreviewHandoff(t *testing.T) {
+	raw, err := json.Marshal(toSlotDTO(&orm.WorkflowSlotRevision{StepID: "experiment", Attempt: 2, ProducerAttemptID: "attempt-2"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatal(err)
+	}
+	if value["attempt"] != float64(2) || value["producer_attempt_id"] != "attempt-2" {
+		t.Fatalf("slot identity = %s", raw)
+	}
+}

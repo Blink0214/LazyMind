@@ -262,7 +262,7 @@ def test_repair_prompt_contains_only_bad_issues_and_numbered_source(example):
     assert '只用于有效意见的标记' not in prompt
     payload = json.loads(prompt.split('Input JSON:\n', 1)[1])
     assert 'manuscript' not in payload['inputs']
-    assert payload['inputs']['manuscript_lines'][2] == {'line': 3, 'text': '比较两种证据组织方法。'}
+    assert payload['inputs']['manuscript_lines'].splitlines()[2] == '3: 比较两种证据组织方法。'
 
 
 def test_repeated_field_tag_does_not_split_or_expand_issues(example):
@@ -303,6 +303,34 @@ def test_repair_payload_limit_does_not_silently_truncate_source(example):
     inputs = {**example['input'], 'manuscript': '原文' * peer_review.MAX_REPAIR_CHARS}
     with pytest.raises(ValueError, match='超过限制'):
         peer_review.repair_prompt(inputs, {'summary': {'value': '', 'errors': []}})
+
+
+def test_quote_repair_does_not_resend_large_analysis_or_figures(example):
+    inputs = copy.deepcopy(example['input'])
+    inputs.update(analysis={'report': 'analysis-only-marker' * peer_review.MAX_REPAIR_CHARS},
+                  charts=[{'svg': 'figure-only-marker' * peer_review.MAX_REPAIR_CHARS}])
+    before = copy.deepcopy(inputs)
+    candidate = copy.deepcopy(example['model_response'])
+    candidate['issues'][0]['quote'] = 'An inexact quotation'
+    targets = peer_review.repair_targets(candidate, inputs['manuscript'])
+    prompt = peer_review.repair_prompt(inputs, targets)
+    payload = json.loads(prompt.split('Input JSON:\n', 1)[1])
+    assert set(payload['inputs']) == {'topic', 'request', 'manuscript_lines'}
+    assert '\n'.join(line.split(': ', 1)[1] for line in payload['inputs']['manuscript_lines'].splitlines()) == inputs['manuscript']
+    assert payload['targets'] == targets
+    assert 'analysis-only-marker' not in prompt and 'figure-only-marker' not in prompt
+    assert inputs == before
+
+
+def test_numbered_full_manuscript_fits_repair_budget_without_json_per_line(example):
+    manuscript = '\n'.join(f'段落{i}：' + '论文原文' * 15 for i in range(250))
+    inputs = {**example['input'], 'manuscript': manuscript}
+    prompt = peer_review.repair_prompt(inputs, {'issues.0': {
+        'value': example['model_response']['issues'][0], 'errors': ['quote not found']}})
+    payload = json.loads(prompt.split('Input JSON:\n', 1)[1])
+    restored = '\n'.join(line.split(': ', 1)[1] for line in payload['inputs']['manuscript_lines'].splitlines())
+    assert restored == manuscript
+    assert len(prompt) < peer_review.MAX_REPAIR_CHARS
 
 
 def test_parse_failure_logs_metadata_without_response_content(caplog, monkeypatch):

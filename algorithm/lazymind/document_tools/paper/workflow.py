@@ -201,6 +201,11 @@ def pool_from_business(value: dict) -> dict:
         raise ValueError('入口材料必须是 JSON 对象')
     if value.get('schema') == SCHEMA:
         return validate_pool(copy.deepcopy(value))  # Existing pinned integrations.
+    export_fields = {'execution_preference', 'execution_available', 'notice'}
+    if {'experiment', 'result_meta'} <= value.keys() and export_fields & value.keys():
+        # Download metadata is not business data or permission to execute code.
+        value = {key: copy.deepcopy(item) for key, item in value.items() if key not in export_fields}
+        value.setdefault('topic', '实验结果分析')
     if set(value) - {'topic', 'request', 'demo', 'constraints', 'selected_issue_ids', *KINDS}:
         raise ValueError('入口材料含未知字段')
     if type(value.get('demo', False)) is not bool:
@@ -324,6 +329,21 @@ def render_material(kind: str, content: Any) -> str:
     return '# ' + kind + '\n\n```json\n' + json.dumps(content, ensure_ascii=False, indent=2) + '\n```'
 
 
+def with_source_notice(document: str, is_demo: bool, provenance: dict | None = None) -> str:
+    """Publish and restore documents with the same provenance decoration."""
+    if not is_demo:
+        return document
+    if provenance:
+        from .experiment.handoff import source_notice
+        notice = '> ' + source_notice(provenance)
+    else:
+        notice = '> 演示数据，仅用于流程测试，不是真实研究结果。'
+    if notice not in document:
+        first, _, rest = document.partition('\n')
+        return first + '\n\n' + notice + '\n' + rest
+    return document
+
+
 def routes_after(pool: dict) -> list[str]:
     """Refinement can continue to experiments; initial topic selection still requires literature."""
     history = pool['history']
@@ -395,14 +415,7 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False, *
     else:
         document = render_material(main, generated[main])
     provenance = generated.get('result_meta') or (material(pool, 'result_meta') or {}).get('content')
-    if provenance:
-        from .experiment.handoff import source_notice
-        notice = '> ' + source_notice(provenance)
-    else:
-        notice = '> 演示数据，仅用于流程测试，不是真实研究结果。'
-    if is_demo and notice not in document:
-        first, sep, rest = document.partition('\n')
-        document = first + '\n\n' + notice + '\n' + rest
+    document = with_source_notice(document, is_demo, provenance)
     # Keep canonical manuscripts unchanged by display notices.
     if main == 'review':
         generated[main] = document
@@ -485,9 +498,8 @@ def pool_from_inputs(inputs: dict[str, Any]) -> dict:
                 from .analysis.render import render
                 from .analysis.schema import ContractError
                 previous_document = render(content, '数据分析 · ' + pool['topic'])
-                if current['mock']:
-                    first, _, rest = previous_document.partition('\n')
-                    previous_document = first + '\n\n> 演示数据，仅用于流程测试，不是真实研究结果。\n' + rest
+                previous_document = with_source_notice(
+                    previous_document, current['mock'], (material(pool, 'result_meta') or {}).get('content'))
                 if previous_document != document:
                     raise ContractError('STALE_MATERIAL', 'analysis',
                                         '分析报告已编辑；编辑稿保留，请将改动作为本轮要求重新分析，不能将修改后的数字视为已复算结果')
@@ -649,30 +661,18 @@ def run_paper_step() -> dict:
     from lazymind.chat.engine.subagent.context import require_context
 
     context = require_context()
-    if context.params.get('step_id') in {'literature_review', 'write_outline', 'write_document', 'revise_document'}:
-        from .runtime_events import bind_runtime_events
-        with bind_runtime_events(context.emit, f"{context.params['step_id']}_document") as events:
-            events.progress(5, '正在读取研究材料')
-            result = _run_paper_step(context)
-            events.complete()
-            return result
-    if context.params.get('step_id') == 'peer_review':
-        from .peer_review import stage
-        with stage('workflow', getattr(context, 'task_id', 'peer_review')):
-            return _run_paper_step(context)
-    stream = None
-    if context.params.get('step_id') == 'experiment':
-        from .experiment.stream import ExperimentStream
-        stream = ExperimentStream(context.emit, '实验研究', context.output_slots)
-    try:
+    from .runtime_events import bind_runtime_events
+
+    step = context.params.get('step_id')
+    with bind_runtime_events(context.emit, f'{step}_document') as events:
+        events.progress(5, '正在读取研究材料')
+        stream = None
+        if step == 'experiment':
+            from .experiment.stream import ExperimentStream
+            stream = ExperimentStream(context.emit, '实验研究', context.output_slots)
         result = _run_paper_step(context, stream)
-    except BaseException as error:
-        if stream:
-            stream.close(error)
-        raise
-    if stream:
-        stream.close()
-    return result
+        events.complete()
+        return result
 
 
 def _run_paper_step(context, stream=None) -> dict:
@@ -827,6 +827,12 @@ def _run_paper_step(context, stream=None) -> dict:
                     exported.write_bytes(base64.b64decode(encoded, validate=True))
                     artifacts.append({'key': 'analysis_chart', 'content_type': 'file', 'value': str(exported),
                                       'caption': f'{figure.get("caption") or figure["title"]} ({extension.upper()})'})
+    from .runtime_events import current_events, report_progress
+    events = current_events()
+    if events:
+        for artifact in artifacts:
+            if artifact['key'].endswith('_document'):
+                events.completed_preview(artifact['value'], artifact['key'])
     # Validate all publication dependencies before writing, and never overwrite a prior run.
     publication_dir = Path(tempfile.mkdtemp(prefix='paper-output-', dir=context.workspace_path))
     # Publish actual named files; the existing document projection supplies the editor.

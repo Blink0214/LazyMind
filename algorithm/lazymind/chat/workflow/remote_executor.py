@@ -272,7 +272,9 @@ class RemoteWorkflowExecutor:
                             if kind in {'task_start', 'progress'}:
                                 await self.runtime.progress(client, attempt_id, lease, {
                                     'progress': event.get('progress', 0),
-                                    'phase': event.get('current_phase', kind)})
+                                    'phase': event.get('current_phase', kind),
+                                    **({'public_display': event['public_display']}
+                                       if 'public_display' in event else {})})
                             elif kind == 'done':
                                 terminal_event = event
                                 summary = str(event.get('summary') or '')

@@ -34,6 +34,16 @@ def log_event(event, **metadata):
 @contextmanager
 def stage(name, trace_id, *, heartbeat=False, progress=None, **metadata):
     started = time.monotonic()
+    from .runtime_events import current_events
+    events = current_events()
+    labels = {'input_validation': (10, '正在读取并校验稿件'),
+              'model_response': (35, '正在生成审稿意见'), 'json_parse': (70, '正在解析审稿结果'),
+              'schema_and_quote_validation': (80, '正在核验意见与原文引用'),
+              'targeted_repair': (85, '正在修正审稿意见'), 'report_rendering': (90, '正在整理审稿报告')}
+    stage_id = uuid.uuid4().hex if events is not None and name in labels else None
+    if stage_id:
+        percent, title = labels[name]
+        events.begin_stage(stage_id, title, percent)
     log_event('stage_start', trace_id=trace_id, stage=name, **metadata)
     done = Event()
 
@@ -49,6 +59,8 @@ def stage(name, trace_id, *, heartbeat=False, progress=None, **metadata):
     try:
         yield
     except Exception as error:
+        if stage_id:
+            events.end_stage(stage_id, error)
         causes, seen, cause = [], set(), error
         while cause is not None and id(cause) not in seen and len(causes) < 8:
             seen.add(id(cause))
@@ -59,6 +71,8 @@ def stage(name, trace_id, *, heartbeat=False, progress=None, **metadata):
                   error_type=type(error).__name__, cause_types=causes)
         raise
     else:
+        if stage_id:
+            events.end_stage(stage_id)
         log_event('stage_completed', trace_id=trace_id, stage=name,
                   elapsed_s=round(time.monotonic() - started, 3))
     finally:
@@ -198,9 +212,11 @@ def apply_repair(candidate: dict, targets: dict, repair: ReviewRepair, manuscrip
 
 
 def repair_prompt(inputs: dict, targets: dict) -> str:
-    context = {key: value for key, value in inputs.items() if key != 'manuscript'}
-    context['manuscript_lines'] = [{'line': index, 'text': line}
-                                   for index, line in enumerate(inputs['manuscript'].splitlines(), 1)]
+    # Repair schema/quotation defects, not the scientific review. Re-sending full
+    # analysis tables and figures can exhaust the repair budget for a single quote.
+    context = {key: inputs[key] for key in ('topic', 'request') if key in inputs}
+    context['manuscript_lines'] = '\n'.join(
+        f'{index}: {line}' for index, line in enumerate(inputs['manuscript'].splitlines(), 1))
     prompt = REPAIR_PROMPT + '\n\nInput JSON:\n' + json.dumps({
         'inputs': context, 'targets': targets, 'issue_schema': RepairedIssue.model_json_schema(),
     }, ensure_ascii=False)
@@ -251,6 +267,21 @@ def call_once(reviewer: WriterToolBase, prompt: str, schema, trace_id=None):
     started, received = time.monotonic(), False
     counts = {'text_chars': 0, 'think_chars': 0, 'deltas': 0}
     last_delta = None
+    from .runtime_events import StructuredPreview
+
+    def render_preview(value):
+        # Partial review objects remain previews; strict quote/schema checks follow.
+        parts = ['# 模拟审稿', '', '> 生成中的预览，尚未完成意见与原文校验。']
+        if isinstance(value.get('summary'), str):
+            parts.extend(['', '## 总体评价', value['summary']])
+        for issue in value.get('issues', []) if isinstance(value.get('issues'), list) else []:
+            if isinstance(issue, dict):
+                for key, label in (('problem', '问题'), ('suggestion', '修改建议')):
+                    if isinstance(issue.get(key), str):
+                        parts.extend(['', f'### {label}', issue[key]])
+        return '\n'.join(parts) if len(parts) > 3 else ''
+
+    preview = StructuredPreview(render_preview) if schema is ReviewResult else None
 
     def progress():
         return {**counts, 'idle_s': round(time.monotonic() - last_delta, 3) if last_delta else None}
@@ -259,6 +290,8 @@ def call_once(reviewer: WriterToolBase, prompt: str, schema, trace_id=None):
         nonlocal received, last_delta
         if not isinstance(event, dict):
             return
+        if preview is not None:
+            preview(event)
         if event.get('tag') == 'runtime_event':
             runtime = event.get('runtime_event', {})
             data = runtime.get('data', {})
@@ -286,6 +319,8 @@ def call_once(reviewer: WriterToolBase, prompt: str, schema, trace_id=None):
                model_name=model_name if isinstance(model_name, str) else None,
                prompt_chars=len(prompt), streaming=True):
         response = model(prompt)
+        if preview is not None:
+            preview.flush()
     log_event('model_response', trace_id=trace_id, schema=schema.__name__,
               response_chars=len(response) if isinstance(response, str) else 0, **progress())
     if isinstance(response, str):

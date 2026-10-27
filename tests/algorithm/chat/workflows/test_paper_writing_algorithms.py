@@ -530,7 +530,7 @@ def test_f7_rejects_invalid_model_output_without_publishing(invalid, monkeypatch
         {'id': 'P1', 'title': '论文', 'text': '论文内容'},
     ]})
     before = copy.deepcopy(pool)
-    with pytest.raises(ValueError, match='阅读心得输出'):
+    with pytest.raises(ValueError, match='阅读心得输出|未闭合的思考内容'):
         tools.execute_step('reading_reflection', pool)
     assert pool == before
 

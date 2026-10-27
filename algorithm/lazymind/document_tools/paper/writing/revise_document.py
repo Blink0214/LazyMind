@@ -102,6 +102,7 @@ def _bounded_replacements(source, allowed, generated):
     if not replacements.replacements:
         raise ValueError('Writer returned no manuscript edits.')
     located = []
+    matched_ranges = []
     for replacement in replacements.replacements:
         ref = replacement.content_ref
         if ref is None or ref.document_root:
@@ -114,11 +115,26 @@ def _bounded_replacements(source, allowed, generated):
             raise ValueError('Replacement text must match exactly once in its original scope.')
         start += source[start:end].index(replacement.old_string)
         end = start + len(replacement.old_string)
-        if not _within_range(start, end, allowed):
+        matched_ranges.append((start, end))
+        # Writer may include unchanged surrounding text to make a replacement
+        # unique. Check what actually changes, not that matching context.
+        old, new = replacement.old_string, replacement.new_string
+        prefix = 0
+        while prefix < min(len(old), len(new)) and old[prefix] == new[prefix]:
+            prefix += 1
+        old_end, new_end = len(old), len(new)
+        while old_end > prefix and new_end > prefix and old[old_end - 1] == new[new_end - 1]:
+            old_end -= 1
+            new_end -= 1
+        changed_start, changed_end = start + prefix, start + old_end
+        if not _within_range(changed_start, changed_end, allowed):
             raise ValueError('Writer replacement exceeds the planned modification scope.')
-        located.append((start, end, replacement))
+        located.append((changed_start, changed_end, replacement))
     located.sort(key=lambda item: item[0])
-    if any(left[1] > right[0] for left, right in zip(located, located[1:])):
+    # The shared applier still replaces the full strings, so overlapping matching
+    # contexts remain unsafe even when their changed characters are disjoint.
+    matched_ranges.sort()
+    if any(left[1] > right[0] for left, right in zip(matched_ranges, matched_ranges[1:])):
         raise ValueError('Writer returned overlapping manuscript edits.')
     replacements.replacements = [item[2] for item in reversed(located)]
     return replacements.model_dump(), located
@@ -217,7 +233,7 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
                          check_quality=False, check_length=False)
     events = current_events()
     if events:
-        events.delta(body)  # Match public Writer targeted revision: show the completed full text once.
+        events.completed_preview(body)
     return {'manuscript': body, 'is_demo': False}
 
 def run(inputs):

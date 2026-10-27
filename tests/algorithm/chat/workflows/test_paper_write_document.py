@@ -17,6 +17,38 @@ OUTLINE = '# 方法比较\n\n## 方法\n\n## 结果\n\n## 局限'
 BODY = '仅比较单次得分。新方法得分高 15 分；不能推断统计显著性。'
 
 
+@pytest.mark.parametrize('defect', [None, 'structure', 'reference', 'chart'])
+def test_draft_defers_semantic_review_but_keeps_hard_checks(monkeypatch, defect):
+    from lazymind.document_tools.paper.writing import write_document
+
+    inputs = contracts.validate_input('write_document', {'topic': '方法比较', 'outline': OUTLINE})
+    prepared = dict(writing_task={'constraints': {}}, writing_context={}, outline=OUTLINE,
+                    charts=[], reference_candidates=[])
+    monkeypatch.setattr(write_document, 'prepare_writer_context', lambda *a, **k: prepared)
+    toolkit = Mock()
+    toolkit.check_consistency.side_effect = AssertionError('Semantic review belongs to F6')
+    toolkit.generate_section_instructions.return_value = json.dumps({'section_instructions': {
+        'instructions': [dict(instruction_id=str(i), content_ref={'heading_path': ['方法比较', title]},
+                              section_title=title, section_goal='说明', required_points=[],
+                              expected_blocks=[], fact_constraints=[], meta={})
+                         for i, title in enumerate(['方法', '结果', '局限'])]}})
+    toolkit.stream_draft_blocks_markdown.return_value = json.dumps([OUTLINE])
+    body = OUTLINE
+    if defect == 'structure':
+        body = body.replace('## 方法', '## 未计划章节')
+    elif defect == 'reference':
+        body += '\n\n[文献:SRC-UNKNOWN]'
+    elif defect == 'chart':
+        body += '\n\n[图表:unknown]'
+    toolkit.generate_draft_document_markdown.return_value = json.dumps({'draft_document': body})
+    if defect:
+        with pytest.raises(ValueError):
+            write_document._write_draft(inputs, toolkit=toolkit)
+    else:
+        assert write_document._write_draft(inputs, toolkit=toolkit)['manuscript'] == body
+    toolkit.check_consistency.assert_not_called()
+
+
 @pytest.mark.parametrize('language,target', [('zh-CN', None), ('zh-CN', 1000), ('en', 1000)])
 def test_outline_relative_weights_do_not_leak_as_character_instructions(language, target):
     descriptions = ['讨论60个问题与0.7权重（约3字）。', 'Discuss latency (about 2 characters).']
@@ -215,7 +247,9 @@ def test_replacements_reject_ambiguous_original_and_accept_explicit_section():
         revision_entry._bounded_replacements(source, [(0, len(source))], {'replacements': [item]})
     item['content_ref'] = {'heading_path': ['论文', '方法']}
     _, located = revision_entry._bounded_replacements(source, [(0, len(source))], {'replacements': [item]})
-    assert source[located[0][0]:located[0][1]] == '原方法。'
+    # Coverage reports the changed span; the full matching string is preserved for application.
+    assert source[located[0][0]:located[0][1]] == '原'
+    assert located[0][2].old_string == '原方法。'
 
 
 def test_replacements_cannot_escape_planned_scope():
@@ -280,6 +314,32 @@ def test_invalid_generated_edit_is_rejected_before_application():
     with pytest.raises(ValueError, match='exceeds the planned'):
         revision_entry._modify_manuscript(prepared(), {'word_target': None}, Mock(), editor=tools)
     tools.apply_string_replace.assert_not_called()
+
+
+@pytest.mark.parametrize('old,new', [
+    ('前文。原方法。后文。', '前文。修订方法。后文。'),
+    ('前文。原方法。后文。', '前文。后文。'),
+])
+def test_replacement_context_outside_scope_is_allowed_only_if_unchanged(old, new):
+    source = '# 论文\n\n## 方法\n\n' + old
+    start = source.index('原方法。')
+    allowed = [(start, start + len('原方法。'))]
+    change = replacement(old, new)
+    result, located = revision_entry._bounded_replacements(source, allowed, {'replacements': [change]})
+    assert result['replacements'][0]['old_string'] == old
+    assert result['replacements'][0]['new_string'] == new
+    assert all(revision_entry._within_range(a, b, allowed) for a, b, _ in located)
+    with pytest.raises(ValueError, match='exceeds the planned'):
+        revision_entry._bounded_replacements(source, allowed, {'replacements': [
+            replacement(old, new.replace('后文', '额外修改'))]})
+
+
+def test_overlapping_unchanged_context_is_still_rejected():
+    source = '# 论文\n\n## 方法\n\n前文。原方法。后文。'
+    changes = [replacement('前文。原方法。', '前文。新方法。'),
+               replacement('原方法。后文。', '原方法。新后文。')]
+    with pytest.raises(ValueError, match='overlapping'):
+        revision_entry._bounded_replacements(source, [(0, len(source))], {'replacements': changes})
 
 
 @pytest.mark.parametrize('word_target', [None, 10000])
@@ -371,7 +431,10 @@ def test_completed_revision_streams_full_text_once_after_validation(monkeypatch,
         with bind_runtime_events(emitted.append, slot) as events:
             result = revision_entry._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
             assert ''.join(e['delta'] for e in emitted if 'delta' in e) == expected
-            assert not any(e['type'] == 'artifact_stream_end' for e in emitted)
+            assert [e['type'] for e in emitted if e['type'].startswith('artifact_stream')] == [
+                'artifact_stream_start', 'artifact_stream', 'artifact_stream_end',
+            ]
+            assert [e['delta'] for e in emitted if 'delta' in e] == [expected]
             events.complete()
             return result
     if failure:

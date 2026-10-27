@@ -109,6 +109,8 @@ def _validate_reflection_markdown(markdown: str) -> None:
 
 def run(inputs: dict) -> dict:
     """topic/request/papers/evidence -> reflection, is_demo."""
+    from .runtime_events import generate_markdown, report_progress
+    report_progress(15, '正在阅读论文并整理材料')
     papers = []
     for paper in inputs['papers']:
         source_field = 'text' if (paper.get('text') or '').strip() else 'abstract'
@@ -137,10 +139,12 @@ def run(inputs: dict) -> dict:
             raise ValueError(
                 '论文提炼后仍超出阅读心得输入预算，请减少论文或缩短其他材料。',
             )
-    markdown = str(AutoModel(model='llm')(prompt) or '').strip()
+    report_progress(40, '正在生成阅读心得')
+    markdown = generate_markdown(AutoModel(model='llm'), prompt)
     markdown = re.sub(r'^(?:<think\b[^>]*>.*?</think>\s*)+', '', markdown,
                       flags=re.IGNORECASE | re.DOTALL)
     if re.match(r'^<think\b', markdown, flags=re.IGNORECASE):
         raise ValueError('阅读心得输出格式错误：存在未闭合的思考内容。')
+    report_progress(90, '正在校验阅读心得结构')
     _validate_reflection_markdown(markdown)
     return {'reflection': markdown, 'is_demo': False}

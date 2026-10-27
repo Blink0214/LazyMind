@@ -2,15 +2,8 @@
 import json
 import time
 
-from json_repair import loads as repair_loads
-
-from lazymind.document_tools.writing import DraftMarkdownStreamEventEmitter
+from ..runtime_events import PaperRuntimeEvents, StructuredPreview, current_events
 from .schema import ExperimentDraft, Preview
-
-
-class _PreviewEmitter(DraftMarkdownStreamEventEmitter):
-    # The existing Writer UI paints one delta per animation frame.
-    MAX_DELTA_CHARS = 1
 
 
 class ExperimentStream:
@@ -18,9 +11,10 @@ class ExperimentStream:
         self.emit = emit
         self.topic = topic
         self.slots = set(slots)
-        self.streams = {}
-        self.contents = {}
-        self.buffer = ''
+        self.events = current_events() or PaperRuntimeEvents(emit, 'experiment_document')
+        self.streams = self.events._previews
+        self.contents = self.events._contents
+        self._structured = StructuredPreview(self._project, events=self.events)
         self.think = ''
         self.last_parse = 0.0
         self.last_think = time.monotonic()
@@ -32,8 +26,7 @@ class ExperimentStream:
         if progress >= self.progress and text != self.last_phase:
             self.progress = progress
             self.last_phase = text
-            self.emit({'type': 'progress', 'progress': progress, 'current_phase': text})
-            self.emit({'type': 'text', 'text': text + '\n'})
+            self.events.progress(progress, text)
 
     def __call__(self, event):
         tag, delta = event.get('tag'), event.get('delta')
@@ -46,12 +39,9 @@ class ExperimentStream:
                 self.flush_think()
         elif tag == 'text' and isinstance(delta, str):
             self.flush_think()
-            self.buffer += delta
-            if len(self.buffer) > 1_000_000:
-                raise ValueError('实验模型输出超过 1 MB，已停止生成')
-            if time.monotonic() - self.last_parse >= 0.4:
-                self.last_parse = time.monotonic()
-                self.preview()
+            self._structured.last_parse = self.last_parse
+            self._structured(event)
+            self.last_parse = self._structured.last_parse
 
     def flush_think(self):
         if self.think:
@@ -62,24 +52,12 @@ class ExperimentStream:
     def publish(self, slot, text):
         if slot not in self.slots or not text or self.contents.get(slot) == text:
             return
-        previous = self.contents.get(slot, '')
-        if slot not in self.streams:
-            self.streams[slot] = _PreviewEmitter(self.emit, slot=slot)
-        stream = self.streams[slot]
-        if text.startswith(previous):
-            stream.feed(text[len(previous):])
-        else:
-            # Partial JSON can revise its trailing escape/number. Replace, never concatenate stale content.
-            stream.restart(text)
-        self.contents[slot] = text
+        self.events.preview(text, slot)
 
     def preview(self):
-        try:
-            candidate = repair_loads(self.buffer, stream_stable=True)
-        except (ValueError, TypeError, IndexError):
-            return
-        if not isinstance(candidate, dict):
-            return
+        self._structured.flush()
+
+    def _project(self, candidate):
         # Model fields are projected to the same preview filenames as host packaging.
         code, config, dependencies = (candidate.get(k) for k in ('code', 'config', 'dependencies'))
         candidate = ExperimentDraft.discard_extra_model_fields(candidate)
@@ -119,7 +97,7 @@ class ExperimentStream:
 
     def validated(self, output):
         self.flush_think()
-        self.publish('experiment_document', output['experiment']['report'])
+        self.events.completed_preview(output['experiment']['report'], 'experiment_document')
         table = output['experiment']['results']
         if table is not None:
             from .handoff import source_notice

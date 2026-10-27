@@ -61,7 +61,7 @@ import {
 import { SlideThumb } from './ppt/SlideThumb';
 import { WorkflowTabActions } from './actions/WorkflowTabActions';
 import { WorkflowPanelTabActiveContext, SlotEditingContext } from './slotEditingContext';
-import { findWriterArtifactStream } from './writerArtifactStream';
+import { findWriterArtifactStream, shouldShowArtifactStream } from './writerArtifactStream';
 import { PaperAnalysisProgress } from './PaperAnalysisProgress';
 import { resolveCompletedContinueStep, resolveExternalContinueAction, resolveWorkflowContinueAction } from './workflowContinue';
 import { moveSelectedCompositePages, sameCompositePageOrder } from './compositePageReorder';
@@ -1423,9 +1423,7 @@ function NamedTabSlot({
     || (slotDef.widget?.itemWidth ?? 0) >= 600
     || slotDef.widget?.collapsed === true;
   const isWriterDocument = slotDef.widget?.widgetType === 'writer-document';
-  const showStream = Boolean(artifactStream && (
-    revisions.length === 0 || artifactStream.state === 'streaming'
-  ));
+  const showStream = shouldShowArtifactStream(artifactStream, revisions);
 
   const content = showStream && artifactStream ? (
     <SlotMarkdownStream stream={artifactStream} />

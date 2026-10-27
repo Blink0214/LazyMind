@@ -188,8 +188,15 @@ class Recorder:
             suffix = (f' · 第 {attempt} 次' if attempt else '') + (f' · {figure}' if figure else '')
             if self.emit:
                 try:
-                    self.emit({'type': 'progress', 'progress': self.progress,
-                               'current_phase': f'F4 · {label}{suffix}'})
+                    from ..runtime_events import current_events
+                    events = current_events()
+                    from .live import PUBLIC_STAGES
+                    if events is not None:
+                        if name in PUBLIC_STAGES and item['parent_id'] is None:
+                            events.begin_stage(identifier, label + suffix, min(95, self.progress))
+                    else:
+                        self.emit({'type': 'progress', 'progress': self.progress,
+                                   'current_phase': f'F4 · {label}{suffix}'})
                 except Exception:
                     LOG.warning('F4 trace progress notification failed')
             self.public.begin(item, LABELS.get(name, name))
@@ -206,6 +213,10 @@ class Recorder:
             self.record('stage_finished', stage_id=item['id'], stage=item['stage'], status=item['status'],
                         duration_ms=item['duration_ms'], **({'error': item['error']} if exc else {}))
             self.public.end(item, exc)
+            from ..runtime_events import current_events
+            events = current_events()
+            if events is not None:
+                events.end_stage(item['id'], exc)
 
     def save(self, name, value):
         with self.lock:

@@ -513,6 +513,49 @@ describe("task center workflow events", () => {
     expect(stream.chunk_index).toBe(3);
   });
 
+  it.each(["ended", "aborted", "ready"] as const)("never reopens a %s preview on late chunks or replayed starts", (state) => {
+    const store = useTaskCenterStore.getState();
+    const stream = { task_id: "paper", slot: "revise_document_document", content_type: "text/markdown",
+      stream_id: "preview", chunk_index: 10, content: "完整", deltas: ["完", "整"], state,
+      final_content: state === "ready" ? "已发布正文" : undefined };
+    store.upsertTask("conversation-1", { task_id: "paper", status: "running", artifact_streams: [stream] });
+    store.applyTaskEvent("conversation-1", "paper", { type: "artifact_stream_start", ...stream, chunk_index: 1 });
+    store.applyTaskEvent("conversation-1", "paper", {
+      type: "artifact_stream", stream_id: "preview", chunk_index: 11, delta: "迟到块",
+    });
+    let current = store.getTasks("conversation-1")[0].artifact_streams[0];
+    expect(current.state).toBe(state);
+    expect(current.content).toBe("完整迟到块");
+    store.applyTaskEvent("conversation-1", "paper", { type: "artifact_stream_end", stream_id: "preview", chunk_index: 12 });
+    expect(store.getTasks("conversation-1")[0].artifact_streams[0].state).toBe(state);
+    store.upsertTask("conversation-1", { task_id: "paper", artifact_streams: [{ ...stream, chunk_index: 13, state: "streaming" }] });
+    current = store.getTasks("conversation-1")[0].artifact_streams[0];
+    expect(current.state).toBe(state);
+    expect(current.final_content).toBe(stream.final_content);
+  });
+
+  it.each(["succeeded", "failed", "interrupted", "canceled"] as const)(
+    "keeps a %s task settled across delayed progress, stale REST and a new retry", async (status) => {
+      const store = useTaskCenterStore.getState();
+      store.upsertTask("conversation-1", { task_id: "paper", status, progress_pct: 100 });
+      store.applyTaskEvent("conversation-1", "paper", { type: "task_start" });
+      store.applyTaskEvent("conversation-1", "paper", { type: "progress", progress: 50 });
+      store.upsertTask("conversation-1", { task_id: "paper", status: "running", progress_pct: 30 });
+      expect(store.getTasks("conversation-1")[0]).toMatchObject({ status, progress_pct: 100 });
+      requestHarness.listConversationTasks.mockResolvedValueOnce({ data: { tasks: [
+        { task_id: "paper", status: "running", progress_pct: 20, steps: [] },
+      ] } });
+      await store.loadConversationTasks("conversation-1");
+      expect(store.getTasks("conversation-1")[0]).toMatchObject({ status, progress_pct: 100 });
+      store.upsertTask("conversation-1", { task_id: "retry", status: "running", progress_pct: 10 });
+      store.applyTaskEvent("conversation-1", "retry", {
+        type: "artifact_stream_start", stream_id: "retry-preview", slot: "revise_document_document", content_type: "text/markdown",
+      });
+      expect(store.getTasks("conversation-1")[1]).toMatchObject({ status: "running", progress_pct: 10,
+        artifact_streams: [{ state: "streaming" }] });
+    },
+  );
+
   it.each(["write_document_document", "revise_document_document"])(
     "loads materialized %s directly without restarting its full-text preview", async (slot) => {
       const store = useTaskCenterStore.getState();
@@ -1180,4 +1223,13 @@ describe("task center workflow events", () => {
     expect(received.map(item => item.detail)).toEqual(Array(2).fill({ conversationId: "conversation-1", historyId: "history", confirmationId: "confirm" }));
     window.removeEventListener("lazymind:chat-knowledge-confirmation", listener);
   });
+});
+
+it.each(['实验代码.zip', '实验结果.json'])('does not decode %s as Markdown', async (filename) => {
+  const { axiosInstance } = await import('@/components/request');
+  vi.mocked(axiosInstance.get).mockClear();
+  await useTaskCenterStore.getState().loadArtifactStreamContent('conversation-1', 'task', {
+    slot: 'experiment_code', content_type: 'file', seq: 1, value: { filename, url: '/download' },
+  });
+  expect(axiosInstance.get).not.toHaveBeenCalled();
 });

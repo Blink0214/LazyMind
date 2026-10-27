@@ -23,7 +23,7 @@ from lazymind.model_config import _role_entry, load_model_config
 
 from .contracts import MissingMaterials, validate_input
 from .material_bindings import MaterialBindings
-from .runtime_events import current_events, report_progress
+from .runtime_events import report_progress
 from .prompts.literature_review_prompt import (
     CANDIDATE_SELECTION_PROMPT,
     COVERAGE_PROMPT,
@@ -369,28 +369,11 @@ def _retrieve(providers: list, plan: _SearchPlan, sources: list[dict],
 def _render(inputs: dict, notes: list[dict], background: list[dict]) -> str:
     report_progress(85, '正在生成文献综述' if notes else '未获取到可读论文，正在生成主题概述')
     bindings = MaterialBindings(notes + background)
-    events = current_events()
-    pending = ''
-
-    def on_delta(event):
-        nonlocal pending
-        if event.get('tag') == 'text':
-            pending += event['delta']
-            # Citation aliases may span several model chunks.
-            partial = re.search(r'\[(?:M\d*)?$', pending)
-            end = partial.start() if partial else len(pending)
-            events.delta(bindings.restore_citations(pending[:end]))
-            pending = pending[end:]
-
-    text = WriterToolBase(llm=AutoModel(model='llm'))._call_llm_text(
+    from .runtime_events import generate_markdown
+    return generate_markdown(AutoModel(model='llm'),
         _prompt(SYNTHESIS_PROMPT if notes else OVERVIEW_PROMPT,
             bindings.model_view({'research': {key: inputs.get(key) for key in ('topic', 'request', 'question')},
-                                 'sources': notes, 'background': background})),
-        stream_output={'_stream_sink': on_delta} if events else False,
-    ).strip()
-    if events:
-        events.delta(pending)
-    return bindings.restore_citations(text)
+                                 'sources': notes, 'background': background})), bindings=bindings)
 
 
 def run(inputs: dict) -> dict:

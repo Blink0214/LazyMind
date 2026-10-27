@@ -93,7 +93,7 @@ def test_repaired_design_preserves_content_and_cannot_start_another_repair(examp
 
 def test_new_code_field_still_reaches_existing_preview(example):
     stream = ExperimentStream(lambda _event: None, 'T', ['experiment_code'])
-    stream.buffer = json.dumps(generation(example), ensure_ascii=False)
+    stream({'tag': 'text', 'delta': json.dumps(generation(example), ensure_ascii=False)})
     stream.preview()
     assert '## experiment.py' in stream.contents['experiment_code']
     assert 'run_experiment' in stream.contents['experiment_code']

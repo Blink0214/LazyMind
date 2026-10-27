@@ -59,6 +59,8 @@ def _write_draft(inputs, *, toolkit=None, on_delta=None):
     ))
     if not isinstance(sections, list) or not sections or any(not isinstance(s, str) or not s.strip() for s in sections):
         raise ValueError('Writer returned no complete draft sections.')
+    if events:
+        events.finish_preview()
     # 组装完整稿件。
     report_progress(83, '正在组装全文')
     result = json.loads(_trace_call('assemble', toolkit.generate_draft_document_markdown,
@@ -71,8 +73,10 @@ def _write_draft(inputs, *, toolkit=None, on_delta=None):
         raise ValueError('Draft must insert every planned chart exactly once.')
     if 'paper-charts:' in body:
         raise ValueError('Internal chart ownership leaked into manuscript.')
+    # Publish a structurally valid draft for F6 to review; semantic criticism must not
+    # prevent the manuscript from reaching the review/revision stages.
     _validate_manuscript(body, signature, prepared['charts'], inputs['constraints'], toolkit, context_json,
-                         candidates=prepared['reference_candidates'])
+                         candidates=prepared['reference_candidates'], check_quality=False)
     return {'manuscript': body, 'is_demo': False}
 
 def run(inputs):

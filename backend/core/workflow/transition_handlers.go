@@ -674,16 +674,28 @@ func applyWorkflowTransition(ctx context.Context, tx *gorm.DB, sessionID string,
 				req.CommandID, session.ID, req.TargetStepID, req.Operation, req.GraphHash, graph.GraphHash, session.StateVersion)
 			return rejectTransition(req.CommandID, &session, projection, http.StatusConflict, "GRAPH_REVISION_MISMATCH", "session graph revision does not match the command", false, map[string]any{"expected": req.GraphHash, "actual": graph.GraphHash})
 		}
-		if req.Operation == "retry" || req.Operation == "rewind" ||
-			(req.Operation == "execute" && projection.Nodes[targets[0].TargetStepID].Validity == "stale") {
-			applyRecoveryIntent(session.IntentContext, &targets[0])
-		}
 		var postStepCheckpoint *executor.PostStepCheckpoint
 		if req.Operation == "retry" || req.Operation == "rewind" {
 			var latest orm.WorkflowSessionStep
 			if err := tx.Where("session_id = ? AND step_id = ? AND validity = ?", session.ID,
 				targets[0].TargetStepID, "effective").Order("attempt DESC").First(&latest).Error; err != nil {
 				return err
+			}
+			// A bare retry repeats this failed attempt's confirmed request, not
+			// the workflow launch intent or a successful older attempt's request.
+			if isBareRetryInput(currentInputs[targets[0].TaskID]) {
+				var previous orm.SubAgentTask
+				err := tx.Select("params").Where("id = ?", latest.TaskID).First(&previous).Error
+				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+				var input struct {
+					CurrentUserInput string `json:"current_user_input"`
+				}
+				if err == nil && json.Unmarshal(previous.Params, &input) == nil && !isBareRetryInput(input.CurrentUserInput) {
+					targets[0].UserInput = input.CurrentUserInput
+					currentInputs[targets[0].TaskID] = input.CurrentUserInput
+				}
 			}
 			var failedResult struct {
 				Summary    string                       `json:"summary"`
@@ -710,6 +722,10 @@ func applyWorkflowTransition(ctx context.Context, tx *gorm.DB, sessionID string,
 						"max_automatic_attempts": automaticLimit,
 						"user_retry_available":   true})
 			}
+		}
+		if req.Operation == "retry" || req.Operation == "rewind" ||
+			(req.Operation == "execute" && projection.Nodes[targets[0].TargetStepID].Validity == "stale") {
+			applyRecoveryIntent(session.IntentContext, &targets[0])
 		}
 		completedContinue := session.Status == SessionStatusCompleted && len(targets) == 1 &&
 			req.Operation == "execute" && declaredCompletedContinueStep(graph, targets[0].TargetStepID) &&
@@ -929,6 +945,15 @@ func applyRecoveryIntent(intentContext string, target *transitionTarget) {
 		target.RuntimeInstruction = existing + "\n\n" + instruction
 	} else {
 		target.RuntimeInstruction = instruction
+	}
+}
+
+func isBareRetryInput(input string) bool {
+	switch strings.ToLower(strings.TrimSpace(strings.TrimRight(strings.TrimSpace(input), "。.!！"))) {
+	case "", "重试", "重新执行", "retry", "re-run", "rerun", "try again":
+		return true
+	default:
+		return false
 	}
 }
 

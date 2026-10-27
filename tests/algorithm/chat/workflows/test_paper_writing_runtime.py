@@ -33,7 +33,11 @@ def test_completion_feedback_uses_brief_text_only_after_real_publication(tmp_pat
         if reject_output:
             with pytest.raises(ToolExecutionError, match='Allowed keys'):
                 tools.run_paper_step()
-            assert not events
+            assert not any(event['type'] == 'artifact' for event in events)
+            assert any(event['type'] == 'progress' for event in events)
+            assert events[-1]['type'] == 'progress'
+            assert all(step['status'] != 'running'
+                       for step in events[-1]['public_display']['process_steps'])
             return
         result = tools.run_paper_step()
         assert result['status'] == 'completed'
