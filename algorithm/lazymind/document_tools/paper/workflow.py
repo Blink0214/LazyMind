@@ -649,10 +649,10 @@ def run_paper_step() -> dict:
     from lazymind.chat.engine.subagent.context import require_context
 
     context = require_context()
-    if context.params.get('step_id') in {'write_outline', 'write_document', 'revise_document'}:
+    if context.params.get('step_id') in {'literature_review', 'write_outline', 'write_document', 'revise_document'}:
         from .runtime_events import bind_runtime_events
         with bind_runtime_events(context.emit, f"{context.params['step_id']}_document") as events:
-            events.progress(5, '正在读取写作材料')
+            events.progress(5, '正在读取研究材料')
             result = _run_paper_step(context)
             events.complete()
             return result
@@ -841,7 +841,7 @@ def _run_paper_step(context, stream=None) -> dict:
             path.write_text(artifact['value'], encoding='utf-8')
             artifact.update(content_type='file', value=str(path))
     from .runtime_events import report_progress
-    report_progress(97, '正在保存成稿')
+    report_progress(97, '正在保存文档')
     with diagnostics.stage('output_publication'):
         saved = save_artifacts(artifacts)
         diagnostics.save('published-files.json', [

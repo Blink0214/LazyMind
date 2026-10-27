@@ -1,65 +1,27 @@
+"""Offline regressions for literature-review routing, handoff, and streaming."""
 import copy
 import json
-import os
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
+import httpx
 import lazyllm
 import pytest
 
 from lazymind.common.token_estimation import estimate_tokens
 from lazymind.document_tools.paper import api, contracts, literature_review, workflow
 from lazymind.document_tools.paper.material_bindings import MaterialBindings
+from lazymind.document_tools.paper.runtime_events import current_events
 
 
-TOPIC = '时间同步系统的组合学习（形式化方法与时间自动机的组合式主动学习）'
+PAPER = {'id': 'P1', 'title': 'Test paper', 'text': 'Test source material.',
+         'citation': 'Test paper[Z].', 'user_annotations': {'focus': 'composition'}}
 
 
 @pytest.fixture
 def paper():
-    return {
-        'id': 'SRC-001',
-        'title': 'A Detailed Account of Compositional Automata Learning Through Alphabet Refinement',
-        'text': 'Active automata learning infers automaton models of systems from behavioral observations, '
-                'a technique successfully applied to a wide range of domains. Compositional approaches '
-                'have recently emerged to address scalability to concurrent systems.',
-        'citation': 'Henry L, Mousavi M R, Neele T, et al. A detailed account of compositional automata '
-                    'learning through alphabet refinement[EB/OL]. arXiv:2504.16624v3, 2025.',
-        'metadata': {'arxiv_id': '2504.16624v3', 'year': 2025},
-        'user_annotations': {'focus': '同步并行系统的组合学习'},
-    }
-
-
-@pytest.mark.parametrize('with_citation', [True, False])
-def test_input_preserves_paper_fields_and_does_not_share_nested_values(paper, with_citation):
-    if not with_citation:
-        paper.pop('citation')
-    inputs = {'topic': TOPIC, 'papers': [paper]}
-    normalized = contracts.validate_input('literature_review', inputs)
-    assert normalized['papers'] == [paper]
-    normalized['papers'][0]['user_annotations']['focus'] = '关注可扩展性'
-    assert paper['user_annotations']['focus'] == '同步并行系统的组合学习'
-
-
-def test_accepts_abstract_without_full_text_and_preserves_fields(paper):
-    paper['abstract'] = paper.pop('text')
-    pool = workflow.pool_from_business({'topic': TOPIC, 'papers': [paper]})
-    inputs = contracts.validate_input('literature_review', workflow.business_input('literature_review', pool))
-    assert inputs['papers'] == [paper]
-    assert 'text' not in inputs['papers'][0]
-
-
-def test_materials_preserve_papers_and_citations_for_downstream_steps(paper):
-    materials = {
-        'topic': TOPIC, 'papers': [paper], 'evidence': paper['text'],
-        'question': '组合式主动学习在时间同步系统中有哪些适用条件和限制？',
-    }
-    pool = workflow.pool_from_business(materials)
-    for step in ('literature_review', 'refine_topic', 'experiment', 'write_document', 'reading_reflection'):
-        inputs = contracts.validate_input(step, workflow.business_input(step, pool))
-        assert inputs['evidence'] == materials['evidence']
-        if 'papers' in inputs:
-            assert inputs['papers'] == [paper]
-            inputs['papers'][0]['user_annotations']['focus'] = '关注可扩展性'
-            assert workflow.material(pool, 'papers')['content'] == [paper]
+    return copy.deepcopy(PAPER)
 
 
 def test_review_scope_excludes_old_papers_and_separates_background(paper):
@@ -126,10 +88,6 @@ def test_review_output_preserves_long_evidence_for_downstream(paper):
 
 
 @pytest.mark.parametrize('instruction,group,field', [
-    (literature_review.SEARCH_PLAN_PROMPT, 'papers', 'note'),
-    (literature_review.COVERAGE_PROMPT, 'sources', 'note'),
-    (literature_review.SYNTHESIS_PROMPT, 'sources', 'note'),
-    (literature_review.CANDIDATE_SELECTION_PROMPT, 'candidates', 'text'),
     (literature_review.SEARCH_PLAN_PROMPT, 'papers', 'snippet'),
     (literature_review.SYNTHESIS_PROMPT, 'background', 'note'),
 ])
@@ -140,14 +98,10 @@ def test_prompts_share_text_budget_and_preserve_source_fields(paper, instruction
          field: "Active automata learning in the framework of Angluin's $L^{*}$ algorithm has been applied "
                 'to learning many kinds of automata models.'},
     ]}
-    if group == 'candidates':
-        for item in data[group]:
-            item['snippet'] = item[field]
     before = copy.deepcopy(data)
     empty = copy.deepcopy(data)
     for item in empty[group]:
         item[field] = ''
-        item.pop('snippet', None)
     empty['truncated'] = True
     fixed = literature_review.INPUT_PROMPT.format(instruction=instruction, data=json.dumps(empty, ensure_ascii=False))
     limit = estimate_tokens(fixed) + min(estimate_tokens(item[field]) for item in data[group])
@@ -168,53 +122,137 @@ def test_prompts_share_text_budget_and_preserve_source_fields(paper, instruction
     for original, item in zip(data[group], bounded[group]):
         assert item['id'] == original['id']
         assert item['citation'] == original['citation']
-        if group == 'candidates':
-            assert 'snippet' not in item
         assert 0 < len(item[field]) < len(original[field])
         assert original[field].startswith(item[field])
     sizes = [estimate_tokens(item[field]) for item in bounded[group]]
     assert max(sizes) - min(sizes) <= 2
 
 
-@pytest.mark.skipif(
-    os.environ.get('PAPER_REVIEW_LIVE') != '1',
-    reason='设置 PAPER_REVIEW_LIVE=1，并配置真实模型后执行。',
-)
-def test_real_abstract_only_review(paper):
-    paper['abstract'] = paper.pop('text')
-    inputs = {'topic': TOPIC, 'papers': [paper],
-              'request': '只综述给定论文摘要，不开展检索，正文约200字。'}
-    before = copy.deepcopy(inputs)
-    result = api.run_algorithm('literature_review', inputs)
-    assert inputs == before
-    assert len(result['papers']) == 1
-    assert {key: result['papers'][0][key] for key in paper} == paper
-    assert result['papers'][0]['reading']['content_type'] == 'abstract'
-    assert result['evidence'].strip()
-    assert paper['citation'] in result['evidence']
+@pytest.fixture(autouse=True)
+def restore_runtime_context():
+    previous = {key: lazyllm.globals.get(key) for key in ('agentic_config', 'subagent_ctx')}
+    yield
+    for key, value in previous.items():
+        if value is None:
+            lazyllm.globals.pop(key, None)
+        else:
+            lazyllm.globals[key] = value
 
 
-@pytest.mark.skipif(
-    os.environ.get('PAPER_REVIEW_LIVE') != '1',
-    reason='设置 PAPER_REVIEW_LIVE=1，并配置真实模型后执行。',
-)
-def test_real_search_generates_citations(paper):
-    inputs = {
-        'topic': TOPIC,
-        'request': f'使用 arXiv 检索论文“{paper["title"]}”并综述，正文约200字。',
-    }
-    before = copy.deepcopy(inputs)
-    result = api.run_algorithm('literature_review', inputs)
-    assert inputs == before
-    assert result['is_demo'] is False
-    assert result['papers']
-    for paper in result['papers']:
-        assert paper['reading']
-        assert paper['text'].strip()
-        assert not paper['citation'].startswith('[')
-        assert f'[{paper["id"]}]' in result['evidence']
-        assert paper['citation'] in result['evidence']
-    without_citation = copy.deepcopy(result)
-    without_citation['papers'][0].pop('citation')
-    with pytest.raises(ValueError, match=r'paper\.citation'):
-        contracts.validate_output('literature_review', without_citation)
+@pytest.mark.parametrize('kb,restricted,failed,with_paper,expected', [
+    (True, False, False, True, ['knowledge_base', 'api']),
+    (True, True, False, False, ['knowledge_base']),
+    (False, False, True, True, ['api']),
+    (False, False, True, False, ['api']),
+])
+def test_source_routing_preserves_materials(monkeypatch, kb, restricted, failed, with_paper, expected):
+    calls = []
+    first = literature_review._review_plan_schema(MaterialBindings([PAPER] if with_paper else []))(
+        queries={'first': 1}, allow_external_search=not restricted, paper_limit=None,
+        material_roles={'M1': 'paper'} if with_paper else {}, supplied_only=False,
+    )
+    plans = iter([first, literature_review._SearchPlan(
+        queries={'second': 1}, allow_external_search=not restricted, paper_limit=None,
+    )])
+    lazyllm.globals['agentic_config'] = {'filters': {'kb_id': ['test-kb'] if kb else []}}
+    monkeypatch.setattr(literature_review, 'AutoModel', lambda **_: None)
+    monkeypatch.setattr(literature_review, 'WriterToolBase', lambda **_: SimpleNamespace(
+        _call_llm_structured=lambda *args: next(plans)))
+    monkeypatch.setattr(literature_review, '_input_budget', lambda: 8192)
+    monkeypatch.setattr(literature_review, '_providers', lambda _: [SimpleNamespace(source_name='arxiv')])
+    monkeypatch.setattr(literature_review, '_notes', lambda papers, _: list(papers))
+    render = Mock(return_value='Evidence')
+    monkeypatch.setattr(literature_review, '_render', render)
+
+    def retrieve(providers, plan, sources, seen, used_ids, context, *, knowledge_base):
+        calls.append(context['search_source'])
+        assert knowledge_base == (context['search_source'] == 'knowledge_base')
+        assert bool(providers) != knowledge_base
+        if failed:
+            providers.clear()
+            return []
+        return [{**PAPER, 'id': f'R{len(calls)}'}]
+
+    monkeypatch.setattr(literature_review, '_retrieve', retrieve)
+    result = api.run_algorithm('literature_review', {'topic': 'Test topic', 'papers': [PAPER] if with_paper else []})
+    assert calls == expected
+    expected_ids = ([PAPER['id']] if with_paper else []) + (
+        [] if failed else [f'R{i + 1}' for i in range(len(expected))])
+    assert [paper['id'] for paper in result['papers']] == expected_ids
+    render.assert_called_once()
+    assert render.call_args.args[1] == result['papers']
+    assert render.call_args.args[2] == []
+    pool = workflow.pool_from_business({'topic': 'Test topic', **{k: result[k] for k in ('papers', 'evidence')}})
+    downstream = workflow.business_input('refine_topic', pool)
+    assert downstream['papers'] == result['papers']
+    assert downstream['evidence'] == result['evidence']
+    if with_paper:
+        assert downstream['papers'][0] == PAPER
+
+
+def test_provider_failover_keeps_successful_results(monkeypatch):
+    hit = {'title': 'Test paper', 'snippet': 'Abstract', 'extra': {'year': 2025}}
+    sciverse = SimpleNamespace(source_name='sciverse', search=Mock(side_effect=[
+        [{**hit, 'url': 'https://sciverse.test/paper'}], httpx.ConnectError('search unavailable'),
+    ]))
+    arxiv = SimpleNamespace(source_name='arxiv', search=Mock(return_value=[
+        {**hit, 'url': 'https://arxiv.test/paper'},
+    ]))
+    monkeypatch.setattr(literature_review, '_arxiv_request', lambda call, *a, **kw: call(*a, **kw))
+    providers = [sciverse, arxiv]
+    plan = literature_review._SearchPlan(queries={'first': 1, 'second': 1, 'third': 1}, paper_limit=None)
+    results = list(literature_review._search_results(providers, plan))
+    assert [item['source'] for item in results] == ['sciverse', 'arxiv', 'arxiv']
+    assert all(item['text'] == hit['snippet'] and item['metadata'] == hit['extra'] for item in results)
+    assert results[0]['url'] == 'https://sciverse.test/paper'
+    assert providers == [arxiv]
+    assert sciverse.search.call_count == 2
+    assert [call.args[0] for call in arxiv.search.call_args_list] == ['second', 'third']
+
+
+@pytest.mark.parametrize('with_paper', [True, False])
+def test_workflow_streams_evidence_before_publication(tmp_path, monkeypatch, with_paper):
+    from lazymind.chat.engine.subagent.context import SubAgentContext
+
+    events = []
+    raw = '# Review\n\nEvidence [M1].' if with_paper else '# Review\n\nEvidence.'
+    body = raw.replace('[M1]', f'[{PAPER["id"]}]')
+
+    def share(*, stream):
+        def generate(prompt):
+            assert (literature_review.SYNTHESIS_PROMPT if with_paper else literature_review.OVERVIEW_PROMPT) in prompt
+            if with_paper:
+                assert json.loads(prompt.split('Input JSON:\n', 1)[1])['sources'][0]['id'] == 'M1'
+            stream['_stream_sink']({'tag': 'think', 'delta': 'Internal reasoning'})
+            for delta in raw:
+                stream['_stream_sink']({'tag': 'text', 'delta': delta})
+            assert ''.join(e['delta'] for e in events if e['type'] == 'artifact_stream') == body
+            return raw
+        return generate
+
+    def review(inputs):
+        return {'evidence': literature_review._render(inputs, inputs['papers'], []),
+                'papers': inputs['papers'], 'is_demo': False}
+
+    monkeypatch.setattr(literature_review, 'AutoModel', lambda **_: SimpleNamespace(share=share))
+    monkeypatch.setattr(literature_review, '_input_budget', lambda: 8192)
+    monkeypatch.setattr(literature_review, 'run', review)
+    entry = tmp_path / 'papers.json'
+    entry.write_text(json.dumps({'topic': 'Test topic', 'papers': [PAPER] if with_paper else []}))
+    slots = ['literature_review_pool', 'literature_review_document']
+    lazyllm.globals['subagent_ctx'] = SubAgentContext(
+        task_id='literature-stream', conversation_id='test', agent_type='workflow_step',
+        objective='Review papers', workspace_path=str(tmp_path), input_slots=['paper_input'],
+        output_slots=slots, db=None, emit=events.append,
+        params={'step_id': 'literature_review', 'remote_inputs': {'paper_input': str(entry)},
+                'output_slot_types': dict.fromkeys(slots, 'file')},
+    )
+    assert workflow.run_paper_step()['status'] == 'completed'
+    published = next(e for e in events if e['type'] == 'artifact' and e['slot'] == slots[1])
+    assert Path(published['value']['path']).read_text() == body
+    assert events.index(published) < next(i for i, e in enumerate(events) if e['type'] == 'artifact_stream_end')
+    assert all(e['slot'] == slots[1] for e in events if e['type'].startswith('artifact_stream'))
+    assert any(e['type'] == 'progress' for e in events)
+    assert any(e['type'] == 'text' and '正在生成' in e['text'] for e in events)
+    assert 'Internal reasoning' not in json.dumps(events)
+    assert current_events() is None

@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 import unicodedata
 from datetime import date
 from pathlib import Path
@@ -22,10 +23,12 @@ from lazymind.model_config import _role_entry, load_model_config
 
 from .contracts import MissingMaterials, validate_input
 from .material_bindings import MaterialBindings
+from .runtime_events import current_events, report_progress
 from .prompts.literature_review_prompt import (
     CANDIDATE_SELECTION_PROMPT,
     COVERAGE_PROMPT,
     INPUT_PROMPT,
+    OVERVIEW_PROMPT,
     READING_NOTE_PROMPT,
     SEARCH_PLAN_PROMPT,
     SYNTHESIS_PROMPT,
@@ -35,7 +38,7 @@ from .prompts.literature_review_prompt import (
 class _SearchPlan(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     queries: dict[str, Annotated[int, Field(ge=1)]]
-    knowledge_base_only: bool = False
+    allow_external_search: bool = True
     year_from: int | None = None
     year_to: int | None = None
     paper_limit: int | None = Field(
@@ -157,6 +160,8 @@ def _read_note(source: dict, context: dict, input_tokens: int) -> dict:
 
 
 def _notes(sources: list[dict], context: dict) -> list[dict]:
+    if not sources:
+        return []
     input_tokens = _input_budget()
     with ThreadPoolExecutor() as executor:
         return list(executor.map(lambda source: _read_note(source, context, input_tokens), sources))
@@ -209,22 +214,43 @@ def _arxiv_request(call, *args, **kwargs):
 def _search(provider, query: str, count: int, plan: _SearchPlan) -> list[dict]:
     if provider.source_name == 'sciverse':
         if count > 10:
-            return provider.meta_search(
+            items = provider.meta_search(
                 query=query, page_size=count, include_content=False,
                 year_from=plan.year_from, year_to=plan.year_to,
             )['items']
-        return provider.search(
-            query, topk=count, include_content=False,
-            search_type='meta' if plan.year_from or plan.year_to else 'agentic',
-            year_from=plan.year_from, year_to=plan.year_to,
-        )
-    if provider.source_name == 'arxiv':
+        else:
+            items = provider.search(
+                query, topk=count, include_content=False,
+                search_type='meta' if plan.year_from or plan.year_to else 'agentic',
+                year_from=plan.year_from, year_to=plan.year_to,
+            )
+    elif provider.source_name == 'arxiv':
         if plan.year_from or plan.year_to:
             start = plan.year_from or 1991
             end = plan.year_to or date.today().year
             query = f'({query}) AND submittedDate:[{start}01010000 TO {end}12312359]'
-        return _arxiv_request(provider.search, query, max_results=count)
-    raise ValueError(f'文献综述尚未接入检索服务：{provider.source_name}')
+        items = _arxiv_request(provider.search, query, max_results=count)
+    else:
+        raise ValueError(f'文献综述尚未接入检索服务：{provider.source_name}')
+    return [{**item, 'url': item.get('url', ''), 'text': item.get('snippet', ''),
+             'source': provider.source_name, 'metadata': item.get('extra', {}),
+             'kind': 'paper', 'reading': '检索预览'}
+            for item in items if item.get('title', '').strip()]
+
+
+def _search_results(providers: list, plan: _SearchPlan) -> Iterator[dict]:
+    for query, count in plan.queries.items():
+        while providers:
+            provider = providers[0]
+            try:
+                batch = _search(provider, query, count, plan)
+            except (httpx.HTTPError, KeyAuthError, json.JSONDecodeError) as error:
+                providers.pop(0)
+                next_source = providers[0].source_name if providers else '无可用服务'
+                lazyllm.LOG.warning(f'{provider.source_name} 检索失败，后续使用 {next_source}：{type(error).__name__}')
+            else:
+                yield from batch
+                break
 
 
 def _content(provider, source: dict) -> dict:
@@ -243,15 +269,26 @@ def _content(provider, source: dict) -> dict:
     parts = []
     readings = []
     while True:
-        if provider.source_name == 'arxiv':
-            result = _arxiv_request(provider.get_content, source, offset=offset)
-        else:
-            result = provider.get_content(source, offset=offset)
+        try:
+            if provider.source_name == 'arxiv':
+                result = _arxiv_request(provider.get_content, source, offset=offset)
+            else:
+                result = provider.get_content(source, offset=offset)
+        except (httpx.HTTPError, KeyAuthError, json.JSONDecodeError) as error:
+            lazyllm.LOG.warning(f'论文《{source["title"]}》取文失败，保留已取得内容：{type(error).__name__}')
+            if readings:
+                readings[-1]['truncated'] = True
+            break
         reading = result['extra']['content_read']
         if reading.get('pagination_error') or (offset and reading.get('fallback')):
-            raise RuntimeError(f'论文《{source["title"]}》在位置 {offset} 的续页读取失败。')
+            lazyllm.LOG.warning(f'论文《{source["title"]}》在位置 {offset} 的续页读取失败，保留已取得内容。')
+            if readings:
+                readings[-1]['truncated'] = True
+            break
         if not result['content'].strip():
-            raise MissingMaterials(f'论文《{source["title"]}》未返回可用正文或摘要。')
+            if readings:
+                readings[-1]['truncated'] = True
+            break
         parts.append(result['content'])
         readings.append(reading)
         if not reading.get('more'):
@@ -260,14 +297,15 @@ def _content(provider, source: dict) -> dict:
         if next_offset <= offset:
             raise ValueError('论文内容服务返回了无效的后续位置。')
         offset = next_offset
-    source.update(text=''.join(parts), reading=readings)
+    if parts:
+        source.update(text=''.join(parts), reading=readings)
     return source
 
 
 def _retrieve(providers: list, plan: _SearchPlan, sources: list[dict],
-              seen: dict, used_ids: set[str], context: dict) -> list[dict]:
+              seen: dict, used_ids: set[str], context: dict, *, knowledge_base: bool = False) -> list[dict]:
     candidates = []
-    provider = providers[0] if providers else None
+    readers = {provider.source_name: provider for provider in providers}
 
     def register(source):
         keys = _identity(source)
@@ -289,40 +327,11 @@ def _retrieve(providers: list, plan: _SearchPlan, sources: list[dict],
         seen.update((key, source) for key in keys)
         candidates.append(source)
 
-    def search(item):
-        query, count = item
-        return _search(provider, query, count, plan)
-
-    queries = plan.queries.items()
-    batches = []
-    if provider is not None:
-        try:
-            if provider.source_name == 'arxiv':
-                batches = [search(item) for item in queries]
-            else:
-                with ThreadPoolExecutor() as executor:
-                    batches = list(executor.map(search, queries))
-        except (httpx.HTTPError, KeyAuthError, json.JSONDecodeError) as error:
-            if provider.source_name != 'sciverse':
-                raise
-            lazyllm.LOG.warning(f'Sciverse 检索失败，改用 arXiv：{type(error).__name__}')
-            providers.pop(0)
-            provider = providers[0]
-            batches = [search(item) for item in queries]
-    for batch in batches:
-        for item in batch:
-            if item.get('title', '').strip():
-                register({**item, 'url': item.get('url', ''),
-                          'text': item.get('snippet', ''), 'source': provider.source_name,
-                          'metadata': item.get('extra', {}),
-                          'kind': 'paper', 'reading': '检索预览'})
-
-    agentic = lazyllm.globals.get('agentic_config') or {}
-    if (agentic.get('filters') or {}).get('kb_id'):
+    if knowledge_base:
         from lazymind.chat.engine.tools.lazy_kb import KBToolkit
 
         toolkit = KBToolkit()
-        for query, count in queries:
+        for query, count in plan.queries.items():
             batch = toolkit.kb_search(query, k_max=count)['items']
             for item in batch:
                 if item.get('text', '').strip():
@@ -332,6 +341,9 @@ def _retrieve(providers: list, plan: _SearchPlan, sources: list[dict],
                                            'kb_id': item['kb_id'], 'doc_id': item['docid'],
                                            'node_id': item['uid']},
                               'kind': 'knowledge_base', 'reading': '知识库节选'})
+    else:
+        for item in _search_results(providers, plan):
+            register(item)
     if not candidates:
         return []
     by_id = {item['id']: item for item in candidates}
@@ -349,19 +361,35 @@ def _retrieve(providers: list, plan: _SearchPlan, sources: list[dict],
     )
     selected = [by_id[source_id] for source_id in dict.fromkeys(selection.source_ids)]
 
-    if provider is None or provider.source_name == 'arxiv':
-        return [_content(provider, item) for item in selected]
     with ThreadPoolExecutor() as executor:
-        return list(executor.map(lambda source: _content(provider, source), selected))
+        content = executor.map(lambda source: _content(readers.get(source['source']), source), selected)
+        return [source for source in content if source['text'].strip()]
 
 
 def _render(inputs: dict, notes: list[dict], background: list[dict]) -> str:
+    report_progress(85, '正在生成文献综述' if notes else '未获取到可读论文，正在生成主题概述')
     bindings = MaterialBindings(notes + background)
+    events = current_events()
+    pending = ''
+
+    def on_delta(event):
+        nonlocal pending
+        if event.get('tag') == 'text':
+            pending += event['delta']
+            # Citation aliases may span several model chunks.
+            partial = re.search(r'\[(?:M\d*)?$', pending)
+            end = partial.start() if partial else len(pending)
+            events.delta(bindings.restore_citations(pending[:end]))
+            pending = pending[end:]
+
     text = WriterToolBase(llm=AutoModel(model='llm'))._call_llm_text(
-        _prompt(SYNTHESIS_PROMPT,
-            bindings.model_view({'research': {k: inputs.get(k) for k in ('topic', 'request', 'question')},
+        _prompt(SYNTHESIS_PROMPT if notes else OVERVIEW_PROMPT,
+            bindings.model_view({'research': {key: inputs.get(key) for key in ('topic', 'request', 'question')},
                                  'sources': notes, 'background': background})),
+        stream_output={'_stream_sink': on_delta} if events else False,
     ).strip()
+    if events:
+        events.delta(pending)
     return bindings.restore_citations(text)
 
 
@@ -371,7 +399,10 @@ def run(inputs: dict) -> dict:
     bindings = MaterialBindings(sources)
     context = {key: inputs.get(key) for key in ('topic', 'request', 'question')}
     context['knowledge_base_ids'] = ((lazyllm.globals.get('agentic_config') or {}).get('filters') or {}).get('kb_id', [])
+    search_kb = bool(context['knowledge_base_ids'])
+    context['search_source'] = 'knowledge_base' if search_kb else 'api'
     writer = WriterToolBase(llm=AutoModel(model='llm'))
+    report_progress(10, '正在选择本轮材料并规划文献检索')
     plan = writer._call_llm_structured(
         _prompt(SEARCH_PLAN_PROMPT,
             bindings.model_view({'research': context,
@@ -382,36 +413,44 @@ def run(inputs: dict) -> dict:
         _review_plan_schema(bindings),
     )
     sources, background = _select_materials(plan, bindings)
+    report_progress(20, '正在整理已选材料的阅读笔记')
     notes = _notes(sources, context)
     background_notes = _notes(background, context) if background else []
     context['paper_limit'] = plan.paper_limit
-    if plan.queries:
-        providers = [] if plan.knowledge_base_only else _providers(inputs.get('request', ''))
-        seen = {key: source for source in sources for key in _identity(source)}
-        used_ids = {paper['id'] for paper in bindings.materials.values()}
-        searched = set()
-        for round_index in range(2):
-            if plan.year_from and plan.year_to and plan.year_from > plan.year_to:
-                raise ValueError('模型生成的检索年份范围无效。')
-            added = _retrieve(providers, plan, sources, seen, used_ids, context)
-            sources.extend(added)
-            notes.extend(_notes(added, context))
+    providers = None
+    seen = {key: source for source in sources for key in _identity(source)}
+    used_ids = {paper['id'] for paper in bindings.materials.values()}
+    searched = set()
+    for round_index in range(2):
+        if not plan.queries or (not search_kb and not plan.allow_external_search):
+            break
+        if plan.year_from and plan.year_to and plan.year_from > plan.year_to:
+            raise ValueError('模型生成的检索年份范围无效。')
+        if not search_kb and providers is None:
+            providers = _providers(inputs.get('request', ''))
+        report_progress(25 + round_index * 30,
+                        '正在检索并读取知识库文献' if search_kb else '正在检索并读取外部文献')
+        added = _retrieve(providers if providers is not None else [], plan, sources, seen, used_ids,
+                          context, knowledge_base=search_kb)
+        sources.extend(added)
+        report_progress(40 + round_index * 30, f'正在整理 {len(added)} 篇新增论文的阅读笔记')
+        notes.extend(_notes(added, context))
+        if not search_kb:
             searched.update(plan.queries)
-            if round_index == 1:
-                break
-            plan = writer._call_llm_structured(
-                _prompt(COVERAGE_PROMPT,
-                    {'research': context, 'previous_evidence': inputs.get('evidence'), 'sources': notes,
-                     'paper_count': len(sources),
-                     'searched_queries': sorted(searched),
-                     'provider': providers[0].source_name if providers else 'knowledge_base',
-                     'today': date.today().isoformat()}),
-                _SearchPlan,
-            )
-            plan.queries = {query: count for query, count in plan.queries.items() if query not in searched}
-            if not plan.queries:
-                break
-    if not sources:
-        raise MissingMaterials('没有可用于综述的论文或知识库材料，请调整研究范围或提供论文。')
+        if round_index == 1 or providers == []:
+            break
+        search_kb = False
+        context['search_source'] = 'api'
+        report_progress(50, '正在评估是否需要补充检索')
+        plan = writer._call_llm_structured(
+            _prompt(COVERAGE_PROMPT,
+                {'research': context, 'previous_evidence': inputs.get('evidence'), 'sources': notes,
+                 'paper_count': len(sources), 'searched_queries': sorted(searched),
+                 'today': date.today().isoformat()}),
+            _SearchPlan,
+        )
+        plan.queries = {query: count for query, count in plan.queries.items() if query not in searched}
+    if not sources and not plan.allow_external_search:
+        raise MissingMaterials('用户指定的来源没有可用材料，请提供可阅读的论文或调整来源范围。')
     evidence = _render(inputs, notes, background_notes)
     return {'evidence': evidence, 'papers': sources, 'is_demo': False}

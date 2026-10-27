@@ -30,6 +30,7 @@ class PaperRuntimeEvents:
                 return
             self._last = state
             try:
+                self._emit({'type': 'text', 'text': phase + '\n'})
                 self._emit({'type': 'progress', 'progress': self._progress, 'current_phase': phase})
             except Exception:
                 _log.warning('Paper progress delivery failed', exc_info=True)
@@ -62,13 +63,13 @@ class PaperRuntimeEvents:
         with self._lock:
             if self._preview:
                 self._preview.end()
-            self.progress(100, '大纲已保存，等待确认' if self._slot == 'write_outline_document' else '成稿已保存')
+            self.progress(100, '大纲已保存，等待确认' if self._slot == 'write_outline_document' else '文档已保存')
             self._closed = True
 
     def abort(self):
         with self._lock:
             if self._preview:
-                self._preview.abort('写作未完成，预览已撤销；请查看任务错误。')
+                self._preview.abort('生成未完成，预览已撤销；请查看任务错误。')
             self._closed = True
 
 
