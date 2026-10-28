@@ -68,9 +68,13 @@ def test_real_artifact_publisher_across_ten_feedback_rounds(tmp_path, start, fee
                         '# 研究选题\n\n## 研究问题\n如何改善效果？\n\n'
                         '## 文献反馈与调整依据\n根据综述调整路线。')
     from lazymind.document_tools.paper.writing import revise_document
-    def resolve_scope(request, review):
+    def resolve_scope(request, review, **kwargs):
         assert request == '按当前审稿意见修订'
         assert any(issue['id'] == 'R1' for issue in review['issues'])
+        assert kwargs['workflow_context'] == {
+            'current_step': 'revise_document', 'previous_completed_step': 'peer_review',
+            'review_matches_manuscript': True,
+        }
         return ['R1']
     monkeypatch.setattr(revise_document, 'resolve_review_issues', resolve_scope)
     state = yaml.safe_load((PACKAGE / 'scenario/state.yml').read_text())

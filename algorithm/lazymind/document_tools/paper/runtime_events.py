@@ -166,6 +166,12 @@ class PaperRuntimeEvents:
             self.progress(99, '产物已生成，正在确认发布')
             self._closed = True
 
+    def wait_for_input(self, question):
+        with self._lock:
+            stage = self._finish_stage('succeeded')
+            self._send(self._progress, '等待确认：' + question, [stage] if stage else [])
+            self._closed = True
+
     def abort(self):
         with self._lock:
             for preview in self._previews.values():

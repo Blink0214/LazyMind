@@ -3973,6 +3973,7 @@ const enUS = {
     workflowEmptyFailed: "Step execution failed",
     workflowEmptyInterrupted: "Step was interrupted",
     workflowEmptyCompleted: "Step completed with no artifacts to display",
+    workflowInputRequired: "Awaiting confirmation",
     workflowEmptyUnknown: "Step status is unavailable",
     workflowPanelTitle: "Workflow Panel",
     workflowPreviousPage: "Previous slide",

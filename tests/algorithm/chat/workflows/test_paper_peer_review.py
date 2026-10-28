@@ -253,7 +253,7 @@ def test_repair_copies_source_lines_without_rewriting_whitespace(example):
     assert result.issues[0].quote in manuscript
 
 
-def test_repair_prompt_contains_only_bad_issues_and_numbered_source(example):
+def test_format_repair_contains_only_bad_issues_without_manuscript(example):
     candidate = copy.deepcopy(example['model_response'])
     candidate['issues'].append(dict(candidate['issues'][0], problem='只用于有效意见的标记'))
     del candidate['issues'][0]['suggestion']
@@ -262,7 +262,8 @@ def test_repair_prompt_contains_only_bad_issues_and_numbered_source(example):
     assert '只用于有效意见的标记' not in prompt
     payload = json.loads(prompt.split('Input JSON:\n', 1)[1])
     assert 'manuscript' not in payload['inputs']
-    assert payload['inputs']['manuscript_lines'].splitlines()[2] == '3: 比较两种证据组织方法。'
+    assert 'manuscript_lines' not in payload['inputs']
+    assert payload['quote_mode'] == 'preserve'
 
 
 def test_repeated_field_tag_does_not_split_or_expand_issues(example):
@@ -292,15 +293,14 @@ def test_ambiguous_json_is_not_guessed_or_expanded(raw):
         peer_review.parse_response(raw)
 
 
-def test_large_repair_is_rejected_without_expanding_fragments(example):
-    candidate = {**example['model_response'], 'issues': [
-        {'problem': 'fragment'} for _ in range(peer_review.MAX_REPAIR_ISSUES + 1)]}
-    with pytest.raises(ValueError, match='损坏范围过大'):
-        peer_review.repair_targets(candidate, example['input']['manuscript'])
+def test_multiple_invalid_issues_are_independent_targets(example):
+    candidate = copy.deepcopy(example['model_response'])
+    candidate['issues'] = [dict(candidate['issues'][0], severity='invalid') for _ in range(6)]
+    assert len(peer_review.repair_targets(candidate, example['input']['manuscript'])) == 6
 
 
 def test_repair_payload_limit_does_not_silently_truncate_source(example):
-    inputs = {**example['input'], 'manuscript': '原文' * peer_review.MAX_REPAIR_CHARS}
+    inputs = {**example['input'], 'request': '审查要求' * peer_review.MAX_REPAIR_CHARS}
     with pytest.raises(ValueError, match='超过限制'):
         peer_review.repair_prompt(inputs, {'summary': {'value': '', 'errors': []}})
 
@@ -316,21 +316,146 @@ def test_quote_repair_does_not_resend_large_analysis_or_figures(example):
     prompt = peer_review.repair_prompt(inputs, targets)
     payload = json.loads(prompt.split('Input JSON:\n', 1)[1])
     assert set(payload['inputs']) == {'topic', 'request', 'manuscript_lines'}
-    assert '\n'.join(line.split(': ', 1)[1] for line in payload['inputs']['manuscript_lines'].splitlines()) == inputs['manuscript']
+    for line in payload['inputs']['manuscript_lines'].splitlines():
+        number, text = line.split(': ', 1)
+        assert inputs['manuscript'].splitlines()[int(number) - 1] == text
     assert payload['targets'] == targets
     assert 'analysis-only-marker' not in prompt and 'figure-only-marker' not in prompt
     assert inputs == before
 
 
-def test_numbered_full_manuscript_fits_repair_budget_without_json_per_line(example):
-    manuscript = '\n'.join(f'段落{i}：' + '论文原文' * 15 for i in range(250))
+def test_long_manuscript_quote_repair_only_sends_related_source(example):
+    manuscript = '# 背景\n' + '\n\n'.join('无关背景材料。' * 25 for _ in range(300))
+    manuscript += '\n\n## 方法\n比较两种证据组织方法。\n\n## 附录\n不应发送的附录。'
     inputs = {**example['input'], 'manuscript': manuscript}
-    prompt = peer_review.repair_prompt(inputs, {'issues.0': {
-        'value': example['model_response']['issues'][0], 'errors': ['quote not found']}})
+    issue = dict(example['model_response']['issues'][0], quote='比较三种证据组织方法。')
+    prompt, allowed = peer_review.repair_request(inputs, {'issues.0': {
+        'value': issue, 'errors': ['quote not found']}})
     payload = json.loads(prompt.split('Input JSON:\n', 1)[1])
-    restored = '\n'.join(line.split(': ', 1)[1] for line in payload['inputs']['manuscript_lines'].splitlines())
-    assert restored == manuscript
+    assert '比较两种证据组织方法。' in payload['inputs']['manuscript_lines']
+    assert '无关背景材料' not in prompt and '不应发送的附录' not in prompt
+    assert len(manuscript) > peer_review.MAX_REPAIR_CHARS
+    assert allowed
     assert len(prompt) < peer_review.MAX_REPAIR_CHARS
+
+
+@pytest.mark.parametrize('quote', [None, {'start_line': 1, 'end_line': 3},
+                                  {'start_line': 2, 'end_line': 4}, '编造的引用'])
+def test_local_repair_cannot_evade_source_checks(example, quote):
+    issue = example['model_response']['issues'][0]
+    target = {'value': dict(issue, quote='未匹配的原文'), 'errors': ['quote not found']}
+    with pytest.raises(ValueError):
+        peer_review.apply_repair(example['model_response'], {'issues.0': target},
+                                 peer_review.ReviewRepair(replacements={'issues.0': dict(issue, quote=quote)}),
+                                 example['input']['manuscript'], allowed_lines={1, 3, 5})
+
+
+def test_format_repair_preserves_original_quote(example):
+    issue = example['model_response']['issues'][0]
+    target = {'value': dict(issue, severity='invalid'),
+              'errors': [{'field': ['issues', 0, 'severity'], 'message': 'invalid severity'}]}
+    result = peer_review.apply_repair(example['model_response'], {'issues.0': target},
+                                     peer_review.ReviewRepair(replacements={'issues.0': issue}),
+                                     example['input']['manuscript'], allowed_lines=set())
+    assert result.issues[0].model_dump() == issue
+
+
+def test_repair_runs_separate_batches_and_preserves_valid_issues(example, monkeypatch):
+    candidate = copy.deepcopy(example['model_response'])
+    issue = candidate['issues'][0]
+    candidate['issues'] = [copy.deepcopy(issue), dict(issue, severity='invalid'),
+                           dict(issue, quote='比较三种证据组织方法。')]
+    before = copy.deepcopy(candidate)
+    calls = []
+
+    def repair(_reviewer, prompt, schema, trace_id):
+        payload = json.loads(prompt.split('Input JSON:\n')[1])
+        calls.append(payload)
+        key, = payload['targets']
+        value = dict(issue)
+        if payload['quote_mode'] == 'source_lines':
+            assert 'manuscript_lines' in payload['inputs']
+            value['quote'] = {'start_line': 3, 'end_line': 3}
+        else:
+            assert 'manuscript_lines' not in payload['inputs']
+        return {'replacements': {key: value}}
+
+    monkeypatch.setattr(peer_review, 'call_once', repair)
+    targets = peer_review.repair_targets(candidate, example['input']['manuscript'])
+    result = peer_review.repair_result(None, example['input'], candidate, targets, 'offline')
+    assert len(calls) == 2 and all(len(p['targets']) == 1 for p in calls)
+    assert [i.model_dump() for i in result.issues] == [issue] * 3
+    assert candidate == before
+    peer_review.build_output(result, example['input'])
+
+
+def test_unverifiable_issue_is_disclosed_and_excluded_from_auto_revision(example, monkeypatch):
+    candidate = copy.deepcopy(example['model_response'])
+    candidate['issues'].append(dict(candidate['issues'][0], location='不存在的章节', quote='xyzzzz'))
+    before = copy.deepcopy(candidate)
+    monkeypatch.setattr(peer_review, 'call_once', lambda *a: pytest.fail('No source, no model call'))
+    result = peer_review.repair_result(None, example['input'], candidate,
+                                      peer_review.repair_targets(candidate, example['input']['manuscript']), 'offline')
+    output = peer_review.build_output(result, example['input'])
+    assert len(output['review_data']['issues']) == 1
+    assert '待核验意见' in output['review'] and 'xyzzzz' in output['review']
+    assert output['review_data']['issues'][0]['quote'] == candidate['issues'][0]['quote']
+    assert candidate == before
+
+
+def test_bad_quote_repair_keeps_valid_review_and_cannot_publish_fake_quote(example, monkeypatch):
+    candidate = copy.deepcopy(example['model_response'])
+    issue = candidate['issues'][0]
+    candidate['issues'].append(dict(issue, quote='比较三种证据组织方法。'))
+    monkeypatch.setattr(peer_review, 'call_once', lambda *a: {
+        'replacements': {'issues.1': dict(issue, quote=None)}})
+    result = peer_review.repair_result(None, example['input'], candidate,
+                                      peer_review.repair_targets(candidate, example['input']['manuscript']), 'offline')
+    assert len(result.issues) == 1
+    assert any('不能将需要核验的原文引用改为 null' in text for text in result.limitations)
+
+
+def test_quote_repair_cannot_change_supported_judgment(example):
+    issue = example['model_response']['issues'][0]
+    target = {'value': dict(issue, quote='比较三种证据组织方法。'), 'errors': ['quote not found']}
+    replacement = dict(issue, problem='擅自替换原来的判断', quote={'start_line': 3, 'end_line': 3})
+    with pytest.raises(ValueError, match='已经有效的字段'):
+        peer_review.apply_repair(example['model_response'], {'issues.0': target},
+                                 peer_review.ReviewRepair(replacements={'issues.0': replacement}),
+                                 example['input']['manuscript'], {3})
+
+
+def test_full_review_repairs_long_manuscript_in_bounded_batches(example, monkeypatch):
+    issue = example['model_response']['issues'][0]
+    manuscript = '# 背景\n' + ('无关内容。' * 100 + '\n\n') * 150
+    manuscript += '\n## 方法\n' + issue['quote'] + '\n'
+    line_number = manuscript.splitlines().index(issue['quote']) + 1
+    inputs = {**example['input'], 'manuscript': manuscript}
+    candidate = copy.deepcopy(example['model_response'])
+    candidate['issues'] = [copy.deepcopy(issue)] + [dict(issue, quote='比较三种证据组织方法。') for _ in range(6)]
+    before = copy.deepcopy(candidate)
+    calls = []
+
+    def respond(_reviewer, prompt, schema, trace_id):
+        calls.append(schema)
+        if schema is peer_review.ReviewResult:
+            return copy.deepcopy(candidate)
+        assert len(prompt) < peer_review.MAX_REPAIR_CHARS
+        payload = json.loads(prompt.split('Input JSON:\n')[1])
+        assert '无关内容' not in prompt
+        key, = payload['targets']
+        return {'replacements': {key: dict(issue, quote={'start_line': line_number, 'end_line': line_number})}}
+
+    monkeypatch.setattr(peer_review, 'AutoModel', lambda **kw: object())
+    monkeypatch.setattr(peer_review, 'WriterToolBase', lambda **kw: object())
+    monkeypatch.setattr(peer_review, 'call_once', respond)
+    output = peer_review.run(inputs)
+    assert calls == [peer_review.ReviewResult] + [peer_review.ReviewRepair] * 6
+    assert len(output['review_data']['issues']) == 7
+    assert all(item['quote'] == issue['quote'] for item in output['review_data']['issues'])
+    assert output['review_data']['manuscript_sha256'] == peer_review.text_digest(manuscript)
+    assert candidate == before
+    api.contracts.validate_output('peer_review', output)
 
 
 def test_parse_failure_logs_metadata_without_response_content(caplog, monkeypatch):

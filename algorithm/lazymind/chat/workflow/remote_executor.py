@@ -323,7 +323,11 @@ class RemoteWorkflowExecutor:
                 return
             try:
                 if self._was_interrupted(terminal_event):
-                    await self.runtime.cancel(client, attempt_id, lease)
+                    pending = control.get('awaiting_input')
+                    if pending:
+                        await self.runtime.cancel(client, attempt_id, lease, input_required=pending)
+                    else:
+                        await self.runtime.cancel(client, attempt_id, lease)
                 elif failure:
                     failure_options = {}
                     if failure_code != 'LAZYMIND_EXECUTION_FAILED':

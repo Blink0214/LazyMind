@@ -590,6 +590,39 @@ def _terminal(events):
     return terminal[0]
 
 
+@pytest.mark.parametrize('declared', [True, False])
+def test_workflow_clarification_pauses_without_fabricating_required_outputs(completion_case, declared):
+    pending = {'question': '请确认采用哪些意见。', 'request_sha256': 'a' * 64}
+    events, model, _ = completion_case(
+        agent_type='workflow_step', output_slots=['document'],
+        params={'legacy_tools': ['run_paper_step'] if declared else [],
+                'required_output_artifact_keys': ['document'], 'output_slot_types': {'document': 'file'}},
+        events=[{'tag': 'tool_results', 'tool_results': [{'name': 'run_paper_step',
+                 'result': {'ok': True, 'value': {'status': 'needs_input',
+                            'control': {'awaiting_input': pending}}}}]}],
+    )
+    terminal = _terminal(events)
+    assert not any(event['type'] == 'artifact' for event in events)
+    if declared:
+        assert terminal['type'] == 'done' and terminal['status'] == 'interrupted'
+        assert terminal['current_phase'] == 'awaiting_input'
+        assert terminal['control'] == {'awaiting_input': pending}
+        model.share.assert_not_called()
+    else:
+        assert terminal['status'] == 'failed'
+        assert 'control' not in terminal
+
+
+def test_workflow_rejects_conflicting_pause_and_route_controls():
+    event = {'tag': 'tool_results', 'tool_results': [
+        {'name': 'run_paper_step', 'result': {'control': {'awaiting_input': {
+            'question': '请选择意见', 'request_sha256': 'a' * 64}}}},
+        {'name': 'run_paper_step', 'result': {'control': {'next_step': 'finish'}}},
+    ]}
+    with pytest.raises(ValueError, match='conflicting'):
+        runner_mod._workflow_control_from_tool_results(event, {'run_paper_step'})
+
+
 async def _run_completion_review_scenario(
     monkeypatch,
     tmp_path,

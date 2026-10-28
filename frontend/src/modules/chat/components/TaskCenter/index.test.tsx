@@ -181,6 +181,25 @@ describe("TaskCenter display modes", () => {
     });
   });
 
+  it("labels a revision awaiting input separately from interrupted execution", () => {
+    useTaskCenterStore.setState({ tasksByConversation: { "conversation-1": [{
+      ...task("revise_document", 1, "interrupted"), current_phase: "awaiting_input", progress_pct: 7,
+    }] } });
+    render(<TaskCenter sessionId="conversation-1" developerMode />);
+    expect(screen.getByText("chat.workflowInputRequired")).toBeInTheDocument();
+  });
+
+  it("shows the public clarification question in ordinary mode", () => {
+    const view = ordinary("revision", { status: "canceled", input_required: "请确认采用哪些意见" });
+    useTaskCenterStore.setState({ tasksByConversation: { "conversation-1": [{
+      ...task("revision", 1, "interrupted"), ordinary: view,
+    }] } });
+    render(<TaskCenter sessionId="conversation-1" developerMode={false} />);
+    expect(screen.getAllByText("chat.workflowInputRequired")).toHaveLength(2);
+    expect(screen.getByText("请确认采用哪些意见")).toHaveAttribute("role", "status");
+    expect(screen.queryByText("taskCenter.ordinaryFailedSummary")).not.toBeInTheDocument();
+  });
+
   it("shows authoritative initialization timing before the first child exists", () => {
     useTaskCenterStore.setState({ tasksByConversation: { "conversation-1": [task("previous-turn", 1, "succeeded")] }, runsByConversation: { "conversation-1": [{
       run_id: "accepted", execution_id: "round", revision: 1, status: "waiting", final_output_refs: [],

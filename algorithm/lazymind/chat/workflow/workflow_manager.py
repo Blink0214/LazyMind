@@ -7,6 +7,7 @@ public Workflow SDK into ChatAgent tools and applies LazyMind's handoff rule.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -227,6 +228,10 @@ def _handoff_tool(
                 current_user_input, recovery_instruction = _step_request_input(
                     bound_user_input, selected_session_id,
                 )
+                if step_id in (frontier.get('retryable_steps') or []):
+                    pending = _input_required_result(client.get_state(selected_session_id), [step_id], current_user_input)
+                    if pending:
+                        return pending
                 if recovery_instruction:
                     focus_hints.append(recovery_instruction)
                 response = client.advance(AdvanceRequest(
@@ -381,6 +386,9 @@ def _compact_transition_result(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _with_terminal_agent_control(result: Dict[str, Any]) -> Dict[str, Any]:
+    pending = _input_required_result(result)
+    if pending:
+        return {**result, **pending}
     workflow_state = result.get('workflow_state')
     workflow_state = workflow_state if isinstance(workflow_state, dict) else {}
     projection = result.get('projection')
@@ -402,6 +410,38 @@ def _with_terminal_agent_control(result: Dict[str, Any]) -> Dict[str, Any]:
             'final_text': '工作流已完成，最终产物已生成。',
         },
     }
+
+
+def _input_required_result(
+    result: Dict[str, Any], requested: Optional[List[str]] = None, current_input: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """A paused attempt resumes on an answer, never on an identical automatic retry."""
+    state = result.get('workflow_state') or result
+    projection = state.get('projection') or {}
+    if state.get('status') == 'completed' or projection.get('completed') is True:
+        return None
+    for step_id, attempts in (state.get('attempt_history') or {}).items():
+        if requested is not None and step_id not in requested:
+            continue
+        retryable = projection.get('retryable', projection.get('retryable_steps'))
+        if isinstance(retryable, list) and step_id not in retryable:
+            continue
+        effective = [item for item in attempts if item.get('validity') in {None, '', 'effective'}]
+        if not effective:
+            continue
+        latest = max(effective, key=lambda item: item.get('attempt', 0))
+        pending = latest.get('input_required')
+        if latest.get('status') != 'cancelled' or not isinstance(pending, dict) or not pending.get('question'):
+            continue
+        text = str(current_input or '').strip()
+        retry_only = text.rstrip('。.!！').lower() in {'重试', '重新执行', 'retry', 're-run', 'rerun', 'try again'}
+        changed_input = hashlib.sha256(text.encode()).hexdigest() != pending.get('request_sha256')
+        if current_input is not None and text and not retry_only and changed_input:
+            continue
+        question = pending['question']
+        return {'status': 'waiting', 'outcome': 'workflow_input_required', 'user_notice': question,
+                '_agent_control': {'stop': True, 'reason': 'workflow_input_required', 'final_text': question}}
+    return None
 
 
 def _safe_session_tools(
@@ -484,6 +524,10 @@ def _safe_session_tools(
                 current_user_input, recovery_instruction = _step_request_input(
                     bound_user_input, selected_session_id,
                 )
+                if any(value in (frontier.get('retryable_steps') or []) for value in requested):
+                    pending = _input_required_result(toolkit.get_workflow_state(selected_session_id), requested, current_user_input)
+                    if pending:
+                        return pending
                 if recovery_instruction:
                     focus_hints.append(recovery_instruction)
                 result = toolkit.advance_step(

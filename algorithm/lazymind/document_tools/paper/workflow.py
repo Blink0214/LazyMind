@@ -670,7 +670,16 @@ def run_paper_step() -> dict:
         if step == 'experiment':
             from .experiment.stream import ExperimentStream
             stream = ExperimentStream(context.emit, '实验研究', context.output_slots)
-        result = _run_paper_step(context, stream)
+        from .writing.revise_document import RevisionInputRequired
+        try:
+            result = _run_paper_step(context, stream)
+        except RevisionInputRequired as error:
+            question = str(error)
+            request, _ = _runtime_request(context.params)
+            events.wait_for_input(question)
+            return {'status': 'needs_input', 'step': step,
+                    'control': {'awaiting_input': {'question': question, 'request_sha256': text_digest(request)}},
+                    '_agent_control': {'stop': True, 'reason': 'workflow_input_required', 'final_text': question}}
         events.complete()
         return result
 
@@ -765,8 +774,17 @@ def _run_paper_step(context, stream=None) -> dict:
         if step == 'revise_document':
             from .writing.revise_document import resolve_review_issues
             review = material(pool, 'review_data')
+            manuscript = material(pool, 'manuscript')
+            report = material(pool, 'review')
+            previous = next((entry.get('step') or entry.get('node') for entry in reversed(pool['history'])), None)
+            matches = bool(review and manuscript and report
+                           and review['content']['manuscript_sha256'] == text_digest(manuscript['content'])
+                           and review['content']['review_sha256'] == text_digest(report['content']))
             pool['selected_issue_ids'] = resolve_review_issues(
                 request, review['content'] if review else None,
+                workflow_context={'current_step': step,
+                                  'previous_completed_step': 'peer_review' if previous in {'peer_review', 'F6'} else previous,
+                                  'review_matches_manuscript': matches},
             )
         fail = '[mock:fail]' in request + instruction and '[mock:retry]' not in request + instruction
         if (step == 'write_document' and 'write_outline_document' in getattr(context, 'input_slots', [])

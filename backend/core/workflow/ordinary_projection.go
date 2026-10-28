@@ -169,6 +169,16 @@ func projectOrdinarySession(ctx context.Context, db *gorm.DB, session *orm.Workf
 			// SubAgent row. Only expose task_id when the adapter actually exists.
 			view.AttemptID, view.ExecutionID = taskdisplay.String(row.ID), row.ID
 			view.Status = ordinaryAttemptStatus(row)
+			if row.Status == "cancelled" && row.TerminalCode == "WORKFLOW_INPUT_REQUIRED" {
+				var result struct {
+					InputRequired struct {
+						Question string `json:"question"`
+					} `json:"input_required"`
+				}
+				if json.Unmarshal([]byte(row.ResultJSON), &result) == nil {
+					view.InputRequired = taskdisplay.Text(result.InputRequired.Question, 2000)
+				}
+			}
 			view.ParallelGroupID = taskdisplay.String(groups[row.TaskID])
 			applyOrdinaryAttemptEvents(&view, row, events)
 			// Slot revisions establish explicit visibility and attempt ownership for

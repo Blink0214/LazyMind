@@ -65,6 +65,54 @@ def _tool_names(contribution):
     return names
 
 
+@pytest.mark.parametrize('handoff', [False, True])
+@pytest.mark.parametrize('user_input,should_resume', [
+    ('继续，修订论文', False), ('重试', False), ('', False), ('只采用R1，其余暂缓', True),
+])
+def test_revision_waits_for_new_answer_instead_of_repeating_automatic_retry(handoff, user_input, should_resume):
+    import hashlib
+    from lazymind.chat.workflow import workflow_manager as workflows
+
+    pending = {'question': '请确认修订范围',
+               'request_sha256': hashlib.sha256('继续，修订论文'.encode()).hexdigest()}
+    state = {'attempt_history': {'revise_document': [{
+        'attempt': 1, 'status': 'cancelled', 'validity': 'effective', 'input_required': pending,
+    }]}}
+    frontier = {'state_version': 7, 'retryable_steps': ['revise_document']}
+    toolkit = MagicMock()
+    toolkit.get_ready_steps.return_value = frontier
+    toolkit.get_workflow_state.return_value = state
+    toolkit.advance_step.return_value = {'status': 'active'}
+    with patch.object(workflows, '_client') as factory:
+        client = factory.return_value
+        client.get_ready_steps.return_value = frontier
+        client.get_state.return_value = state
+        client.advance.return_value.result = {'status': 'active'}
+        tool = (workflows._handoff_tool('session-1', user_input=user_input) if handoff else
+                next(tool for tool in workflows._safe_session_tools(toolkit, 'session-1', user_input=user_input)
+                     if tool.__name__ == 'advance_step'))
+        result = tool('revise_document' if handoff else ['revise_document'])
+        advance = client.advance if handoff else toolkit.advance_step
+        if should_resume:
+            advance.assert_called_once()
+        else:
+            advance.assert_not_called()
+            assert result['outcome'] == 'workflow_input_required'
+            assert result['_agent_control']['stop'] is True
+            assert result['user_notice'] == pending['question']
+
+
+def test_obsolete_pause_does_not_block_newer_completed_attempt():
+    from lazymind.chat.workflow.workflow_manager import _input_required_result
+    pending = {'question': '旧问题', 'request_sha256': 'a' * 64}
+    state = {'attempt_history': {'revise_document': [
+        {'attempt': 1, 'status': 'cancelled', 'input_required': pending},
+        {'attempt': 2, 'status': 'succeeded'},
+        {'attempt': 3, 'status': 'cancelled', 'validity': 'stale', 'input_required': pending},
+    ]}}
+    assert _input_required_result(state) is None
+
+
 @pytest.mark.parametrize('workflow_id', [
     'writer-workflow', 'image-workflow', 'ppt-workflow', 'product_solution_delivery',
 ])

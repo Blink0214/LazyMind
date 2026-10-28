@@ -6,6 +6,51 @@ from lazymind.document_tools.paper.writing import common, revise_document, write
 
 BODY = '# Paper\n\n## Methods\nKeep methods.\n\n## Discussion\nShorten this paragraph.'
 
+CURRENT_REVIEW = {'current_step': 'revise_document', 'previous_completed_step': 'peer_review',
+                  'review_matches_manuscript': True}
+
+
+@pytest.mark.parametrize('user_request', ['继续，修订论文', '继续', '请修改稿件', '开始修订'])
+def test_current_review_confirmation_selects_all_without_reclassifying(monkeypatch, user_request):
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: pytest.fail('Already confirmed current review'))
+    review = {'issues': [{'id': 'R1'}, {'id': 'R2'}]}
+    assert revise_document.resolve_review_issues(user_request, review, workflow_context=CURRENT_REVIEW) == ['R1', 'R2']
+
+
+@pytest.mark.parametrize('change', [{'previous_completed_step': 'write_document'},
+                                   {'review_matches_manuscript': False}, {'current_step': 'peer_review'}])
+def test_confirmation_does_not_adopt_old_review_without_current_context(monkeypatch, change):
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: lambda prompt: '{"intent":"unclear"}')
+    with pytest.raises(revise_document.RevisionInputRequired):
+        revise_document.resolve_review_issues('继续，修订论文', {'issues': [{'id': 'R1'}]},
+                                             workflow_context={**CURRENT_REVIEW, **change})
+
+
+@pytest.mark.parametrize('user_request,response,expected', [
+    ('缩短摘要', {'intent': 'direct'}, []),
+    ('只改R1，R2先保留', {'intent': 'review', 'selection': 'subset', 'issue_ids': ['R1']}, ['R1']),
+])
+def test_explicit_scope_wins_over_current_review_default(monkeypatch, user_request, response, expected):
+    def model(prompt):
+        assert 'previous_completed_step' in prompt and user_request in prompt
+        return json.dumps(response)
+    monkeypatch.setattr(revise_document, 'AutoModel', lambda **kw: model)
+    assert revise_document.resolve_review_issues(user_request, {'issues': [{'id': 'R1'}, {'id': 'R2'}]},
+                                                workflow_context=CURRENT_REVIEW) == expected
+
+
+def test_revision_scope_events_include_start_and_result(monkeypatch):
+    from lazymind.document_tools.paper.runtime_events import bind_runtime_events
+    events = []
+    with bind_runtime_events(events.append, 'revise_document_document'):
+        assert revise_document.resolve_review_issues('继续，修订论文', {'issues': [
+            {'id': 'R1', 'action_type': 'text_revision'}, {'id': 'R2', 'action_type': 'needs_material'}]},
+            workflow_context=CURRENT_REVIEW) == ['R1', 'R2']
+    text = ''.join(e.get('text', '') for e in events)
+    assert '正在确定修订范围' in text and '1 条可执行意见、1 条待补事项' in text
+    assert any(s['status'] == 'succeeded' for e in events if e['type'] == 'progress'
+               for s in e['public_display']['process_steps'])
+
 
 def test_separate_entries_and_no_implicit_draft_revision():
     assert api.ALGORITHMS['write_document'] is write_document

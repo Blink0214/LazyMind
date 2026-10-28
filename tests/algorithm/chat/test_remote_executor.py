@@ -145,6 +145,36 @@ def test_remote_executor_preserves_ordinary_subagent_stream_event_shape():
     assert RemoteWorkflowExecutor._parse_frame('data: [DONE]\n\n') is None
 
 
+@pytest.mark.asyncio
+async def test_clarification_persists_question_without_failure_or_completion(monkeypatch, tmp_path):
+    from unittest.mock import AsyncMock
+    from lazymind.chat.engine.subagent import runner
+
+    worker = RemoteWorkflowExecutor()
+    runtime = AsyncMock()
+    runtime.context.return_value = {'metadata': {'task_id': 'task-1'}, 'inputs': {}}
+    runtime.execution_spec.return_value = {
+        'task': {'input_slots': [], 'output_slots': ['document']},
+        'workspace_path': str(tmp_path), 'params': {}, 'steps': [], 'llm_config': {},
+    }
+    worker.runtime = runtime
+    checks = AsyncMock()
+    monkeypatch.setattr(worker, '_run_post_step_checks', checks)
+    pending = {'question': '请确认修订范围', 'request_sha256': 'a' * 64}
+
+    async def stream(**kwargs):
+        yield 'data: ' + json.dumps({'type': 'done', 'status': 'interrupted',
+                                     'control': {'awaiting_input': pending}}) + '\n\n'
+
+    monkeypatch.setattr(runner, 'run_subagent_stream', stream)
+    client = object()
+    await worker._run_claim(client, {'attempt_id': 'attempt-1', 'lease_token': 'lease-1'})
+    runtime.cancel.assert_awaited_once_with(client, 'attempt-1', 'lease-1', input_required=pending)
+    runtime.complete.assert_not_awaited()
+    runtime.fail.assert_not_awaited()
+    checks.assert_not_awaited()
+
+
 def test_remote_executor_ignores_non_json_stream_frames():
     assert RemoteWorkflowExecutor._parse_frame('event: heartbeat\n\n') is None
 
@@ -1267,7 +1297,7 @@ def test_optional_public_stages_reach_core_before_terminal(monkeypatch, tmp_path
         {'step_id': 'read', 'revision': 1, 'order': 0, 'title': '读取材料', 'status': 'running'}]}
     calls = []
 
-    class Runtime:
+    class Runtime(StopReceiptRuntime):
         async def context(self, *_):
             return {'metadata': {'task_id': 'task-1'}, 'inputs': {}, 'prompt': 'Finish'}
 

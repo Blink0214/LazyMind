@@ -1,7 +1,7 @@
 """One independent drawing request per figure, sharing all results, data and style."""
 import copy
 import json
-from concurrent.futures import as_completed
+from concurrent.futures import CancelledError, as_completed
 
 from .model import call_model, call_code_model, PlotModelError
 from .code_response import CODE_INSTRUCTION, REPAIR_INSTRUCTION, code_response, repair_response, numbered_source
@@ -126,11 +126,13 @@ def prepare_figures(analysis, figures, inputs, shared=None):
 
 def draw(analysis, figures, inputs, shared=None):
     attempts, concurrency = limits()
-    prepared = prepare_figures(analysis, figures, inputs, shared)
-    if not prepared:
+    if not figures:
         return [], []
 
-    def render_one(item):
+    def render_one(figure):
+        # Preparation is figure-local too: one unavailable style/reference must
+        # not discard the other figures' successfully exported files.
+        item = prepare_figures(analysis, [figure], inputs, shared)[0]
         figure, data, statistics, spec, reference, hashes = item
         fallback, original_attempts = None, []
         try:
@@ -156,21 +158,36 @@ def draw(analysis, figures, inputs, shared=None):
         result = dict(id=figure['id'], title=figure['title'], columns=figure['columns'], svg=chart['svg'],
                       finding_ids=figure['finding_ids'], caption=spec.get('caption') or figure['purpose'])
         trace.update(exports=chart['exports'], skill_resources_sha256=hashes,
-                     concurrency=min(concurrency, len(prepared)), caption=result['caption'])
+                     concurrency=min(concurrency, len(figures)), caption=result['caption'])
         if fallback:
             trace.update(fallback=fallback, original_attempts=original_attempts,
                          first_attempt_passed_execution_and_file_checks=False)
         return result, trace
 
-    ordered = [None] * len(prepared)
+    ordered = [None] * len(figures)
     # This executor propagates both request ContextVars and the configured model/session.
-    with ThreadPoolExecutor(max_workers=min(concurrency, len(prepared))) as pool:
-        futures = {pool.submit(render_one, item): index for index, item in enumerate(prepared)}
+    with ThreadPoolExecutor(max_workers=min(concurrency, len(figures))) as pool:
+        futures = {pool.submit(render_one, figure): index for index, figure in enumerate(figures)}
         try:
             for future in as_completed(futures):
-                ordered[futures[future]] = future.result()
+                index = futures[future]
+                try:
+                    ordered[index] = future.result()
+                except CancelledError:
+                    raise
+                except Exception as exc:
+                    figure = figures[index]
+                    trace = dict(id=figure['id'], title=figure['title'], status='failed',
+                                 error=diagnostics.safe_error(exc), attempts=[], exports={})
+                    diagnostics.save(f"figure-{diagnostics.figure_name(figure['id'])}-failed.json", trace)
+                    ordered[index] = None, trace
         except BaseException:
             for future in futures:
                 future.cancel()
             raise
-    return [chart for chart, _ in ordered if chart is not None], [trace for _, trace in ordered]
+    charts = [chart for chart, _ in ordered if chart is not None]
+    traces = [trace for _, trace in ordered]
+    if not charts:
+        errors = '；'.join(f'{item["id"]}: {item["error"]["message"]}' for item in traces)
+        raise RuntimeError('全部请求图表生成失败，未发布结果：' + errors)
+    return charts, traces

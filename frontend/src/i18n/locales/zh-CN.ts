@@ -3901,6 +3901,7 @@ const zhCN = {
     workflowEmptyFailed: "步骤执行失败",
     workflowEmptyInterrupted: "步骤已中断",
     workflowEmptyCompleted: "步骤已完成，暂无可显示产物",
+    workflowInputRequired: "等待确认",
     workflowEmptyUnknown: "暂无步骤状态",
     workflowPanelTitle: "工作流面板",
     workflowPreviousPage: "上一张幻灯片",

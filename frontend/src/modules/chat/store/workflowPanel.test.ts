@@ -76,7 +76,7 @@ describe('runtime skipped tab visibility', () => {
 
   it('hides skipped literature feedback while retaining future paper revision', () => {
     const paper = hydrateWorkflowUI(load(readFileSync(resolve(process.cwd(), '../workflows/paper-writing/workflow.yaml'), 'utf8')));
-    const hidden = ['research_topic', 'literature_review', 'experiment', 'data_analysis', 'write_document', 'reading_reflection'];
+    const hidden = ['research_topic', 'literature_review', 'experiment', 'data_analysis', 'write_outline', 'write_document', 'reading_reflection'];
     const selected: WorkflowRuntimeProjection = { pruned: hidden, past: ['peer_review'] };
     const visible = () => filterWorkflowTabs(paper.tabs, [], undefined, selected, true).map(t => t.id);
     expect(visible()).toEqual(['peer_review', 'revise_document']);

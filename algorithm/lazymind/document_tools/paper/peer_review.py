@@ -21,7 +21,6 @@ CATEGORY_LABELS = {'method': '方法', 'evidence': '证据', 'analysis': '分析
                    'structure': '结构', 'language': '语言', 'citation': '引用'}
 ACTION_LABELS = {'text_revision': '可直接修改文字', 'needs_material': '需要作者补充材料',
                  'needs_experiment': '需要补充实验，不能用生成文字代替'}
-MAX_REPAIR_ISSUES = 5
 MAX_REPAIR_CHARS = 24000
 
 
@@ -186,43 +185,138 @@ def repair_targets(candidate: dict, manuscript: str) -> dict:
                                        limitations=[]), manuscript)
         except ReviewQuoteError as error:
             targets[path] = {'value': issue, 'errors': [str(error)]}
-    if sum(path.startswith('issues.') for path in targets) > MAX_REPAIR_ISSUES:
-        raise ValueError('审稿结果损坏范围过大，已停止修复；未扩写意见或自动重新审稿。')
     return targets
 
 
-def apply_repair(candidate: dict, targets: dict, repair: ReviewRepair, manuscript: str) -> ReviewResult:
+def apply_repair(candidate: dict, targets: dict, repair: ReviewRepair, manuscript: str,
+                 allowed_lines: set[int] | None = None) -> ReviewResult:
     if set(repair.replacements) != set(targets):
         raise ValueError('审稿局部修复必须且只能返回指定字段，不能改动有效意见。')
     merged = deepcopy(candidate)
     lines = manuscript.splitlines(keepends=True)
     for path, value in repair.replacements.items():
         if path.startswith('issues.'):
-            issue = RepairedIssue.model_validate(value)
+            original = targets[path].get('value', {})
+            original = original if isinstance(original, dict) else {}
+            line_quote = isinstance(value, dict) and isinstance(value.get('quote'), dict)
+            issue = (RepairedIssue if line_quote else ReviewIssue).model_validate(value)
             value = issue.model_dump()
-            if issue.quote is not None:
+            if issue.quote is None and original.get('quote') is not None:
+                raise ValueError('不能将需要核验的原文引用改为 null。')
+            if line_quote:
                 start, end = issue.quote.start_line, issue.quote.end_line
                 if not 1 <= start <= end <= len(lines):
                     raise ValueError('审稿修复的原文行号越界或倒置，不能发布意见。')
+                if allowed_lines is not None and not set(range(start, end + 1)) <= allowed_lines:
+                    raise ValueError('审稿修复引用了未提供的原文行或跨越不连续片段。')
                 value['quote'] = ''.join(lines[start - 1:end]).rstrip('\r\n')
+            elif value['quote'] != original.get('quote'):
+                raise ValueError('格式修复不能改写原文引用；引用修复必须返回原文行号。')
+            if 'errors' in targets[path]:
+                invalid_fields = {error['field'][2] for error in targets[path]['errors']
+                                  if isinstance(error, dict) and len(error.get('field', [])) > 2}
+                for field in ReviewIssue.model_fields.keys() - {'quote'} - invalid_fields:
+                    if field in original and value[field] != original[field]:
+                        raise ValueError('局部修复不能改变该条意见中已经有效的字段。')
             merged['issues'][int(path.split('.')[1])] = value
         else:
             merged[path] = value
     return ReviewResult.model_validate(merged)
 
 
-def repair_prompt(inputs: dict, targets: dict) -> str:
-    # Repair schema/quotation defects, not the scientific review. Re-sending full
-    # analysis tables and figures can exhaust the repair budget for a single quote.
+def _needs_source(target, manuscript):
+    issue = target.get('value')
+    if not isinstance(issue, dict):
+        return False
+    quote = issue.get('quote')
+    if 'quote' not in issue:
+        return True
+    if quote is None:
+        return False
+    if not isinstance(quote, str) or not quote.strip():
+        return True
+    pattern = r'\s+'.join(re.escape(part) for part in quote.split())
+    return quote not in manuscript and re.search(pattern, manuscript) is None
+
+
+def repair_request(inputs: dict, targets: dict) -> tuple[str, set[int]]:
+    """Format-only repairs need no manuscript; quote repairs get selected original lines."""
+    from .review_context import source_lines
+
     context = {key: inputs[key] for key in ('topic', 'request') if key in inputs}
-    context['manuscript_lines'] = '\n'.join(
-        f'{index}: {line}' for index, line in enumerate(inputs['manuscript'].splitlines(), 1))
-    prompt = REPAIR_PROMPT + '\n\nInput JSON:\n' + json.dumps({
-        'inputs': context, 'targets': targets, 'issue_schema': RepairedIssue.model_json_schema(),
-    }, ensure_ascii=False)
+    sources = [target for path, target in targets.items() if path.startswith('issues.')
+               and _needs_source(target, inputs['manuscript'])]
+    payload = {'inputs': context, 'targets': targets,
+               'quote_mode': 'source_lines' if sources else 'preserve',
+               'issue_schema': (RepairedIssue if sources else ReviewIssue).model_json_schema()}
+
+    def render():
+        return REPAIR_PROMPT + '\n\nInput JSON:\n' + json.dumps(payload, ensure_ascii=False)
+
+    allowed = set()
+    if sources:
+        budget = min(8000, MAX_REPAIR_CHARS - len(render()) - 32)
+        selections = []
+        for target in sources:
+            text, indices = source_lines(inputs['manuscript'], target['value'], budget // len(sources))
+            selections.append(text)
+            allowed.update(indices)
+        context['manuscript_lines'] = '\n'.join(selections)
+    prompt = render()
     if len(prompt) > MAX_REPAIR_CHARS:
         raise ValueError('审稿局部修复内容超过限制，已停止；请缩小审查范围后重试。')
-    return prompt
+    return prompt, allowed
+
+
+def repair_prompt(inputs: dict, targets: dict) -> str:
+    return repair_request(inputs, targets)[0]
+
+
+def repair_result(reviewer, inputs, candidate, targets, trace_id):
+    """Repair each target once, preserving valid opinions and disclosing unverified ones."""
+    replacements, unresolved = {}, {}
+    for path, target in targets.items():
+        batch = {path: target}
+        try:
+            prompt, allowed = repair_request(inputs, batch)
+        except ValueError as error:
+            if not path.startswith('issues.'):
+                raise
+            unresolved[path] = str(error)
+            continue
+        answer = ReviewRepair.model_validate(call_once(reviewer, prompt, ReviewRepair, trace_id))
+        # Check each replacement without requiring other, unrepaired fields to validate yet.
+        if set(answer.replacements) != {path}:
+            raise ValueError('审稿局部修复必须且只能返回指定字段，不能改动有效意见。')
+        if path.startswith('issues.'):
+            trial = {'summary': '校验局部修复', 'issues': [target['value']], 'limitations': []}
+            try:
+                checked = apply_repair(trial, {'issues.0': target}, ReviewRepair(
+                    replacements={'issues.0': answer.replacements[path]}), inputs['manuscript'], allowed)
+                locate_quotes(checked, inputs['manuscript'])
+            except ValueError as error:
+                unresolved[path] = str(error)
+                continue
+            replacements[path] = checked.issues[0].model_dump()
+        else:
+            replacements[path] = answer.replacements[path]
+    merged = deepcopy(candidate)
+    for path, value in replacements.items():
+        if path.startswith('issues.'):
+            merged['issues'][int(path.split('.')[1])] = value
+        else:
+            merged[path] = value
+    notes = []
+    for path, reason in unresolved.items():
+        issue = targets[path]['value']
+        notes.append('待核验意见（未进入可自动修订意见）：' + json.dumps(
+            {'original_issue': issue, 'reason': reason}, ensure_ascii=False))
+    merged['issues'] = [issue for index, issue in enumerate(merged['issues'])
+                        if f'issues.{index}' not in unresolved]
+    result = ReviewResult.model_validate(merged)
+    result.limitations.extend(notes)
+    log_event('repair_result', trace_id=trace_id, repaired=len(replacements), unverified=len(unresolved))
+    return locate_quotes(result, inputs['manuscript'])
 
 
 def _unique_fields(pairs):
@@ -365,9 +459,7 @@ def run(inputs: dict) -> dict:
                   repair_targets=len(targets))
         if targets:
             with stage('targeted_repair', trace_id):
-                repair = ReviewRepair.model_validate(call_once(reviewer, repair_prompt(inputs, targets),
-                                                              ReviewRepair, trace_id))
-                result = apply_repair(candidate, targets, repair, inputs['manuscript'])
+                result = repair_result(reviewer, inputs, candidate, targets, trace_id)
         else:
             result = ReviewResult.model_validate(candidate)
         with stage('report_rendering', trace_id):

@@ -302,6 +302,77 @@ def test_parallel_figures_keep_full_evidence_private_context_and_order(replay, m
     assert [row['value'] for row in analysis['findings']] == [2., 5.]
 
 
+@pytest.mark.parametrize('stage', ['preparation', 'render'])
+@pytest.mark.parametrize('failed_id', ['fig1', 'fig2', 'fig3', 'fig1+fig3'])
+def test_one_figure_exception_keeps_other_exports_and_writing_handoff(replay, monkeypatch, stage, failed_id):
+    replay.arrangement['figures'] *= 3
+    failed_ids = failed_id.split('+')
+    original = plots.prepare_figures if stage == 'preparation' else plots.draw_one
+
+    def prepare(analysis, figures, inputs, shared=None):
+        if any(figure['id'] in failed_ids for figure in figures):
+            raise ValueError('injected figure preparation failure')
+        return original(analysis, figures, inputs, shared)
+
+    def render(*args):
+        if args[2]['id'] in failed_ids:
+            raise RuntimeError('injected figure execution failure')
+        return original(*args)
+
+    monkeypatch.setattr(plots, 'prepare_figures' if stage == 'preparation' else 'draw_one',
+                        prepare if stage == 'preparation' else render)
+    assert workflow.run_paper_step()['status'] == 'completed'
+    analysis, charts, execution, paths = published(replay)
+    expected = [identifier for identifier in ['fig1', 'fig2', 'fig3'] if identifier not in failed_ids]
+    assert [chart['id'] for chart in charts] == expected
+    assert [row['value'] for row in analysis['findings']] == [2., 5.]
+    assert f'已生成 {len(expected)}/3 张图' in analysis['summary']
+    assert '未生成：Mean scores' in paths['.md'].read_text()
+    assert [item['id'] for item in execution['figures']] == ['fig1', 'fig2', 'fig3']
+    for failed in (item for item in execution['figures'] if item['id'] in failed_ids):
+        assert failed['status'] == 'failed' and 'injected figure' in failed['error']['message']
+    assert [item['id'] for item in execution['plan']['failed_figures']] == failed_ids
+    pool = workflow._read_bound(str(paths['.json']))
+    from lazymind.document_tools.paper import contracts
+    writing = contracts.validate_input('write_outline', workflow.business_input('write_outline', pool))
+    assert [chart['id'] for chart in writing['charts']] == expected
+    exports = [Path(event['value']['path']) for event in replay.events
+               if event['type'] == 'artifact' and event['slot'] == 'analysis_chart']
+    assert len(exports) == 3 * len(expected) and all(path.is_file() and path.stat().st_size for path in exports)
+    assert {path.suffix for path in exports} == {'.svg', '.png', '.pdf'}
+    assert payload(replay.narrative.call_args.args[0])['unavailable_figures'] == ['Mean scores'] * len(failed_ids)
+
+
+@pytest.mark.parametrize('failure', [RuntimeError, plots.FigureRenderError])
+def test_all_requested_figures_failing_does_not_publish_success(replay, monkeypatch, failure):
+    def render(*args):
+        if failure is plots.FigureRenderError:
+            raise failure('injected render and fallback failure', [])
+        raise failure('injected unhandled figure failure')
+
+    monkeypatch.setattr(plots, 'draw_one', render)
+    with pytest.raises(RuntimeError, match='全部请求图表生成失败'):
+        workflow.run_paper_step()
+    assert not any(event['type'] == 'artifact' for event in replay.events)
+    replay.narrative.assert_not_called()
+
+
+def test_figure_cancellation_is_not_converted_to_partial_success(replay, monkeypatch):
+    from concurrent.futures import CancelledError
+    replay.arrangement['figures'] *= 2
+    original = plots.draw_one
+
+    def render(*args):
+        if args[2]['id'] == 'fig1':
+            raise CancelledError('injected cancellation')
+        return original(*args)
+
+    monkeypatch.setattr(plots, 'draw_one', render)
+    with pytest.raises(CancelledError):
+        workflow.run_paper_step()
+    assert not any(event['type'] == 'artifact' for event in replay.events)
+
+
 @pytest.mark.parametrize('fault', ['source', 'nonfinite'])
 def test_invalid_executed_results_are_not_published_or_hidden_by_plot_fallback(replay, monkeypatch, fault):
     monkeypatch.setenv('LAZYMIND_PAPER_GENERATED_ANALYSIS_ATTEMPTS', '1')

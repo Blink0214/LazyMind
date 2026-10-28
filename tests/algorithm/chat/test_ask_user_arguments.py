@@ -33,7 +33,7 @@ def test_tool_schema_describes_actual_question_fields():
     schema = manager.tools_description[0]['function']['parameters']
     item = schema['$defs']['AskUserQuestion']
     assert item['required'] == ['text']
-    assert set(item['properties']) == {'text', 'type', 'choices', 'allow_other', 'id'}
+    assert set(item['properties']) == {'text', 'type', 'choices', 'allow_other', 'id', 'attachment'}
     assert set(item['properties']['type']['enum']) == {'boolean', 'single', 'multiple', 'text'}
     assert item['properties']['choices']['items'] == {'type': 'string'}
 

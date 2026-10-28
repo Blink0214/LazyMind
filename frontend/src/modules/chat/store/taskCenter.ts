@@ -698,7 +698,11 @@ export const useTaskCenterStore = create<TaskCenterStore>()((set, get) => ({
         }
         case "done":
           task.status = (event.status as TaskStatus) ?? "succeeded";
-          task.progress_pct = 100;
+          if (task.status === "interrupted" && event.current_phase === "awaiting_input") {
+            task.current_phase = event.current_phase;
+          } else {
+            task.progress_pct = 100;
+          }
           task.summary = event.summary ?? task.summary;
           break;
         case "error":

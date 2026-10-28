@@ -5,6 +5,8 @@ from ...toolkits import WriterCreateToolkit, WriterRevisionToolkit
 from ..publication import validate_chart_references as _validate_chart_references
 from .. import contracts
 import copy
+import re
+import uuid
 from ..runtime_events import current_events, report_progress
 import json
 from lazyllm import AutoModel
@@ -23,42 +25,80 @@ from .common import (
 )
 
 
-def resolve_review_issues(request, review):
+class RevisionInputRequired(contracts.MissingMaterials):
+    """Revision scope needs a user answer, rather than an execution retry."""
+
+
+def resolve_review_issues(request, review, *, workflow_context=None):
+    events = current_events()
+    identifier = uuid.uuid4().hex
+    if events:
+        events.begin_stage(identifier, '正在确定修订范围', 7)
+    try:
+        selected = _resolve_review_issues(request, review, workflow_context)
+    except RevisionInputRequired:
+        if events:
+            events.end_stage(identifier)
+        raise
+    except Exception as error:
+        if events:
+            events.end_stage(identifier, error)
+        raise
+    if events:
+        events.end_stage(identifier)
+        issues = [issue for issue in (review or {}).get('issues', []) if issue['id'] in selected]
+        executable = sum(issue.get('action_type') == 'text_revision' for issue in issues)
+        events.progress(8, f'已选择 {executable} 条可执行意见、{len(issues) - executable} 条待补事项'
+                        if selected else '按本轮指定要求直接修改稿件')
+    return selected
+
+
+def _resolve_review_issues(request, review, workflow_context):
     """Resolve review use, deriving internal issue IDs from the current report.
 
     Version compatibility is checked by the material contract; it is not consent
     to use a historical review. No saved or model-generated selection is reused.
     """
     if not request.strip():
-        raise contracts.MissingMaterials('请明确本轮修改要求，或说明按当前审稿意见修订。')
+        raise RevisionInputRequired('请明确本轮修改要求，或说明按当前审稿意见修订。')
     if review is None:
         return []
-    raw = str(AutoModel(model='llm')(REVISION_SCOPE_INSTRUCTIONS + _json({
-        'request': request, 'issues': review['issues'],
-    }))).strip()
-    result = _WriterJsonFormatter()(raw)
+    context = workflow_context or {}
+    current_review = (context.get('current_step') == 'revise_document'
+                      and context.get('previous_completed_step') == 'peer_review'
+                      and context.get('review_matches_manuscript') is True)
+    confirmation = re.sub(r'[\s，,。.!！]', '', request)
+    if current_review and re.fullmatch(r'(?:请)?(?:继续|开始)?(?:修订|修改)(?:论文|稿件|正文)?(?:吧)?|继续', confirmation):
+        result = {'intent': 'review', 'selection': 'all'}
+    else:
+        raw = str(AutoModel(model='llm')(REVISION_SCOPE_INSTRUCTIONS + _json({
+            'request': request, 'issues': review['issues'], 'workflow_context': context,
+        }))).strip()
+        result = _WriterJsonFormatter()(raw)
     if not isinstance(result, dict):
         raise ValueError('Invalid revision intent response')
     intent = result.get('intent')
     if intent in {'direct', 'unclear'} and set(result) == {'intent'}:
         if intent == 'direct':
             return []
-        raise contracts.MissingMaterials('请明确本轮修改要求或要采用的审稿意见编号。')
+        raise RevisionInputRequired('请确认是否按当前审稿意见修订，或说明只修改哪些内容、采用哪些意见编号。')
     if intent != 'review' or result.get('selection') not in {'all', 'subset'}:
         raise ValueError('Invalid revision intent response')
+    if workflow_context is not None and context.get('review_matches_manuscript') is not True:
+        raise RevisionInputRequired('当前审稿与稿件版本不匹配，请先确认使用哪份稿件和审稿报告；本轮未修改正文。')
     issue_ids = [issue['id'] for issue in review['issues']]
     if result['selection'] == 'all':
         if set(result) != {'intent', 'selection'}:
             raise ValueError('Invalid revision intent response')
         if not issue_ids:
-            raise contracts.MissingMaterials('当前审稿没有待处理意见，无需按审稿修订；如需其他修改，请说明具体要求。')
+            raise RevisionInputRequired('当前审稿没有待处理意见，无需按审稿修订；如需其他修改，请说明具体要求。')
         return issue_ids
     if set(result) != {'intent', 'selection', 'issue_ids'}:
         raise ValueError('Invalid revision intent response')
     selected = result['issue_ids']
     if (not isinstance(selected, list) or not selected
             or any(not isinstance(key, str) or key not in issue_ids for key in selected)):
-        raise contracts.MissingMaterials('请选择当前审稿报告中有效的意见编号，选择不能为空。')
+        raise RevisionInputRequired('请选择当前审稿报告中有效的意见编号，选择不能为空。')
     return [key for key in issue_ids if key in selected]
 
 

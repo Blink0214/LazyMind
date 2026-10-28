@@ -1143,11 +1143,11 @@ def _persist_step(
 
 def _workflow_control_from_tool_results(
     event: Dict[str, Any], declared_tool_names: set[str],
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """Extract a control envelope returned by a declared Workflow tool."""
     if event.get('tag') != 'tool_results':
         return {}
-    selected: Dict[str, str] = {}
+    selected: Dict[str, Any] = {}
     for result in event.get('tool_results') or []:
         if not isinstance(result, dict):
             continue
@@ -1165,6 +1165,14 @@ def _workflow_control_from_tool_results(
         if isinstance(payload, dict) and payload.get('ok') is True:
             payload = payload.get('value')
         if not isinstance(payload, dict) or not isinstance(payload.get('control'), dict):
+            continue
+        pending = payload['control'].get('awaiting_input')
+        if (isinstance(pending, dict) and isinstance(pending.get('question'), str)
+                and pending['question'].strip() and re.fullmatch(r'[0-9a-f]{64}', str(pending.get('request_sha256', '')))):
+            candidate = {'awaiting_input': pending}
+            if selected and selected != candidate:
+                raise ValueError('Workflow tools returned conflicting control decisions.')
+            selected = candidate
             continue
         next_step = str(payload['control'].get('next_step') or '').strip()
         if not next_step:
@@ -1616,7 +1624,7 @@ async def run_subagent_stream(
         # translator unifies text/think output with ChatAgent frame semantics.
         translator = AgentEventFrameTranslator(query=ctx.objective, run_id=str(task.get('execution_id') or task_id))
         final_result: Any = None
-        workflow_control: Dict[str, str] = {}
+        workflow_control: Dict[str, Any] = {}
         declared_workflow_tools = set(_coerce_str_list(ctx.params.get('legacy_tools')))
         terminal_workflow_tools = set(_coerce_str_list(ctx.params.get('terminal_tools')))
         # Accumulate streaming text/think chunks; flush to DB when a tool step follows or at end.
@@ -1805,6 +1813,14 @@ async def run_subagent_stream(
         cancel_check = plan.execution_options.extra_stop_condition
         if cancel_check is not None:
             cancel_check(None)
+
+        if workflow_control.get('awaiting_input'):
+            pending = workflow_control['awaiting_input']
+            yield _sse({'type': 'done', 'task_id': task_id, 'status': 'interrupted',
+                        'current_phase': 'awaiting_input', 'summary': pending['question'],
+                        'control': workflow_control, 'cost': round(time.time() - start_time, 3)})
+            yield 'data: [DONE]\n\n'
+            return
 
         # Commit valid required drafts before enforcing the delivery contract.
         if required_output_keys:

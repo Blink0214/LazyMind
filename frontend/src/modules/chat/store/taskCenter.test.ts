@@ -433,6 +433,17 @@ describe("task center workflow events", () => {
       store.unsubscribeTask("model-task");
     }
   });
+
+  it("keeps actual progress and the waiting phase when revision requests input", () => {
+    const store = useTaskCenterStore.getState();
+    store.upsertTask("conversation-1", { task_id: "revision", status: "running", progress_pct: 7 });
+    store.applyTaskEvent("conversation-1", "revision", {
+      type: "done", status: "interrupted", current_phase: "awaiting_input", summary: "请选择意见",
+    });
+    expect(store.getTasks("conversation-1")[0]).toMatchObject({
+      status: "interrupted", progress_pct: 7, current_phase: "awaiting_input", summary: "请选择意见",
+    });
+  });
   it.each(["ordinary", "developer"] as const)("keeps logical panel identity separate from each turn's immutable delivery in %s mode", async (viewMode) => {
     useTaskCenterStore.setState({ viewMode });
     const base = { artifact_id: "receipt", v2_artifact_id: "logical", conversation_id: "conv", history_id: "h1", producer_type: "main_agent", slot: "a", content_type: "text", seq: 1, value: { text: "one" } };

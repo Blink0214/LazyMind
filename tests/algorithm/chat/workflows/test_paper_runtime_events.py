@@ -112,7 +112,7 @@ def test_all_steps_use_shared_progress_preview_and_real_artifact_publication(ste
         paper.setdefault('citation', paper['title'] + '[Z].')
     if step == 'revise_document':
         from lazymind.document_tools.paper.writing import revise_document
-        monkeypatch.setattr(revise_document, 'resolve_review_issues', lambda request, review: [])
+        monkeypatch.setattr(revise_document, 'resolve_review_issues', lambda request, review, **kwargs: [])
     value = {key: copy.deepcopy(item) for key, item in example['input'].items() if key != 'mode'}
     pool = workflow.pool_from_business(value)
     seed = tmp_path / 'seed.json'
@@ -165,6 +165,35 @@ def test_finish_publishes_whole_document_without_a_model_call(tmp_path):
     assert any(e['type'] == 'artifact' for e in emitted)
 
 
+def test_revision_clarification_waits_without_publishing_or_reporting_success(tmp_path, monkeypatch):
+    from lazymind.chat.engine.subagent.context import SubAgentContext
+    from lazymind.document_tools.paper.writing.revise_document import RevisionInputRequired
+    question = '请确认采用哪些审稿意见'
+    def clarify(context, stream):
+        current_events().progress(7, '正在确定修订范围')
+        raise RevisionInputRequired(question)
+    monkeypatch.setattr(workflow, '_run_paper_step', clarify)
+    emitted = []
+    lazyllm.globals['subagent_ctx'] = SubAgentContext(
+        task_id='revision', conversation_id='test', agent_type='workflow_step', objective='Revise',
+        workspace_path=str(tmp_path), input_slots=[], output_slots=['revise_document_document'],
+        db=None, emit=emitted.append,
+        params={'step_id': 'revise_document', 'current_user_input': '继续，修订论文'},
+    )
+    result = workflow.run_paper_step()
+    assert result['status'] == 'needs_input'
+    assert result['control']['awaiting_input'] == {
+        'question': question, 'request_sha256': workflow.text_digest('继续，修订论文'),
+    }
+    assert result['_agent_control']['stop'] is True
+    assert not any(e['type'] == 'artifact' for e in emitted)
+    progress = [e for e in emitted if e['type'] == 'progress']
+    assert max(e['progress'] for e in progress) == 7
+    assert question in progress[-1]['current_phase']
+    assert all(s['status'] != 'failed' for e in progress for s in e['public_display']['process_steps'])
+    assert current_events() is None
+
+
 def test_review_projects_partial_results_while_preserving_strict_review_validation(tmp_path, monkeypatch):
     from lazymind.document_tools.paper import peer_review
     example = json.loads((ROOT / 'tests/fixtures/paper-writing/peer_review.json').read_text())
@@ -204,3 +233,68 @@ def test_f4_keeps_diagnostics_and_projects_interpretation_to_shared_document_str
         events.complete()
     assert list(tmp_path.glob('f4-trace/*/public.json'))
     assert any(e.get('slot') == 'data_analysis_document' for e in emitted)
+
+
+def test_f4_parallel_stages_and_retry_reach_shared_execution_log(tmp_path):
+    from threading import Barrier
+    from lazymind.document_tools.paper.analysis import trace
+    from lazymind.document_tools.paper.execution.threads import ThreadPoolExecutor
+
+    emitted = []
+    barrier = Barrier(2)
+
+    def draw(figure_id):
+        with trace.stage('figure_execution', figure_id=figure_id, attempt=1):
+            barrier.wait(timeout=5)
+            with trace.stage('model_request'):
+                if figure_id == 'fig2':
+                    raise ValueError('private diagnostic detail')
+
+    with bind_runtime_events(emitted.append, 'data_analysis_document') as events:
+        with trace.capture(tmp_path, 'analysis', emitted.append) as recorder:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first = executor.submit(draw, 'fig1')
+                second = executor.submit(draw, 'fig2')
+                first.result(timeout=10)
+                with pytest.raises(ValueError, match='private diagnostic detail'):
+                    second.result(timeout=10)
+            with trace.stage('figure_execution', figure_id='fig2', attempt=2):
+                pass
+        events.complete()
+
+    phases = [e for e in emitted if e['type'] == 'progress']
+    shared = {}
+    for event in phases:
+        for step in event.get('public_display', {}).get('process_steps', []):
+            shared.setdefault(step['step_id'], []).append(step)
+    assert len(shared) == 4  # Three drawing attempts and the final publication phase.
+    for stage in recorder.summary['stages']:
+        key = 'paper-' + stage['id']
+        if stage['stage'] == 'model_request':
+            assert key not in shared  # Internal model calls stay in F4 diagnostics.
+            continue
+        records = shared[key]
+        assert [item['status'] for item in records] == [
+            'running', 'failed' if stage['status'] == 'failed' else 'succeeded']
+        assert records[-1]['finished_at'] and records[-1]['elapsed_ms'] >= 0
+        title = f"执行绘图代码 · 第 {stage['attempt']} 次 · {stage['figure_id']}"
+        assert title + '\n' in [e['text'] for e in emitted if e['type'] == 'text']
+        assert records[-1]['title'] == title
+    assert [e['progress'] for e in phases] == sorted(e['progress'] for e in phases)
+    assert max(e['progress'] for e in phases) == 99
+    public = json.loads((recorder.root / 'public.json').read_text())
+    assert len(public['process_steps']) == 3
+    assert 'failed' in {step['status'] for step in public['process_steps']}
+    assert 'private diagnostic detail' not in json.dumps(emitted)
+
+
+def test_f4_without_shared_runtime_keeps_legacy_progress(tmp_path):
+    from lazymind.document_tools.paper.analysis import trace
+
+    emitted = []
+    with trace.capture(tmp_path, 'standalone', emitted.append):
+        with trace.stage('figure_execution', figure_id='fig1', attempt=1):
+            pass
+    phases = [e for e in emitted if e['type'] == 'progress']
+    assert len(phases) == 1
+    assert phases[0]['current_phase'] == 'F4 · 执行绘图代码 · 第 1 次 · fig1'
