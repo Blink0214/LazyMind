@@ -712,9 +712,6 @@ def _run_paper_step(context, stream=None) -> dict:
                 bound = bind_attachment(bound, context.workspace_path, request)
             with diagnostics.stage('input_validation'):
                 pool = initialize_pool(bound, request)
-                if step == 'data_analysis':
-                    from .analysis.schema import normalize_input
-                    normalize_input(business_input(step, pool, _step_request(step, pool, context.params, bound)))
         elif step in {'research_topic', 'reading_reflection'} and not any(
             key.endswith('_pool') for key in bound
         ):

@@ -1,30 +1,24 @@
-# scatter_tradeoff
+# Measured tradeoffs
 
-Call `scripts/scatter_tradeoff.py:draw_tradeoff` with `series[label] = [[x,y], ...]`,
-stable labels/colors/edges/markers/sizes, title, units, data-dependent limits and legend
-location. Use the [common paper preset](paper_style.md).
+Use a scatter when two quantitative outcomes are meaningfully paired by the same source
+observations or complete analysis scope. Each executed result describes its metric, scope,
+coordinates and comparison. Match that actual evidence; the host does not join x/y results
+or provide a prepared scatter interface.
 
-Keep each measured coordinate pair together. Drop a row only when its x or y is missing,
-and disclose exclusions. Three-series defaults use circle/square/triangle and gray/gray/blue;
-identity is bound before sorting or selecting a facet. Mark size is fixed unless an actual
-third variable and scale are explicitly planned.
+Do not pair records merely because they are adjacent or share an opaque ID. If reliable
+matching is unavailable, choose separate figures and explain that the proposed relationship
+cannot be displayed. Do not invent a joint relationship from two unrelated marginal summaries.
 
-Do not connect configurations as a time series, fit/smooth a trend without a stated method,
-create quartile bars implying matched budgets, compute t-SNE, or add a broken axis just
-because a source example had one. Use specialized styles only when the actual question
-and measurements require them.
+Reuse draw_tradeoff when its supplied signature fits. Build its aligned series/labels,
+numeric limits and appearance from actual data and shared terminology/colors. Ordinary
+Matplotlib code may express another needed layout. Include all required observed conditions,
+negative outcomes and relevant resource costs.
 
-A fixed configuration may serve as a descriptive x coordinate when that relationship
-answers the research question. In the verified-summary interface expose it with a
-descriptive mean and no interval; repeated copies do not supply independent replication
-or uncertainty in the configuration. Pair it with performance from the same group/scope.
-Label which configuration belongs to which method, retain its unit, and avoid causal
-claims about the configuration's independent effect when it is confounded with method.
+For original observations, retain the actual x/y pairing. For summary points, use their
+executed means and describe their scope; show intervals only when supplied and actually drawn.
+Do not fabricate repeated observations or a confidence ellipse. Fixed configuration values
+can be coordinates but do not acquire an invented sampling interval.
 
-In the prepared F4 interface, data_mapping names the x mean metric in category_column,
-its group identity in series_column and scope facets. value_labels supplies both
-actual metric names. The host pairs verified x/y means by identical complete scopes.
-When original row identities also match, it adds faint measured coordinate pairs and
-any separately verified marginal intervals. Fixed configurations have no invented
-intervals. Do not redraw these layers or imply a fitted relationship or joint
-confidence region. Short scope labels remain inside; full titles remain external.
+Label both measured quantities and necessary units. Explain groups, simulation status and
+the limited evidence for any tradeoff in the external caption. Use a short subplot label
+and keep full titles outside the canvas.

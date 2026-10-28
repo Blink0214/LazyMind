@@ -140,10 +140,10 @@ class StudyDesign(Object):
 class Experiment(Object):
     executed: bool
     plan: Text
-    results: DataTable | None
+    results: DataTable | None = None
     report: Text
-    code: Text | None
-    logs: Text | None
+    code: Text | None = None
+    logs: Text | None = None
 
     @model_validator(mode='after')
     def actual(self):
@@ -184,7 +184,7 @@ class PriorSpec(Object):
     distribution: Literal['beta', 'normal', 'student_t', 'half_normal', 'exponential']
     parameters: dict[str, Number]
     source: Literal['supplied', 'historical', 'default']
-    source_table_ids: list[Text]
+    source_table_ids: list[Text] = Field(default_factory=list)
     rationale: Text
 
     @model_validator(mode='after')
@@ -205,9 +205,9 @@ class ModelSummary(Object):
     id: Text
     target_ids: Annotated[list[Text], Field(min_length=1)]
     method: Text
-    formula: Text | None
-    likelihood: Text | None
-    priors: list[PriorSpec]
+    formula: Text | None = None
+    likelihood: Text | None = None
+    priors: list[PriorSpec] = Field(default_factory=list)
 
 
 class SourceRowCount(Object):
@@ -217,16 +217,16 @@ class SourceRowCount(Object):
 
 class SampleSize(Object):
     source_rows: Annotated[list[SourceRowCount], Field(min_length=1)]
-    n: Count | None
+    n: Count | None = None
     unit: Text
-    excluded_n: Count | None
+    excluded_n: Count | None = None
 
 
 class Interval(Object):
     kind: Literal['confidence', 'credible', 'prediction']
     level: Level
-    lower: Number | None
-    upper: Number | None
+    lower: Number | None = None
+    upper: Number | None = None
     method: Text
 
     @model_validator(mode='after')
@@ -240,29 +240,22 @@ class Interval(Object):
 
 class TestResult(Object):
     name: Text
-    statistic: Number | None
+    statistic: Number | None = None
     p_value: Probability
-    adjusted_p_value: Probability | None
-    adjustment: Text | None
+    adjusted_p_value: Probability | None = None
+    adjustment: Text | None = None
     alternative: Literal['two_sided', 'greater', 'less']
     null_hypothesis: Text
-    family_id: Text | None
-
-    @model_validator(mode='after')
-    def correction(self):
-        flags = [self.adjusted_p_value is not None, self.adjustment is not None, self.family_id is not None]
-        if len(set(flags)) != 1:
-            raise ValueError('校正值、方法和比较族须同时存在')
-        return self
+    family_id: Text | None = None
 
 
 class ProbabilityResult(Object):
     kind: Literal['posterior', 'posterior_predictive']
     event: Text
-    operator: Literal['gt', 'ge', 'lt', 'le'] | None
-    threshold: Number | None
-    threshold_unit: Text | None
-    mcse: Annotated[Number, Field(ge=0)] | None
+    operator: Literal['gt', 'ge', 'lt', 'le'] | None = None
+    threshold: Number | None = None
+    threshold_unit: Text | None = None
+    mcse: Annotated[Number, Field(ge=0)] | None = None
 
     @model_validator(mode='after')
     def event_fields(self):
@@ -280,13 +273,13 @@ class Finding(Object):
     statement: Text
     columns: Annotated[list[ColumnRef], Field(min_length=1)]
     calculation: Text
-    value: Number | None
-    unit: Text | None
+    value: Number | None = None
+    unit: Text | None = None
     sample_size: SampleSize
-    interval: Interval | None
-    test: TestResult | None
-    probability: ProbabilityResult | None
-    model_id: Text | None
+    interval: Interval | None = None
+    test: TestResult | None = None
+    probability: ProbabilityResult | None = None
+    model_id: Text | None = None
 
     @model_validator(mode='after')
     def semantics(self):
@@ -298,18 +291,16 @@ class Finding(Object):
             raise ValueError('probability 与结论类型不一致')
         if self.probability and (not 0 <= self.value <= 1 or self.unit is not None or self.model_id is None):
             raise ValueError('后验概率须为 0..1、无单位且关联模型')
-        if (self.interval or self.test or self.probability) and not self.sample_size.n:
-            raise ValueError('推断结论必须明确实际样本量')
         return self
 
 
 class Diagnostic(Object):
     id: Text
-    model_id: Text | None
+    model_id: Text | None = None
     name: Text
     outcome: Literal['passed', 'failed', 'not_applicable', 'not_checked']
-    value: Number | None
-    threshold: Text | None
+    value: Number | None = None
+    threshold: Text | None = None
     details: Text
 
 
@@ -348,9 +339,10 @@ def digest(value):
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def parse(cls, value, field='input'):
+def parse(cls, value, field='input', *, extra=None):
     try:
-        return cls.model_validate(value).model_dump()
+        options = {'extra': extra} if extra is not None else {}
+        return cls.model_validate(value, **options).model_dump()
     except (ValidationError, TypeError, ValueError, OverflowError) as exc:
         code = 'INVALID_OUTPUT' if field.startswith('output') else 'INVALID_INPUT'
         if not field.startswith('output') and isinstance(exc, ValidationError):

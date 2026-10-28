@@ -46,7 +46,6 @@
       20,
       20
     ],
-    "bold_font_family": "cmb10",
     "note_font_size": 6.2,
     "preserve_canvas": true,
     "preserve_legend_location": true,
@@ -83,11 +82,10 @@
     "rc": {
       "font.family": "serif",
       "font.serif": [
-        "cmr10",
         "STIXGeneral",
         "DejaVu Serif"
       ],
-      "mathtext.fontset": "cm",
+      "mathtext.fontset": "stix",
       "axes.formatter.use_mathtext": true,
       "text.usetex": false,
       "axes.unicode_minus": false,
@@ -136,7 +134,7 @@
       ]
     },
     "rules": [
-      "Use the actual drawing helpers, not a generic chart with only matching colors. The model chooses the question, source columns, facets and observed-vs-summary data.",
+      "Reuse the supplied drawing helpers when applicable, or implement the required geometry with the shared appearance. The model chooses readable labels, layout and observed-vs-summary data from actual evidence.",
       "Use the shared group identity for colors, edge colors, markers and line styles; sorting or filtering panels must not change that identity. Color is not a rank or significance claim.",
       "Use 89 mm single-column or 182 mm double-column layouts with the supplied margins; these are a general paper preset, not universal journal requirements. For more panels or longer labels allocate more space rather than shrinking all fonts.",
       "Return short figure titles as metadata, never on the canvas. Native title arguments contain an empty string or a short verified scope label such as (a) <cohort>; the full figure title stays external. Put panel descriptions, data provenance, statistics definitions, missing values and uncertainty limitations in the separate caption. Do not invent replication or significance.",

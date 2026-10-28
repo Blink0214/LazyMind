@@ -5,9 +5,9 @@ import re
 import time
 
 PUBLIC_STAGES = {
-    'input_binding', 'input_validation', 'environment_validation', 'plan_generation', 'plan_repair',
-    'figure_plan_repair', 'analysis_code_generation', 'analysis_execution', 'numerical_verification',
-    'figure_code_prefetch', 'figure_code_generation', 'figure_execution', 'figure_validation',
+    'input_binding', 'input_validation', 'environment_validation', 'plan_generation', 'figure_planning',
+    'analysis_code_generation', 'analysis_execution', 'result_contract_validation',
+    'figure_code_generation', 'figure_execution', 'figure_validation',
     'interpretation', 'output_publication',
 }
 MAX_OUTPUT = 96 * 1024
@@ -103,10 +103,11 @@ class PublicProgress:
         self.send(identifier)
 
     def note(self, name, value):
-        if name == 'locked-plan.json':
+        if name in ('figure-plan.json', 'locked-plan.json'):
             self.figures = {f['id']: f.get('title', f['id']) for f in value.get('figures', [])}
         stages = ({'input_validation'} if name == 'input-summary.json' else
-                  {'plan_generation', 'plan_repair', 'figure_plan_repair'} if name == 'locked-plan.json' else set())
+                  {'plan_generation'} if name == 'analysis-plan.json' else
+                  {'figure_planning'} if name == 'figure-plan.json' else set())
         identifier = next((k for k in reversed(self.steps)
                            if next(s for s in self.recorder.summary['stages'] if s['id'] == k)['stage'] in stages), None)
         if not identifier:
@@ -114,8 +115,10 @@ class PublicProgress:
         if name == 'input-summary.json':
             tables = value.get('tables', [])
             summary = f"已读取 {sum(t['rows'] for t in tables)} 行数据、{len(tables)} 张数据表，输入校验通过。"
+        elif name == 'analysis-plan.json':
+            summary = f"分析提纲已确定：{len(value.get('questions', []))} 个研究问题，具体结果由分析代码生成。"
         else:
-            summary = f"计划已确定：{len(value.get('jobs', []))} 项统计计算、{len(value.get('figures', []))} 张图。"
+            summary = f"已根据执行结果安排 {len(value.get('figures', []))} 张图，将分别生成绘图代码。"
         self.steps[identifier]['summary'] = summary
         self.send(identifier)
 
@@ -261,26 +264,21 @@ class ResponsePreview:
             if time.monotonic() - self.document_preview.last_parse >= 0.2:
                 self.document_preview.flush()
 
-    def finish(self, raw):
-        from ..plotting.code_response import response_text
-        # Non-streaming providers may include public reasoning in leading tagged envelopes.
-        remaining = str(raw or '').strip() if not isinstance(raw, dict) else ''
-        parts = []
-        while opening := re.match(r'<(think|thinking)>', remaining, re.I):
-            closing = re.search(r'</' + opening[1] + r'>', remaining[opening.end():], re.I)
-            parts.append(remaining[opening.end():opening.end() + closing.start()] if closing
-                         else remaining[opening.end():])
-            if not closing:
-                break
-            remaining = remaining[opening.end() + closing.end():].lstrip()
+    def finish(self, raw, *, normalized=None):
+        from ..plotting.code_response import normalize_response
+        normalized = normalized or normalize_response(raw, json_output=self.format == 'json')
         streamed_reasoning = self.received_reasoning
-        if parts:
-            encoded = '\n'.join(parts).encode('utf-8')
-            self.reasoning = encoded[:MAX_REASONING].decode('utf-8', errors='ignore')
-            self.reasoning_bytes = len(self.reasoning.encode('utf-8'))
-            self.reasoning_truncated = len(encoded) > MAX_REASONING
-        # Display normalization does not change the value returned to the algorithm.
-        text = json.dumps(raw, ensure_ascii=False) if isinstance(raw, dict) else response_text(raw or '')[0]
+        encoded = normalized.reasoning.encode('utf-8')
+        self.reasoning = encoded[:MAX_REASONING].decode('utf-8', errors='ignore')
+        self.reasoning_bytes = len(self.reasoning.encode('utf-8'))
+        self.reasoning_truncated = len(encoded) > MAX_REASONING
+        if self.owner and not self.reasoning:
+            with self.recorder.lock:
+                step = self.recorder.public.steps[self.owner]
+                if 'reasoning' in step:
+                    step['reasoning'] = dict(text='', format='text', mode='complete', truncated=False)
+        text = (json.dumps(normalized.body, ensure_ascii=False) if isinstance(normalized.body, dict)
+                else normalized.body)
         self._publish_reasoning('complete' if streamed_reasoning else 'buffered', force=True)
         self.truncated = len(text.encode('utf-8')) > MAX_OUTPUT
         self.text = text[:MAX_OUTPUT]

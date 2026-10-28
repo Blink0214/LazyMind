@@ -11,7 +11,7 @@ from ..execution import container
 
 # These modules are bundled in the Chat image, plus the Python standard library.
 # An import allowlist must not advertise optional packages absent from the execution image.
-ANALYSIS_IMPORTS = ALLOWED_IMPORTS | {'copy', 'collections', 'itertools'}
+ANALYSIS_IMPORTS = ALLOWED_IMPORTS | {'copy', 'collections', 'itertools', 're'}
 ANALYSIS_FORBIDDEN_ATTRIBUTES = FORBIDDEN_ATTRIBUTES - {'random', 'default_rng'}
 
 
@@ -22,7 +22,9 @@ def generation_contract():
                 ols_runtime='Use numpy.linalg.lstsq / pinv and scipy.stats; statsmodels is not bundled.',
                 forbidden_attributes=sorted(ANALYSIS_FORBIDDEN_ATTRIBUTES),
                 private_attributes_allowed=False, decorators_allowed=False,
-                required_functions=dict(prepare=['tables', 'plan'], analyze=['prepared', 'plan', 'rng']),
+                required_functions=dict(analyze=['tables', 'plan', 'rng']),
+                runtime_plan=dict(questions='host-assigned research questions', outline='short analysis outline',
+                                  facts='complete supplied research context, identical to generation input'),
                 top_level='imports, function definitions and literal constants only',
                 randomness='use supplied rng; no filesystem/network/environment access')
 
@@ -34,8 +36,8 @@ class AnalysisEnvironmentError(RuntimeError):
 def validate_code(code):
     if not isinstance(code, str) or not code.strip() or len(code.encode()) > 64 * 1024:
         raise ValueError('统计代码须为不超过 64 KiB 的非空文本')
-    tree = ast.parse(code)
-    for name, args in [('prepare', ['tables', 'plan']), ('analyze', ['prepared', 'plan', 'rng'])]:
+    tree = ast.parse(code, filename='<generated-analysis>')
+    for name, args in [('analyze', ['tables', 'plan', 'rng'])]:
         functions = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name]
         if len(functions) != 1 or [a.arg for a in functions[0].args.args] != args:
             raise ValueError(f'统计程序必须定义 {name}({", ".join(args)})')

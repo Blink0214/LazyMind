@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import json
-import re
 import os
 
-from .code_response import parse_code_response, response_text
+from .code_response import parse_code_response, normalize_response, json_body
 from . import transport
 from ..analysis import trace as diagnostics
 
@@ -17,8 +16,6 @@ class PlotModelError(RuntimeError):
 def request_model(prompt: str, json_output=True):
     from lazyllm import AutoModel
 
-    if len(prompt.encode()) > 256 * 1024:
-        raise ValueError('绘图模型上下文超过 256 KiB，请缩短字段说明或减少指标')
     options = {'stream_output': False}
     if json_output:
         options['response_format'] = {'type': 'json_object'}
@@ -52,25 +49,21 @@ def request_model(prompt: str, json_output=True):
                     raise
                 preview.recorder.streaming_rejected = True
                 raw = transport.call(client, prompt, {**options, 'stream_output': False}, policy, supported)
+            normalized = normalize_response(raw, json_output=json_output)
             if preview:
-                preview.finish(raw)
+                preview.finish(raw, normalized=normalized)
         except BaseException:
             if preview:
                 preview.abort()
             raise
         diagnostics.response(raw)
-    text = str(raw or '').strip()
+    text = normalized.body
     if not text:
         raise PlotModelError('绘图模型未返回内容，请检查模型服务状态；不将空响应当作绘图代码错误重写')
-    if len(text) > 96 * 1024:
-        raise ValueError('绘图模型返回内容过长')
-    if isinstance(raw, dict):
-        return raw
-    text, removed = response_text(raw)
-    if removed:
-        diagnostics.normalized_response(text, removed)
-    if not text:
-        raise PlotModelError('模型仅返回思考段，未返回独立正文，请检查模型服务状态')
+    if normalized.removed_thinking_blocks or normalized.recovered_prefix_chars:
+        diagnostics.normalized_response(text, normalized.removed_thinking_blocks,
+                                        recovered_prefix_chars=normalized.recovered_prefix_chars,
+                                        inserted_boundary_spaces=normalized.inserted_boundary_spaces)
     return text
 
 
@@ -83,8 +76,7 @@ def call_model(prompt: str) -> dict:
     if isinstance(raw, dict):
         return raw
     text = str(raw).strip()
-    match = re.fullmatch(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
-    result = json.loads(match.group(1) if match else text)
+    result = json.loads(json_body(text))
     if not isinstance(result, dict):
         raise ValueError('绘图模型必须返回 JSON 对象')
     return result

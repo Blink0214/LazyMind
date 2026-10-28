@@ -1,88 +1,68 @@
-"""Render one planned figure with bounded code repair and export checks."""
-from __future__ import annotations
-
+"""Render one figure with bounded local code repair; never regenerate statistics."""
 import hashlib
 import os
+import traceback
 
 from .code import validate_code
 from .executor import PlotEnvironmentError, execute_plot
 from .model import PlotModelError
-from .figure_data import panel_caption
-from .templates import compose_native_program, validate_native_program
+from .templates import compose_native_program
 from ..analysis.validation import validate_charts
 from ..analysis import trace as diagnostics
 
 
-def limits() -> tuple[int, int]:
+class FigureRenderError(RuntimeError):
+    def __init__(self, message, history):
+        self.history = history
+        super().__init__(message)
+
+
+def limits():
     try:
-        attempts = int(os.environ.get('LAZYMIND_PAPER_PLOT_ATTEMPTS', '3'))
-        if not 1 <= attempts <= 5:
-            raise ValueError
-    except ValueError as exc:
-        raise ValueError('绘图尝试次数必须是 1..5') from exc
-    try:
+        attempts = int(os.environ.get('LAZYMIND_PAPER_PLOT_ATTEMPTS', '5'))
         concurrency = int(os.environ.get('LAZYMIND_PAPER_PLOT_CONCURRENCY', '4'))
-        if not 1 <= concurrency <= 4:
+        if not 1 <= attempts <= 5 or not 1 <= concurrency <= 4:
             raise ValueError
     except ValueError as exc:
-        raise ValueError('绘图并发数必须是 1..4') from exc
+        raise ValueError('绘图尝试次数须为 1..5，并发数须为 1..4') from exc
     return attempts, concurrency
 
 
-def draw_one(bound: dict, measured: dict, spec: dict, reference: str, attempts: int,
-             code_generator) -> tuple[dict, dict]:
-    previous, error = '', ''
-    history = []
+def draw_one(bound, measured, spec, reference, attempts, code_generator):
+    previous, error, history = '', '', []
     for attempt in range(1, attempts + 1):
-        candidate = previous
-        candidate_spec = dict(spec)
+        candidate, candidate_spec = previous, dict(spec)
         try:
             details = dict(figure_id=spec['id'], attempt=attempt)
+            name = diagnostics.figure_name(spec['id']) + ('-fallback' if spec.get('fallback') else '')
             with diagnostics.stage('figure_code_generation', **details):
                 candidate = code_generator(bound, measured, candidate_spec, reference, previous, error)
-                name = diagnostics.figure_name(spec['id'])
                 diagnostics.save(f'figure-{name}-code-{attempt}.py', candidate)
             with diagnostics.stage('figure_code_validation', **details):
-                candidate = compose_native_program(candidate, reference, candidate_spec)
                 validate_code(candidate)
-                validate_native_program(candidate, candidate_spec)
+                runtime_code = compose_native_program(candidate, reference, candidate_spec)
             previous = candidate
             spec.update(candidate_spec)
             with diagnostics.stage('figure_execution', **details):
-                rendered = execute_plot({'table': bound, 'statistics': measured, 'spec': spec,
-                                         'data_sha256': measured['data_sha256'], 'code': previous})
+                rendered = execute_plot(dict(table=bound, statistics=measured, spec=spec,
+                                             data_sha256=measured['data_sha256'], code=runtime_code))
             with diagnostics.stage('figure_validation', **details):
-                if set(rendered) != {'svg', 'exports'}:
-                    raise ValueError('绘图执行结果必须包含 svg/exports')
-                chart = {'id': spec['id'], 'title': spec['title'], 'columns': spec['columns'], **rendered}
-                key = panel_caption(bound.get('figure', {}))
-                caption = spec.get('caption', '')
-                if key and not caption.endswith(key):
-                    caption = (caption + '\n' + key).strip()
-                if caption:
-                    chart['caption'] = spec['caption'] = caption
+                chart = dict(id=spec['id'], title=spec['title'], columns=spec['columns'], **rendered)
+                if spec.get('caption'):
+                    chart['caption'] = spec['caption']
                 validate_charts([chart])
-                diagnostics.save(f'figure-{name}-exports.json', {
-                    'id': spec['id'], 'svg_bytes': len(rendered['svg'].encode()),
-                    'formats': sorted(rendered['exports']),
-                    'code_sha256': hashlib.sha256(previous.encode()).hexdigest(),
-                })
-            history.append({'attempt': attempt, 'status': 'passed_execution_and_file_checks'})
-            trace = {'id': spec['id'], 'code': previous, 'data_contract': spec['data_contract'],
-                     'caption': spec.get('caption', ''),
-                     'style_contract': spec.get('style_contract', {}),
-                     'code_sha256': hashlib.sha256(previous.encode()).hexdigest(), 'attempts': history,
-                     'first_attempt_passed_execution_and_file_checks': attempt == 1}
-            return chart, trace
+                diagnostics.save(f'figure-{name}-exports.json', dict(
+                    id=spec['id'], svg_bytes=len(rendered['svg'].encode()), formats=sorted(rendered['exports']),
+                    code_sha256=hashlib.sha256(runtime_code.encode()).hexdigest()))
+            history.append(dict(attempt=attempt, status='passed_execution_and_file_checks'))
+            return chart, dict(id=spec['id'], code=runtime_code, code_sha256=hashlib.sha256(runtime_code.encode()).hexdigest(),
+                               attempts=history, data_contract=spec['data_contract'], style_contract=spec['style_contract'],
+                               first_attempt_passed_execution_and_file_checks=attempt == 1)
         except (PlotEnvironmentError, PlotModelError):
             raise
         except (ValueError, TypeError, KeyError, SyntaxError, RuntimeError) as exc:
-            current_error = str(exc)[-6000:]
-            history.append({'attempt': attempt, 'status': 'failed', 'error': current_error,
-                            'code_sha256': hashlib.sha256(candidate.encode()).hexdigest()})
-            error = current_error if len(history) == 1 else '\n'.join(
-                f'Attempt {item["attempt"]}: {item["error"]}' for item in history)[-12000:]
-    # Keep full retry history in diagnostics/repair context; surface the latest cause
-    # first so a bounded workflow error cannot truncate it behind earlier tracebacks.
-    cause = history[-1]['error'].strip().splitlines()[-1]
-    raise RuntimeError(f'图表 {spec["id"]} 在 {attempts} 次尝试后失败，未发布本轮图表: {cause}')
+            previous = candidate
+            detail = ''.join(traceback.format_exception_only(type(exc), exc)).strip()[-6000:]
+            history.append(dict(attempt=attempt, status='failed', error=detail))
+            error = '\n'.join(f'Attempt {item["attempt"]}: {item["error"]}' for item in history)[-12000:]
+    raise FigureRenderError(f'图表 {spec["id"]} 在 {attempts} 次尝试后失败: {history[-1]["error"]}', history)

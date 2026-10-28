@@ -23,11 +23,11 @@ draw_reference_panel(ax, data_dict, colors, hatches, labels, title, x_positions,
 
 - `labels` contains distinct method names; `benchmarks` contains the displayed category names.
 - `data_dict[label]` has one value per category in exactly that order. Use NaN for an unknown cell; infinite values are invalid.
-- `colors` comes from `bar_series_colors` keyed by `labels`. `hatches` contains `//` only for an explicitly designated `best_method`, otherwise empty strings. Use `best_method=None` when none was designated.
+- Choose `colors` from the shared palette and series identity keyed by the readable `labels`. `hatches` contains `//` only for an explicitly designated `best_method`, otherwise empty strings. Use `best_method=None` when none was designated.
 - `x_positions` has one position per category. For unit-spaced positions starting at zero, use `total_w=0.78` and `xlim=(-0.56, len(benchmarks)-0.44)`.
 - `y_limits` must include zero and every visible value, with extra space for annotations. `xlabel` and `ylabel` name the actual quantities and units.
 - `title` is empty or a panel identifier. `legend_anchor` is an axes-relative position chosen with the panel layout.
-- `category_styles` is `None` for separate method series. With one series of named categories, pass the host's
+- `category_styles` is `None` for separate method series. With one series of named categories, construct an aligned list of
   aligned identity styles; each bar uses that category's `bar_color` and `artist_label`. Category ticks identify
   those bars, so the helper omits the redundant single-series legend.
 - `intervals[label]` contains one `[lower, upper]` pair per category, or `[None, None]` for an estimate without

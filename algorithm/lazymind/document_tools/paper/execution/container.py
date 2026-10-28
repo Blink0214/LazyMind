@@ -76,6 +76,14 @@ def execute(payload, worker: Path, timeout: int, *, label: str) -> dict:
                 raise RuntimeError(f'{label}没有返回有效 JSON: ' + stderr) from exc
             if not isinstance(result, dict) or process.returncode or 'error' in result:
                 detail = result.get('error', stderr) if isinstance(result, dict) else stderr
+                if isinstance(result, dict):
+                    source = payload.get('code', '').splitlines()
+                    for frame in result.get('frames', []):
+                        line = frame['line']
+                        context = '\n'.join(
+                            f'{"→" if index + 1 == line else " "} {index + 1}: {source[index][:500]}'
+                            for index in range(max(0, line - 3), min(len(source), line + 2)))
+                        detail += f'\nFile "{frame["file"]}", line {line}, in {frame["function"]}\n{context}'
                 raise RuntimeError(f'{label}执行失败: ' + str(detail)[-6000:])
             return result
         except OSError as exc:

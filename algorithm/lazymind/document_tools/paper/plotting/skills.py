@@ -77,7 +77,6 @@ class PlotSkills:
         result = self._paper_contract(selected)
         result.update(source_style=selected, reference_path=reference_path, adapted=style == 'custom',
                       helper_module=Path(STYLES[selected][0]).stem,
-                      enforce_appearance=True,
                       title_placement='metadata_only',
                       bar_colors=result['colors'])
         result['reference_legend_location'] = result.get('legend_location', 'upper right')
@@ -86,17 +85,16 @@ class PlotSkills:
         result['rules'] += [
             'Geometry and appearance are separate. Adapt this skill to the actual chart without importing '
             'sample measurements, labels, reference lines, embeddings or axis limits.',
-            'Use style_contract.series_colors[group] for method series and bar_series_colors[group] for method bars. '
-            'Native bar_stacked uses the explicit component_colors palette keyed by component identity; '
-            'quantitative heatmaps and density fields use the selected numeric colormap. '
-            'Do not assign new colors based on sorted positions or use a default Matplotlib palette.',
+            'Use data.shared_style.series_colors for recurring series named in its series_order; otherwise '
+            'keep identity consistent using the shared palette and terminology. Native additive stacks use '
+            'stable component colors; quantitative matrices use the actual numeric colormap.',
             'Label each series artist with its actual group. For category bars or boxes, label ticks with '
-            'actual groups so the renderer can apply the same group-to-color binding after sorting.',
-            'The renderer applies the declared fonts, axes and series appearance. Keep numeric positions, '
-            'scales, data filtering, statistics and chart geometry in the generated code.',
+            'actual groups. Preserve the same identity when sorting; the renderer does not recolor artists.',
+            'The renderer applies the declared font/style rc and exports the returned figure. The generated '
+            'program chooses axes, legends, labels, layout and actual runtime data bindings.',
             'Legend position adapts to actual data. Do not copy a reference corner when it covers observations.',
             'Return the figure title in Chart.title and panel descriptions in caption. '
-            'Keep the full title/caption outside the image. Retain host-provided short scope labels on panels.',
+            'Keep the full title/caption outside the image and choose short readable panel identifiers.',
         ]
         return result
 
@@ -118,40 +116,13 @@ class PlotSkills:
         return base
 
     def reference(self, style: str, base_style: str | None = None) -> str:
-        guidance = ('Use only the actual data contract. Style does not prescribe sample data, categories, '
-                    'axis limits, statistical methods or output paths. The host handles fonts and file export.\n')
+        """Give each drawing model the real helper source and relevant scientific guidance."""
         contract = self.style_contract(style, base_style)
-        result = guidance + json.dumps(contract, ensure_ascii=False)
-        result += '\n' + self.read('references/paper_style.md')
-        result += '\n' + self.read(contract['reference_path'])
         script = self.script(contract['source_style'])
         common = self.read('scripts/paper_common.py')
         template = paper_template(script, common, contract['function'], contract['native_template'],
                                   tuple(contract.get('helpers', [])))
-        availability = (NATIVE_FUNCTION_GUIDANCE if style != 'custom' else
-                        'For custom geometry, include reviewed helper source if needed; '
-                        'skill modules cannot be imported.\n')
-        return result + (
-            '\nAPPROVED DRAWING HELPERS (no example data or file I/O):\n' + availability
-            + 'For native styles the host loads these reviewed functions unchanged. Return draw and '
-            'data-mapping helpers, and CALL the native_template with its exact signature. '
-            'Do not redefine native template helpers. '
-            'Bind actual data, stable per-group appearance and data-dependent '
-            'limits through the arguments. Missing values are not zero. For a genuinely custom '
-            'geometry, inherit appearance without forcing the native helper.\n'
-            'For one panel use figsize=layout["single_inches"] and '
-            'fig.subplots_adjust(**layout["single_panel"]); for two use "two_inches" and "two_panels". '
-            'Exceptions: draw_loss_zoom and draw_broken_scatter take an empty Figure created with '
-            'plt.figure(figsize=style_contract["rc"]["figure.figsize"]); they create and lay out their axes. '
-            'draw_radar requires subplot_kw={"projection":"polar"}. '
-            'Heatmaps and count/response fields use their explicit data and colorbar axis positions; '
-            'call draw_colorbar on the dedicated colorbar axis so it stays vector. '
-            'Do not use constrained layout together with these margins. '
-            'Native grouped bars and point intervals have legends fitted outside the observations; '
-            'identical legends share a top strip unless host-bound observations use the compact statistical footer. '
-            'The host handles original-observation overlays and notes; do not duplicate them. '
-            'Other styles follow their selected reference. '
-            'Titles/captions are returned as metadata, never drawn. Pass an empty string or only (a)/(b) '
-            'to native title arguments. Put panel descriptions in caption. '
-            'Read series_colors, series_edges, series_markers, series_line_styles and series_sizes '
-            'by group name, never by a panel-specific sorted index.\n```python\n' + template + '\n```')
+        return (self.instructions + '\n' + self.read('references/paper_style.md') + '\n'
+                + self.read(contract['reference_path']) + '\n' + NATIVE_FUNCTION_GUIDANCE
+                + '\nHELPER SOURCE (injected unchanged; no example data or file I/O):\n'
+                + '```python\n' + template + '\n```')

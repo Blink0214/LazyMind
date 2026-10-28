@@ -27,8 +27,6 @@ def draw_panel(ax, data_dict, colors, hatches, labels, title, x_positions, total
         vals = np.asarray(data_dict[label], dtype=float)
         if len(vals) != n_groups or np.isinf(vals).any():
             raise ValueError('Bar values must align with categories and be finite or missing')
-        if hatch and (label != best_method or hatch != '//'):
-            raise ValueError('Only an explicitly supplied focal method may use // hatch')
         valid = np.isfinite(vals)
         offset = (i - n_methods / 2 + 0.5) * bar_w
         faces = [style['bar_color'] for style, keep in zip(category_styles, valid) if keep] if category_styles else color
@@ -43,17 +41,19 @@ def draw_panel(ax, data_dict, colors, hatches, labels, title, x_positions, total
         low, high = endpoints.T
         observed = np.isfinite(low) & np.isfinite(high)
         if (np.any(np.isnan(low) != np.isnan(high)) or np.any(observed & ~valid)
-                or np.any(low[observed] > vals[observed]) or np.any(high[observed] < vals[observed])
+                or np.any(low[observed] > high[observed])
                 or np.any(low[observed] < y_limits[0]) or np.any(high[observed] > y_limits[1])):
-            raise ValueError('Bar intervals must enclose the observed value and remain inside the numeric axis')
+            raise ValueError('Bar intervals must be ordered and remain inside the numeric axis')
         if observed.any():
-            ax.errorbar(x[observed] + offset, vals[observed],
-                        yerr=np.vstack([vals[observed] - low[observed], high[observed] - vals[observed]]),
-                        fmt='none', ecolor='#606060', elinewidth=.85, capsize=2, capthick=.65, zorder=3)
+            positions = x[observed] + offset
+            ax.vlines(positions, low[observed], high[observed], colors='#606060', linewidth=.85, zorder=3)
+            for ends in (low[observed], high[observed]):
+                ax.plot(positions, ends, linestyle='none', marker='_', markersize=4,
+                        markeredgewidth=.65, color='#606060', label='_nolegend_', zorder=3)
         is_best = label == best_method
         for bar, v, upper in zip(bars, vals[valid], high[valid]):
             ax.text(bar.get_x() + bar.get_width() / 2,
-                    (upper if np.isfinite(upper) else v) + (y_limits[1] - y_limits[0]) * .02, f'{v:.3g}',
+                    (max(upper, v) if np.isfinite(upper) else v) + (y_limits[1] - y_limits[0]) * .02, f'{v:.3g}',
                     ha='center', va='bottom', fontsize=7.2,
                     fontweight='bold' if is_best else 'normal', color='black', zorder=3)
     ax.set_xticks(x)
@@ -62,6 +62,8 @@ def draw_panel(ax, data_dict, colors, hatches, labels, title, x_positions, total
     ax.set_ylabel(ylabel, fontsize=8.5, labelpad=4)
     ax.set_ylim(*y_limits)
     ax.set_xlim(*xlim)
+    if y_limits[0] < 0 < y_limits[1]:
+        ax.axhline(0, color='#606060', linewidth=.65, zorder=1, label='_nolegend_')
     ax.set_title(title, fontsize=9.0, pad=6)
     ax.yaxis.grid(True, color='#EBEBEB', linewidth=0.45, linestyle='--', zorder=0)
     ax.set_axisbelow(True)

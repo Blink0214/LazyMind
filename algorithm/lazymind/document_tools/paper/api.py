@@ -19,6 +19,9 @@ def run_algorithm(step: str, inputs: dict, *, on_event=None, allow_execution=Fal
     module = contracts.ALIASES.get(step, step)
     if module not in ALGORITHMS:
         raise ValueError(f'未知 Workflow 步骤: {step}')
+    if module == 'data_analysis':
+        # F4 owns its input, executed-result and chart checks at their respective boundaries.
+        return ALGORITHMS[module].run(copy.deepcopy(inputs))
     normalized = contracts.validate_input(step, inputs)
     algorithm = ALGORITHMS[module]
     if hasattr(algorithm, 'validate_inputs'):

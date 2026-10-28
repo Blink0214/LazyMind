@@ -4,6 +4,7 @@ import importlib.metadata
 import io
 import json
 import sys
+import traceback
 
 
 def run(payload):
@@ -13,8 +14,7 @@ def run(payload):
     namespace = {'__name__': 'generated_analysis'}
     with contextlib.redirect_stdout(io.StringIO()):
         exec(compile(payload['code'], '<generated-analysis>', 'exec'), namespace)
-        prepared = namespace['prepare'](payload['tables'], payload['plan'])
-        results = namespace['analyze'](prepared, payload['plan'], np.random.default_rng(payload['seed']))
+        results = namespace['analyze'](payload['tables'], payload['plan'], np.random.default_rng(payload['seed']))
     if (original != json.dumps(payload['tables'], sort_keys=True, allow_nan=False)
             or plan != json.dumps(payload['plan'], sort_keys=True, allow_nan=False)):
         raise ValueError('生成代码修改了原始数据或锁定计划')
@@ -31,5 +31,9 @@ if __name__ == '__main__':
     try:
         print(json.dumps(run(json.load(sys.stdin)), ensure_ascii=False, allow_nan=False))
     except Exception as exc:
-        print(json.dumps({'error': f'{type(exc).__name__}: {str(exc)[:4000]}'}, ensure_ascii=False))
+        frames = [dict(file=frame.filename, line=frame.lineno, function=frame.name)
+                  for frame in traceback.extract_tb(exc.__traceback__)
+                  if frame.filename == '<generated-analysis>']
+        print(json.dumps({'error': f'{type(exc).__name__}: {str(exc)[:4000]}',
+                          'frames': frames[-3:]}, ensure_ascii=False))
         sys.exit(1)

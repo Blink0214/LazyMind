@@ -1,57 +1,36 @@
-# Point estimates with verified intervals
+# Point estimates and supplied intervals
 
-Prepared F4 figures may include host-bound original values or within-key paired
-differences as faint dots behind the verified estimates. Only the categorical
-position is jittered; numeric values are unchanged and limits cover every dot.
-Do not fabricate samples from an estimate/interval or draw these layers twice.
-The host places a short statistical note and shared legends in a compact footer;
-do not reserve extra empty space for them.
+Use this geometry for executed estimates, contrasts, coefficients or posterior quantities.
+Every result row supplies its meaning, value, source scope, unit and optional interval.
+Choose readable categories and series from those meanings. The drawing model writes the
+visible labels; no comparison coordinate or host-prepared panel interface is required.
 
-When the category dimension is `comparison` and series identify cohorts, the host
-supplies category colors for contrasts and series markers for cohorts. Keep both
-channels: do not recolor a contrast by cohort or replace cohort markers with row markers.
+The installed draw_point_intervals helper takes summaries[method], with one
+[estimate, lower, upper] triple per category, plus aligned methods/colors/edges/markers,
+categories, title, xlabel, xlim and category_styles. Its exact source signature is supplied.
+Use None endpoints when no interval exists. Preserve asymmetric endpoints, including an
+interval that does not contain its point estimate; the helper draws those endpoints separately.
+Uncomputed cells stay missing. Do not estimate uncertainty or create extra observations.
 
-Call `paper_extended.py::draw_point_intervals(ax, summaries, methods, categories, colors, edges, markers, title, xlabel, xlim, category_styles)`.
+category_styles may be None. For one estimate series with meaningful category colors,
+supply aligned dictionaries containing artist_label, color, edge and marker using shared identity.
+Do not request an unavailable result_grid, comparison field or quantity_semantics object.
 
-Pass `category_styles=None` when color encodes a separate series. For a single series of named categorical rows,
-pass the host's aligned category styles (`artist_label`, `color`, `edge`, `marker`); their identities retain the same
-appearance across facets, subsets and order changes. Numeric category IDs retain identity too; numeric trajectory
-x coordinates remain colored by series, rather than by each individual coordinate.
-Do not add an `Estimate` legend when the row labels already identify the groups. Prepared panel arguments include
-their host-owned subplot identifiers; the returned caption carries the exact panel-to-scope key.
+Use clear, concise scientific labels. For differences state the ordered subtraction and units,
+and add a zero reference in the generated code. Label a difference-in-differences by its actual
+meaning rather than pretending it is an ordinary group mean. Do not force unlike quantities
+or units onto one numeric axis. Compatible results may share a panel with clearly named rows.
+Common scales help compare facets of the same quantity.
 
-`summaries[method]` is one `[estimate, lower, upper]` triple per actual category. All triples must be finite and ordered lower ≤ estimate ≤ upper. Use supplied/host-verified endpoints exactly, including asymmetry. The helper does not estimate uncertainty, resample or infer pairing. When a verified estimate has no interval, retain its point without an error bar; never invent endpoints. Unobserved cells stay missing and are never replaced by zero.
+If several series need a legend, create it using their actual scientific names and keep it clear
+of observations. The optional label_difference_axis helper can produce full subtraction legend
+labels when explicit comparison pairs are supplied; it is not required for already named rows.
+The host does not add legends, zero lines, footers or raw observations.
 
-Use horizontal intervals with small identity-bound markers, x grid, category labels and a shared legend for adjacent related panels. The approved two-panel 182×78 mm layout reserves a top strip (top=0.78). Actual effects may use a null reference (zero for differences, one for ratios) only when meaningful. Means of positive outcomes need not start at zero because no bar length encodes the value. Keep every interval inside the x range.
+For posterior parameter summaries, distinguish credible from confidence intervals and posterior
+event probabilities. Add a threshold reference only when the supplied event and parameter unit
+justify that numeric position. Do not substitute a p value for a posterior probability.
 
-Captions define the interval kind/level, independent sample unit and pairing (only when verified). The helper never converts interval overlap to a significance star.
-
-## Difference plots: make the comparison explicit
-
-In the application's prepared `paper.figure.v1` path, the host already binds readable row conditions, complete
-subtraction legends and zero references. Call the native function with the unchanged panel arguments only;
-do not call `label_difference_axis` again or invent placeholder names. The instructions below describe standalone
-callers. Axis labels are short quantity names and units (e.g. `Accuracy difference (pp)`); the full figure title
-is returned in `Chart.title`, with dataset/panel descriptions in `caption`, never as an axis label.
-
-For verified arithmetic differences, also call `paper_extended.py::label_difference_axis(ax, comparisons, better, direction_label)` after `draw_point_intervals`. This helper is included in the model reference. It returns `(handles, display_labels)` for `ax.legend` or `fig.legend`; **use the returned labels**, not the original baseline-only labels.
-
-- `comparisons` maps every actual series identity to `[minuend_display_name, subtrahend_display_name]`, in the exact order used to compute the estimate and interval. A point for Proposed minus Baseline A must read **Proposed - Baseline A**, never just **Baseline A**. Do not reverse subtraction to make a result look positive. Keep the original artist labels for stable color/marker binding; the helper changes only legend display text.
-- State the measured change and its unit on the x axis, e.g. **Accuracy change (pp)** or **Latency change (ms)**. Use actual method names in the legend. The separate title/caption states which method is compared with which baselines; zero means no difference. `pp` means percentage points, not relative percent change. Keep short verified scope labels; place the full figure title outside the image.
-- Supply `better='higher'` or `'lower'` only when the metric's preference is known from the task or data contract. `direction_label` is a short human-readable description, e.g. **Higher accuracy is better** or **Lower latency is better**. The helper draws the corresponding right/left arrow above the plotting area. With unknown or non-monotonic preference, pass `None, None` and explain the sign without claiming improvement.
-- Include zero and every interval in an increasing linear x range; the helper adds the zero reference. Use the two-panel top=0.78 strip (or equivalent space) to keep the legend, subplot identifiers and direction cues apart. Never place cues across observations.
-- Share a legend only when the panels have the same ordered comparisons and appearances. An absolute-mean panel and a difference panel need separate, explicitly scoped legends.
-
-This helper does not apply to absolute means, ratios, log ratios or odds ratios. Keep their original semantics and appropriate reference value. It never changes points, endpoints, inference or units. A confidence interval crossing zero is not by itself an instruction to label a result significant or nonsignificant.
-
-## Posterior parameter probabilities
-
-Absolute success probabilities remain on the horizontal numeric axis. A threshold such
-as p=0.80 is a **vertical** reference; `axhline(0.80)` incorrectly draws it on the category
-axis. F4 derives available thresholds from verified posterior events for the same model,
-exposes them in `style_contract.quantity_semantics.reference_values` and draws them itself.
-Do not add a second line/annotation. Standalone callers use `axvline` with the supplied
-threshold. Never add a zero-difference reference or a subtraction legend to absolute probabilities.
-Use a short verified scope label or subplot identifier in the title argument; the separate caption explains the posterior model and credible interval.
-
-For repeated comparisons across conditions, prefer a short condition axis with comparison series (the prepared `comparison` coordinate) and full ordered-subtraction legend labels. For one changed grouping dimension, color retains the first named group's identity and marker shape distinguishes comparison pairs; composite contrasts use a neutral color. Alternatively use short explicit scope facets. Do not flatten each scope/comparison into a repeated two-line row label. Preserve all selected estimates/endpoints and use common scales for facets of the same quantity. Fit the physical height to the number of category/series rows without shrinking type.
+Use a short subplot identifier or empty title. The external caption defines comparisons,
+interval kind/level, sample unit, missing handling and simulation status. When genuine source
+observations help, draw them from data.tables, with their actual pairing and numeric values.

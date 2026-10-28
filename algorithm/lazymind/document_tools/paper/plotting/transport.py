@@ -37,6 +37,9 @@ def configure(client, policy):
         # their constructor timeout to each supplier when it is first created.
         # Passing timeout in forward kwargs would also put it in the API body.
         client._timeout = (policy.connect, policy.read)
+        # Keep the provider's content/reasoning fields separate for this F4 call.
+        # The SDK's default formatter concatenates them into <think> text.
+        client.formatter(lambda message: message)
     return supported
 
 

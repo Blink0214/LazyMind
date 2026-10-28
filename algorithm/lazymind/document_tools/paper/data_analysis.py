@@ -5,8 +5,12 @@ from .analysis.pipeline import run as generated_analysis
 
 
 def run(inputs: dict) -> dict:
-    """Generate, execute and independently verify the requested analysis."""
-    return generated_analysis(inputs)
+    """Normalize F4 input once, then execute and publish the requested analysis."""
+    from .contracts import validate_input
+    from .analysis import trace as diagnostics
+    with diagnostics.stage('input_validation'):
+        normalized = validate_input('data_analysis', inputs)
+    return generated_analysis(normalized)
 
 
 def retry_request(params, request):

@@ -13,7 +13,7 @@ FORBIDDEN_ATTRIBUTES = {'savefig', 'show', 'save', 'savez', 'load', 'loads', 'du
 def validate_code(code: str) -> None:
     if not isinstance(code, str) or not code.strip() or len(code.encode()) > 32 * 1024:
         raise ValueError('绘图代码必须是非空且不超过 32 KiB 的 Python')
-    tree = ast.parse(code)
+    tree = ast.parse(code, filename='<generated-plot>')
     functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'draw']
     if len(functions) != 1 or [a.arg for a in functions[0].args.args] != ['data', 'statistics', 'spec']:
         raise ValueError('代码必须定义 draw(data, statistics, spec)')
@@ -46,5 +46,5 @@ def validate_code(code: str) -> None:
             raise ValueError(f'绘图代码不允许访问 {node.id}')
         elif isinstance(node, ast.Attribute) and (node.attr.startswith('_') or node.attr in FORBIDDEN_ATTRIBUTES):
             raise ValueError(f'绘图代码不允许访问属性 {node.attr}')
-        elif isinstance(node, ast.FunctionDef) and (node.decorator_list or node.args.defaults or node.args.kw_defaults):
-            raise ValueError('绘图函数不允许装饰器或默认参数')
+        elif isinstance(node, ast.FunctionDef) and node.decorator_list:
+            raise ValueError('绘图函数不允许装饰器')

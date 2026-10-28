@@ -18,15 +18,15 @@ _parent = ContextVar('paper_f4_trace_parent', default=None)
 MAX_ARTIFACT_BYTES = 2 * 1024 * 1024
 MAX_TOTAL_BYTES = 8 * 1024 * 1024
 MAX_EVENTS = 2048
-MILESTONES = {'input_validation': 10, 'reference_validation': 30, 'numerical_verification': 55,
+MILESTONES = {'input_validation': 10, 'plan_validation': 30, 'result_contract_validation': 55,
               'output_validation': 90, 'output_publication': 100}
 LABELS = {
     'input_binding': '读取输入', 'input_validation': '校验输入', 'environment_validation': '检查执行环境',
-    'plan_generation': '生成分析计划', 'plan_repair': '修复分析计划', 'figure_plan_repair': '修复绘图计划',
-    'plan_validation': '校验分析计划', 'reference_validation': '检查统计任务',
+    'plan_generation': '生成简短分析提纲', 'figure_planning': '根据分析结果安排图表',
+    'plan_validation': '校验分析计划',
     'analysis_code_generation': '生成分析代码', 'analysis_code_validation': '校验分析代码',
-    'analysis_execution': '执行分析代码', 'numerical_verification': '核对计算结果',
-    'interpretation': '生成结论', 'figure_code_prefetch': '预生成绘图代码',
+    'analysis_execution': '执行分析代码', 'result_contract_validation': '检查执行结果结构',
+    'interpretation': '生成结论与图下分析',
     'figure_code_generation': '生成绘图代码', 'figure_code_validation': '校验绘图代码',
     'figure_execution': '执行绘图代码', 'figure_validation': '检查图表文件',
     'output_validation': '校验最终结果', 'output_publication': '保存产物', 'model_request': '等待模型响应',
@@ -188,14 +188,11 @@ class Recorder:
             suffix = (f' · 第 {attempt} 次' if attempt else '') + (f' · {figure}' if figure else '')
             if self.emit:
                 try:
-                    from ..runtime_events import current_events
-                    events = current_events()
                     from .live import PUBLIC_STAGES
-                    if events is not None:
-                        if name in PUBLIC_STAGES and item['parent_id'] is None:
-                            events.begin_stage(identifier, label + suffix, min(95, self.progress))
-                    else:
-                        self.emit({'type': 'progress', 'progress': self.progress,
+                    # The F4 progress endpoint owns its concurrent stage history and model previews.
+                    # Send overall progress to Core without maintaining a duplicate parallel timeline.
+                    if name in PUBLIC_STAGES and item['parent_id'] is None:
+                        self.emit({'type': 'progress', 'progress': min(95, self.progress),
                                    'current_phase': f'F4 · {label}{suffix}'})
                 except Exception:
                     LOG.warning('F4 trace progress notification failed')
@@ -213,10 +210,6 @@ class Recorder:
             self.record('stage_finished', stage_id=item['id'], stage=item['stage'], status=item['status'],
                         duration_ms=item['duration_ms'], **({'error': item['error']} if exc else {}))
             self.public.end(item, exc)
-            from ..runtime_events import current_events
-            events = current_events()
-            if events is not None:
-                events.end_stage(item['id'], exc)
 
     def save(self, name, value):
         with self.lock:
@@ -314,11 +307,13 @@ def response(raw):
         recorder.record('model_response', **response_info(raw))
 
 
-def normalized_response(text, removed):
+def normalized_response(text, removed, *, recovered_prefix_chars=0, inserted_boundary_spaces=0):
     recorder = _current.get()
     if recorder:
         recorder.record('response_normalized', removed_thinking_blocks=removed, body_chars=len(text),
-                        body_sha256=hashlib.sha256(text.encode()).hexdigest())
+                        body_sha256=hashlib.sha256(text.encode()).hexdigest(),
+                        recovered_prefix_chars=recovered_prefix_chars,
+                        inserted_boundary_spaces=inserted_boundary_spaces)
 
 
 def figure_name(identifier):

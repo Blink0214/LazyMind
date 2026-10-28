@@ -6,6 +6,19 @@ import re
 import xml.etree.ElementTree as ET
 
 
+def _embedded_raster(value):
+    """Matplotlib embeds heatmaps and colorbars as inert PNG data, including line breaks."""
+    match = re.fullmatch(r'data:image/(png|jpeg);base64,([\s\S]+)', value, re.I)
+    if match is None:
+        return False
+    try:
+        raw = base64.b64decode(re.sub(r'\s+', '', match[2]), validate=True)
+    except ValueError:
+        return False
+    signature = b'\x89PNG\r\n\x1a\n' if match[1].lower() == 'png' else b'\xff\xd8\xff'
+    return raw.startswith(signature)
+
+
 def validate_svg(svg: str) -> None:
     if not isinstance(svg, str) or not svg.strip() or len(svg.encode()) > 2 * 1024 * 1024:
         raise ValueError('图表必须是非空且不超过 2 MiB 的 SVG')
@@ -17,17 +30,19 @@ def validate_svg(svg: str) -> None:
         raise ValueError('图表必须是有效 SVG') from exc
     if root.tag not in ('svg', '{http://www.w3.org/2000/svg}svg'):
         raise ValueError('图表根节点必须是 SVG')
-    forbidden = {'script', 'foreignobject', 'image', 'a', 'iframe', 'object', 'embed',
+    forbidden = {'script', 'foreignobject', 'a', 'iframe', 'object', 'embed',
                  'animate', 'animatemotion', 'animatetransform', 'set', 'audio', 'video'}
     for node in root.iter():
-        if node.tag.rsplit('}', 1)[-1].lower() in forbidden:
+        tag = node.tag.rsplit('}', 1)[-1].lower()
+        if tag in forbidden:
             raise ValueError('SVG 包含主动内容或外部资源元素')
         for attribute, value in node.attrib.items():
             attribute = attribute.rsplit('}', 1)[-1].lower()
             if attribute.startswith('on') or attribute in {'src', 'base'}:
                 raise ValueError('SVG 不允许事件处理器或外部资源')
             if attribute == 'href' and not re.fullmatch(r'#[A-Za-z_][\w:.-]*', value):
-                raise ValueError('SVG 只允许图内资源引用')
+                if tag != 'image' or not _embedded_raster(value):
+                    raise ValueError('SVG 只允许图内资源引用或内嵌 PNG/JPEG，不允许外部资源或可执行内容')
         styles = [*node.attrib.values()]
         if node.tag.rsplit('}', 1)[-1].lower() == 'style':
             styles.append(node.text or '')
