@@ -68,12 +68,16 @@ All-positive bars start at zero. Differences have a zero reference. Do not chang
 do not append redundant dimensionless 0-1 unit text. Preserve actual interval meaning; null means unavailable.
 In dense plots, individual observations do not need numeric labels. Keep any summary-value annotation clear of
 points, lines and other text; omit redundant value labels when the axis and accompanying analysis already convey them.
-Include a concise caption in the paper language, within 200 characters: explain what this figure shows and
-briefly analyze its main observed result or comparison and its research meaning. Use actual executed values
-for any numerical contrasts. Clarify conditions/symbols, sample support, simulated provenance and uncertainty
-when needed for interpretation. The caption may explain the data; it is not restricted to reading instructions.
-Keep it specific to this figure rather than repeating the experiment-wide integrated conclusion. Do not invent
-mechanisms, significance or causal effects, or add hardcoded result judgments to the canvas.
+Include a figure-specific analysis in the caption, in the paper language and within 200 characters.
+Lead with the main observed pattern and what it implies for the relevant empirical research question, supported
+by at most one or two decisive numerical comparisons from actual executed results. Explain the implication:
+for example a conditional benefit, an adverse result, a resource-efficiency conflict or an unresolved interaction,
+only when supported by this figure. A list of values or 'this shows a tradeoff' alone is insufficient.
+Use only the minimal conditions/symbol definitions, sample and uncertainty notes needed to understand that
+interpretation; do not spend the whole caption restating axes, formulas, every interval or repeated provenance.
+Keep the explanation specific to this figure; the final narrative synthesizes across figures. Preserve material
+limits and simulation disclosure. Do not invent mechanisms, significance or causal effects, or put hardcoded
+result judgments on the canvas.
 In-figure numeric labels use the actual values.
 Keep full figure titles/captions outside the canvas; axis names, panel identifiers and scientific annotations belong inside.
 No file/network/process access, installation, save/show calls or extra statistical computation. Return the figure; the host exports it.
