@@ -30,7 +30,7 @@ def test_unchanged_analysis_document_survives_restore(f4_result, origin):
     pool['history'].append({'node': 'F4', 'inputs': [], 'outputs': [ref]})
     pool['sequence'] = 1
     document = workflow.with_source_notice(
-        render(output['analysis'], '数据分析 · ' + pool['topic']), is_demo, provenance)
+        render(output['analysis']), is_demo, provenance)
     restored = workflow.pool_from_inputs({'data_analysis_pool': pool, 'data_analysis_document': document})
     assert restored == pool
     assert workflow.business_input('write_outline', restored)['analysis'] == output['analysis']

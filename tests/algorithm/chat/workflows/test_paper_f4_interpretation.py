@@ -1,23 +1,22 @@
-"""Numeric model names must not be confused with unverified statistical claims."""
-import pytest
+"""The integrated conclusion is delivered as Markdown without numeric prose gates."""
+import json
+from unittest.mock import Mock
 
-from lazymind.document_tools.paper.analysis.interpretation import identifiers, validate
-from lazymind.document_tools.paper.analysis.schema import normalize_input
+from lazymind.document_tools.paper.analysis.interpretation import interpret
+from lazymind.document_tools.paper.analysis.render import render
 
 
-def test_digit_leading_model_names_are_allowed_but_estimates_are_not():
-    inputs = normalize_input({'topic': '7B 模型实验，由 F4 分析；不把 1e3 当作模型名称',
-                              'data': {'columns': ['score'], 'rows': [[0.5]],
-                                       'column_types': ['number'], 'units': [None]}})
-    names = identifiers(inputs)
-    assert '7B' in names and 'F4' in names
-    assert '1e3' not in names
-    analysis = {'targets': [{'id': 'mean'}], 'findings': [{'id': 'm', 'target_id': 'mean'}]}
-    value = {'summary': 'F4 分析的是 7B 模型的模拟示例。',
-             'answers': [{'target_id': 'mean', 'conclusion': '仅展示模拟结果。', 'finding_ids': ['m']}],
-             'mechanism_explanation': '无法确定真实机制。', 'limitations': ['完整 7B 实验尚未执行。']}
-    assert validate(value, analysis, names, 'zh-CN')['summary'] == value['summary']
-    for claim in ['准确率为 0.8。', '共有 1e3 个样本。', '未知 70B 模型。']:
-        value['summary'] = claim
-        with pytest.raises(ValueError, match='summary 含未允许的数值'):
-            validate(value, analysis, names, 'zh-CN')
+def test_executed_results_produce_one_unchanged_markdown_conclusion():
+    metadata = dict(label='Mean score', metric='score', method='mean', scope='Observed sample',
+                    coordinates={}, comparison='')
+    analysis = dict(findings=[dict(value=0.5, calculation=json.dumps(metadata))],
+                    targets=[], methods=['mean'], models=[], limitations=[])
+    markdown = '## 综合结论\n\n2026 年样本均值为 0.5；本次模拟不能推断真实任务表现。'
+    call = Mock(return_value=markdown)
+    text, record = interpret({}, analysis, dict(figures=[]), call)
+    assert text == render(dict(summary=text)) == markdown
+    assert record['format'] == 'markdown'
+    sent = json.loads(call.call_args.args[0].split('INPUT_JSON:\n', 1)[1])
+    assert sent['analysis_results'][0]['value'] == 0.5
+    assert 'schema' not in sent
+    call.assert_called_once()

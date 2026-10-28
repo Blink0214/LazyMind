@@ -193,12 +193,12 @@ def test_review_projects_partial_results_while_preserving_strict_review_validati
 def test_f4_keeps_diagnostics_and_projects_interpretation_to_shared_document_stream(tmp_path):
     from lazymind.document_tools.paper.analysis import trace
     emitted = []
-    value = {'summary': '结果仅适用于当前样本。', 'answers': [{'conclusion': '仍需补充验证。'}]}
+    value = '结果仅适用于当前样本，仍需补充验证。'
     with bind_runtime_events(emitted.append, 'data_analysis_document') as events:
         with trace.capture(tmp_path, 'analysis', emitted.append):
             with trace.stage('interpretation'):
-                preview = trace.response_preview(True)
-                preview.sink({'tag': 'text', 'delta': json.dumps(value, ensure_ascii=False)})
+                preview = trace.response_preview(False, output_format='markdown')
+                preview.sink({'tag': 'text', 'delta': value})
                 assert any(e['type'] == 'artifact_stream' for e in emitted)
                 preview.finish(value)
         events.complete()
