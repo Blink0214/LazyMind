@@ -18,8 +18,22 @@ class FigureDraft(Object):
 
 class FigureArrangement(Object):
     figures: Annotated[list[FigureDraft], Field(max_length=20)]
-    terminology: dict[str, str] = Field(default_factory=dict)
-    series_order: list[str] = Field(default_factory=list)
+    terminology: dict[str, str] = Field(default_factory=dict, description=
+        'Actual source coordinate values/metric names -> concise English display labels. Never rename data keys.')
+    series_order: list[str] = Field(default_factory=list, description=
+        'Preferred order of actual string coordinate values from the supplied results, never translated display labels.')
+
+
+def coordinate_values(rows):
+    """Describe observed coordinates without inventing values or choosing a plot dimension."""
+    values = {}
+    for row in rows:
+        for name, value in row['coordinates'].items():
+            if value is not None and isinstance(value, (str, int, float, bool)):
+                levels = values.setdefault(name, [])
+                if value not in levels:
+                    levels.append(value)
+    return values
 
 
 def bind_figures(value, analysis):
@@ -45,4 +59,10 @@ def bind_figures(value, analysis):
         columns = {(ref['table_id'], ref['column']): ref for row in selected for ref in row['columns']}
         figures.append(dict(copy.deepcopy(draft), id=f'fig{index}', caption='',
                             finding_ids=[row['id'] for row in selected], columns=list(columns.values())))
-    return dict(figures=figures, terminology=arrangement['terminology'], series_order=arrangement['series_order'])
+    from .results import result_rows
+    observed = list(dict.fromkeys(value for levels in coordinate_values(result_rows(analysis)).values()
+                                  for value in levels if isinstance(value, str)))
+    # Ordering is a presentation hint; unknown labels never become data identities
+    # or remove observed groups. Each panel selects its own coordinate from results.
+    order = list(dict.fromkeys([key for key in arrangement['series_order'] if key in observed] + observed))
+    return dict(figures=figures, terminology=arrangement['terminology'], series_order=order)

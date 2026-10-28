@@ -85,14 +85,14 @@ def run(inputs):
     with diagnostics.stage('environment_validation'):
         executor.configuration()
     try:
-        attempts = int(os.environ.get('LAZYMIND_PAPER_GENERATED_ANALYSIS_ATTEMPTS', '3'))
-        if not 1 <= attempts <= 3:
+        attempts = int(os.environ.get('LAZYMIND_PAPER_GENERATED_ANALYSIS_ATTEMPTS', '5'))
+        if not 1 <= attempts <= 5:
             raise ValueError
     except ValueError as exc:
-        raise ValueError('生成统计程序尝试次数必须为 1..3') from exc
+        raise ValueError('统计代码总尝试次数必须为 1..5：首次生成计 1 次，最多局部修复 4 次') from exc
 
     planning, error, plan = [], '', None
-    for attempt in range(1, attempts + 1):
+    for attempt in range(1, min(attempts, 3) + 1):
         try:
             with diagnostics.stage('plan_generation', attempt=attempt):
                 candidate = model.make_plan(inputs, error)
@@ -144,15 +144,15 @@ def run(inputs):
             figure['fallback'] = item['fallback']
             figure['style'] = 'point_interval'
         figure['caption'] = item['caption']
-    summary, interpretation = model.interpret_results(inputs, copy.deepcopy(analysis), copy.deepcopy(plan), attempts)
-    analyses = interpretation['response']['figure_analyses']
+    summary, interpretation = model.interpret_results(inputs, copy.deepcopy(analysis), copy.deepcopy(plan))
     for chart in charts:
         note = ('原绘图未完成，现用简单图保留各项结果；原计划关系或布局未能完整展示。'
                 if next(item for item in figure_trace if item['id'] == chart['id']).get('fallback') else '')
-        chart['caption'] = '\n\n'.join(filter(None, (note, chart['caption'], analyses[chart['id']])))
+        chart['caption'] = '\n\n'.join(filter(None, (note, chart['caption'])))
     if failed or any(item.get('fallback') for item in figure_trace):
+        missing = '未生成：' + '；'.join(item['title'] for item in failed) + '。' if failed else ''
         summary = (f'图表部分完成：已生成 {len(charts)}/{len(figure_trace)} 张图；'
-                   '未生成或改用简单图的内容见说明，统计结果保留。\n\n') + summary
+                   '统计结果保留。' + missing + '\n\n') + summary
     analysis['summary'] = summary
     with diagnostics.stage('output_validation'):
         validate_charts(charts, analysis)

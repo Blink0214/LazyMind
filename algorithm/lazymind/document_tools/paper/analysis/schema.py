@@ -368,10 +368,12 @@ def table_map(inputs):
 
 def refs_exist(refs, tables, field):
     pairs = [(r['table_id'], r['column']) for r in refs]
-    if len(set(pairs)) != len(pairs) or any(
-        t not in tables or c not in tables[t]['columns'] for t, c in pairs
-    ):
-        raise ContractError('INVALID_OUTPUT' if field.startswith('output') else 'INVALID_INPUT', field, '列引用不存在或重复')
+    missing = [(t, c) for t, c in pairs if t not in tables or c not in tables[t]['columns']]
+    if len(set(pairs)) != len(pairs) or missing:
+        detail = f'不存在的列引用: {missing}。' if missing else '列引用重复。'
+        available = {name: value['columns'] for name, value in tables.items()}
+        code = 'INVALID_OUTPUT' if field.startswith(('output', 'analysis.results')) else 'INVALID_INPUT'
+        raise ContractError(code, field, detail + f'可用表及原始列: {available}')
 
 
 def normalize_input(value):

@@ -1,4 +1,5 @@
 """Container-only entry point for generated preparation and statistics programs."""
+import __future__
 import contextlib
 import importlib.metadata
 import io
@@ -13,7 +14,8 @@ def run(payload):
     plan = json.dumps(payload['plan'], sort_keys=True, allow_nan=False)
     namespace = {'__name__': 'generated_analysis'}
     with contextlib.redirect_stdout(io.StringIO()):
-        exec(compile(payload['code'], '<generated-analysis>', 'exec'), namespace)
+        exec(compile(payload['code'], '<generated-analysis>', 'exec',
+                     flags=__future__.annotations.compiler_flag, dont_inherit=True), namespace)
         results = namespace['analyze'](payload['tables'], payload['plan'], np.random.default_rng(payload['seed']))
     if (original != json.dumps(payload['tables'], sort_keys=True, allow_nan=False)
             or plan != json.dumps(payload['plan'], sort_keys=True, allow_nan=False)):

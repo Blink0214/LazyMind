@@ -17,7 +17,9 @@ from ..execution.threads import ThreadPoolExecutor
 
 
 def generate_code(data, statistics, spec, reference, previous, error):
-    prompt = (REPAIR_INSTRUCTION if previous else CODE_INSTRUCTION) + '''Implement draw(data, statistics, spec) -> matplotlib.figure.Figure for ONE figure.
+    prompt = (REPAIR_INSTRUCTION if previous else CODE_INSTRUCTION) + '''Implement def draw(data, statistics, spec): for ONE figure and return a Matplotlib Figure.
+Use the plain function declaration without type annotations; no annotation-only imports are needed.
+Import names actually used in executable statements explicitly; an alias binds only that alias.
 Prefer 1 or 2 data panels, with at most 4 in this figure/script. Implement only this figure's planned purpose;
 do not expand the full analysis context into a large dashboard or add unrelated panels and duplicated plotting code.
 Use loops and the supplied helpers for related series. Additional planned figures have their own independent scripts.
@@ -41,6 +43,13 @@ names directly, without importing skill modules or copying/redefining helpers. R
 Matplotlib code can implement a needed geometry. There is no mandatory result_grid or host-prepared panel protocol.
 spec.style_contract provides style-specific appearance/layout; data.shared_style supplies common terminology,
 series_order and group colors for ALL figures. Preserve those shared choices across independently generated figures.
+series_order and series_colors use ORIGINAL coordinate values; terminology maps those keys to display labels.
+For each panel derive its actual groups from the selected result rows and chosen coordinate. Filter the global order
+to these observed groups, then append any remaining observed groups. The global order is not a data inventory for
+every panel. Never filter observations by translated labels or key summaries by display labels.
+Keep summaries indexed by actual group keys. For draw_point_intervals, pass those keys as methods and pass
+method_labels=data['shared_style']['terminology'] for display. This optional argument changes labels only.
+Other helpers have their own supplied signatures; do not transfer this keyword to unrelated helpers.
 Identify every displayed series with a legend or direct label. Build legend handles and labels together from the
 actual plotted artists so a shared legend does not silently omit a series.
 Ticks identify categories, not full condition descriptions. Avoid repeating factor names and shared sample sizes on
@@ -59,11 +68,13 @@ All-positive bars start at zero. Differences have a zero reference. Do not chang
 do not append redundant dimensionless 0-1 unit text. Preserve actual interval meaning; null means unavailable.
 In dense plots, individual observations do not need numeric labels. Keep any summary-value annotation clear of
 points, lines and other text; omit redundant value labels when the axis and accompanying analysis already convey them.
-Include an accurate caption, in the paper language: define conditions/symbols, explain what is plotted,
-and disclose simulated data and uncertainty limits when applicable. Keep this caption to reading instructions,
-sample/interval definitions and provenance. Numeric contrasts, zero/nonzero judgments, rankings and substantive
-conclusions are written ONCE in the separate research-oriented analysis; do not duplicate them in this caption
-or add hardcoded null/adverse/beneficial judgments to the canvas. In-figure numeric labels use the actual values.
+Include a concise caption in the paper language, within 200 characters: explain what this figure shows and
+briefly analyze its main observed result or comparison and its research meaning. Use actual executed values
+for any numerical contrasts. Clarify conditions/symbols, sample support, simulated provenance and uncertainty
+when needed for interpretation. The caption may explain the data; it is not restricted to reading instructions.
+Keep it specific to this figure rather than repeating the experiment-wide integrated conclusion. Do not invent
+mechanisms, significance or causal effects, or add hardcoded result judgments to the canvas.
+In-figure numeric labels use the actual values.
 Keep full figure titles/captions outside the canvas; axis names, panel identifiers and scientific annotations belong inside.
 No file/network/process access, installation, save/show calls or extra statistical computation. Return the figure; the host exports it.
 Use only the actual allowed imports below. The three function arguments are dictionaries. No attribute-compatibility readers,

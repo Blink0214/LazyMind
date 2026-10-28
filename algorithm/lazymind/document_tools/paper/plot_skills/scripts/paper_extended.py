@@ -97,9 +97,12 @@ def draw_heatmap(ax, values, row_labels, column_labels, title, xlabel, ylabel,
 
 
 def draw_point_intervals(ax, summaries, methods, categories, colors, edges, markers, title, xlabel, xlim,
-                         category_styles):
-    """Verified [estimate, low, high] triples; null endpoints mean a point without an interval."""
-    if (not methods or len(set(methods)) != len(methods)
+                         category_styles, *, method_labels=None):
+    """summaries[actual_key] contains triples; method_labels maps keys to display names only."""
+    if not methods:
+        raise ValueError('No observed series selected: methods must use actual coordinate/summary keys, '
+                         'not display labels; available summary keys: ' + repr(list(summaries)))
+    if (len(set(methods)) != len(methods)
             or any(len(style) != len(methods) for style in [colors, edges, markers])):
         raise ValueError('Every distinct method needs its own supplied appearance; do not truncate groups')
     if category_styles is not None and len(category_styles) != len(categories):
@@ -107,7 +110,11 @@ def draw_point_intervals(ax, summaries, methods, categories, colors, edges, mark
     paper_axes(ax, title, xlabel, '', False)
     offsets = np.linspace(-.22, .22, len(methods)) if len(methods) > 1 else [0]
     for method, color, edge, marker, offset in zip(methods, colors, edges, markers, offsets):
-        rows = np.asarray(summaries[method], dtype=float)
+        try:
+            rows = np.asarray(summaries[method], dtype=float)
+        except KeyError:
+            raise KeyError(f'Unknown summary key {method!r}; available keys: {list(summaries)!r}. '
+                           'Pass display names through method_labels, without renaming data keys.') from None
         if rows.shape != (len(categories), 3) or np.any(np.isinf(rows)):
             raise ValueError('Provide one estimate/low/high triple per category and method; missing cells stay null')
         estimate, low, high = rows.T
@@ -123,9 +130,10 @@ def draw_point_intervals(ax, summaries, methods, categories, colors, edges, mark
         error = np.full((2, len(estimate)), np.nan)
         enclosed = interval & (low <= estimate) & (estimate <= high)
         error[:, enclosed] = np.vstack([estimate[enclosed] - low[enclosed], high[enclosed] - estimate[enclosed]])
-        groups = [(np.flatnonzero(observed), method, color, edge, marker)]
+        label = (method_labels or {}).get(method, method)
+        groups = [(np.flatnonzero(observed), label, color, edge, marker)]
         if category_styles is not None:
-            groups = [(np.array([i]), style['artist_label'] if len(methods) == 1 else method,
+            groups = [(np.array([i]), style['artist_label'] if len(methods) == 1 else label,
                        style['color'], style['edge'], style['marker'] if len(methods) == 1 else marker)
                       for i, style in enumerate(category_styles) if observed[i]]
         for indices, name, face, outline, shape in groups:

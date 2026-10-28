@@ -1,4 +1,5 @@
 """Execute a drawing program and export its figure; do not invent labels or rebind its artists."""
+import __future__
 import base64
 import contextlib
 import io
@@ -129,7 +130,8 @@ def render(payload):
         try:
             namespace = {}
             with contextlib.redirect_stdout(sys.stderr):
-                exec(compile(payload['code'], '<generated-plot>', 'exec'), namespace)
+                exec(compile(payload['code'], '<generated-plot>', 'exec',
+                             flags=__future__.annotations.compiler_flag, dont_inherit=True), namespace)
                 figure = namespace['draw'](payload['table'], payload['statistics'], payload['spec'])
             if not isinstance(figure, Figure):
                 raise ValueError('draw 必须返回 Matplotlib Figure')

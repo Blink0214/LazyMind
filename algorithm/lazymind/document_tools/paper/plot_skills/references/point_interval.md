@@ -8,6 +8,21 @@ visible labels; no comparison coordinate or host-prepared panel interface is req
 The installed draw_point_intervals helper takes summaries[method], with one
 [estimate, lower, upper] triple per category, plus aligned methods/colors/edges/markers,
 categories, title, xlabel, xlim and category_styles. Its exact source signature is supplied.
+methods contains actual data keys and summaries stays indexed by those same keys.
+The optional keyword-only method_labels maps these keys to visible legend labels; it never
+changes data lookup. Reuse data.shared_style.terminology rather than creating another mapping.
+For example, after building summaries from this panel's actual selected rows:
+
+```python
+methods = list(summaries)
+draw_point_intervals(ax, summaries, methods, categories, colors, edges, markers,
+                     title, xlabel, xlim, None,
+                     method_labels=data['shared_style']['terminology'])
+```
+
+The global series_order is an ordering hint across figures, not the set of observations
+for every panel. Select actual groups from this panel's coordinates first; retain all of
+them when applying the shared order, including groups omitted from the ordering hint.
 Use None endpoints when no interval exists. Preserve asymmetric endpoints, including an
 interval that does not contain its point estimate; the helper draws those endpoints separately.
 Uncomputed cells stay missing. Do not estimate uncertainty or create extra observations.

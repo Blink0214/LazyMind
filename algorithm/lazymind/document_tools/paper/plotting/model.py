@@ -13,7 +13,7 @@ class PlotModelError(RuntimeError):
     """No model output is a service failure, not a generated-program repair request."""
 
 
-def request_model(prompt: str, json_output=True):
+def request_model(prompt: str, json_output=True, *, output_format=None):
     from lazyllm import AutoModel
 
     options = {'stream_output': False}
@@ -27,11 +27,16 @@ def request_model(prompt: str, json_output=True):
                            connect_timeout_seconds=policy.connect if supported else None,
                            read_timeout_seconds=policy.read if supported else None,
                            max_transport_attempts=policy.attempts if supported else None):
-        preview = diagnostics.response_preview(json_output)
+        preview = diagnostics.response_preview(json_output, output_format=output_format)
         streaming = (preview is not None and supported and not getattr(preview.recorder, 'streaming_rejected', False)
                      and os.environ.get('LAZYMIND_PAPER_MODEL_STREAM', 'auto') != 'off')
+        reasoning_chunks = []
         if streaming:
-            options['stream_output'] = {'_stream_sink': preview.sink}
+            def sink(event):
+                if event.get('tag') == 'think' and event.get('delta'):
+                    reasoning_chunks.append(str(event['delta']))
+                preview.sink(event)
+            options['stream_output'] = {'_stream_sink': sink}
         try:
             try:
                 raw = transport.call(client, prompt, options, policy, supported)
@@ -49,7 +54,11 @@ def request_model(prompt: str, json_output=True):
                     raise
                 preview.recorder.streaming_rejected = True
                 raw = transport.call(client, prompt, {**options, 'stream_output': False}, policy, supported)
-            normalized = normalize_response(raw, json_output=json_output)
+            # F4 keeps every emitted reasoning delta, including repeated ones;
+            # the shared SDK's metadata merge policy remains unchanged.
+            if reasoning_chunks and isinstance(raw, dict):
+                raw = dict(raw, reasoning_content=''.join(reasoning_chunks))
+            normalized = normalize_response(raw)
             if preview:
                 preview.finish(raw, normalized=normalized)
         except BaseException:
@@ -58,17 +67,17 @@ def request_model(prompt: str, json_output=True):
             raise
         diagnostics.response(raw)
     text = normalized.body
-    if not text:
+    if not text or isinstance(text, str) and not text.strip():
         raise PlotModelError('绘图模型未返回内容，请检查模型服务状态；不将空响应当作绘图代码错误重写')
-    if normalized.removed_thinking_blocks or normalized.recovered_prefix_chars:
-        diagnostics.normalized_response(text, normalized.removed_thinking_blocks,
-                                        recovered_prefix_chars=normalized.recovered_prefix_chars,
-                                        inserted_boundary_spaces=normalized.inserted_boundary_spaces)
     return text
 
 
 def call_code_model(prompt: str) -> dict:
     return parse_code_response(request_model(prompt, json_output=False))
+
+
+def call_markdown_model(prompt: str) -> str:
+    return request_model(prompt, json_output=False, output_format='markdown')
 
 
 def call_model(prompt: str) -> dict:

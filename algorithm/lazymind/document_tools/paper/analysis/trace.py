@@ -293,27 +293,18 @@ def enabled():
     return _current.get() is not None
 
 
-def response_preview(json_output):
+def response_preview(json_output, *, output_format=None):
     recorder = _current.get()
     if recorder is None or not recorder.emit:
         return None
     from .live import ResponsePreview
-    return ResponsePreview(recorder, _parent.get(), json_output)
+    return ResponsePreview(recorder, _parent.get(), json_output, output_format=output_format)
 
 
 def response(raw):
     recorder = _current.get()
     if recorder:
         recorder.record('model_response', **response_info(raw))
-
-
-def normalized_response(text, removed, *, recovered_prefix_chars=0, inserted_boundary_spaces=0):
-    recorder = _current.get()
-    if recorder:
-        recorder.record('response_normalized', removed_thinking_blocks=removed, body_chars=len(text),
-                        body_sha256=hashlib.sha256(text.encode()).hexdigest(),
-                        recovered_prefix_chars=recovered_prefix_chars,
-                        inserted_boundary_spaces=inserted_boundary_spaces)
 
 
 def figure_name(identifier):
