@@ -1,8 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { SlotRevision } from '@/modules/chat/store/workflowPanel';
+import { axiosInstance } from '@/components/request';
+import type { SlotRevision, WorkflowSession } from '@/modules/chat/store/workflowPanel';
 import { PaperAnalysisCharts, paperChartDescriptions } from './PaperAnalysisCharts';
+import { PaperAnalysisProgress } from './PaperAnalysisProgress';
 
+vi.mock('@/components/auth', () => ({ AgentAppsAuth: { getAuthHeaders: () => ({}) } }));
+vi.mock('@/components/request', () => ({ BASE_URL: '', axiosInstance: { get: vi.fn() } }));
+vi.mock('@/modules/chat/utils/sse', () => ({ Method: { GET: 'GET' }, SSE: class { close() {} } }));
 vi.mock('./SlotComponents', async () => ({ SlotDownloadContext: (await import('react')).createContext(true) }));
 vi.mock('@/modules/knowledge/utils/imageUrl', () => ({
   resolveMarkdownImageUrlAsync: async (source: string) => source,
@@ -56,4 +61,29 @@ it.each(['paper-material-pool.v1', 'paper-material-pool.v2'])('reads figure meta
     { id: 'means', title: 'Mean scores', caption: 'Synthetic group means.' },
   ]);
   expect(paperChartDescriptions({ ...value, schema: 'unknown' })).toEqual([]);
+});
+
+it('shows backend token estimates for output and reasoning without changing their text', async () => {
+  const time = '2026-01-01T00:00:00Z';
+  const body = 'The observed mean is 2.', reasoning = 'Compare the conditions.';
+  vi.mocked(axiosInstance.get).mockResolvedValueOnce({ data: {
+    task_id: 'task', execution_id: 'execution', revision: 1, status: 'succeeded',
+    timing: { started_at: time, finished_at: time, measured_at: time },
+    process_steps: [{ step_id: 'f4-analysis', title: '生成分析', order: 0, status: 'succeeded',
+      started_at: time, finished_at: time, elapsed_ms: 0,
+      output: { text: body, estimated_tokens: 1234, format: 'text', mode: 'complete' },
+      reasoning: { text: reasoning, estimated_tokens: 21, format: 'text', mode: 'complete' },
+    }],
+  } });
+  const session: WorkflowSession = { session_id: 'session', conversation_id: 'conversation',
+    workflow_id: 'paper-writing', workflow_mode: 'auto', status: 'completed', current_step_id: 'data_analysis',
+    created_at: time, updated_at: time, steps: [{ id: 'step', session_id: 'session', step_id: 'data_analysis',
+      task_id: 'task', attempt: 1, status: 'succeeded', created_at: time, updated_at: time }],
+  };
+  render(<PaperAnalysisProgress session={session} />);
+  expect(await screen.findByText(`TEXT · 约 ${(1234).toLocaleString()} tokens`)).toBeInTheDocument();
+  expect(screen.getByText('TEXT · 约 21 tokens')).toBeInTheDocument();
+  expect(screen.queryByText(/字符/)).not.toBeInTheDocument();
+  expect(screen.getByText(body)).toBeInTheDocument();
+  expect(screen.getByText(reasoning)).toBeInTheDocument();
 });
