@@ -222,7 +222,7 @@ func LaunchPaperWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	var convID, recordID string
 	err = conversationgroup.UserTransaction(r.Context(), store.DB(), user, func(tx *gorm.DB) error {
-		if req.Kind == "expansion" || req.Kind == "review" {
+		if req.Kind == "expansion" || (req.Kind == "review" && len(papers) == 0) {
 			var existing orm.AcademicExpansion
 			if tx.Where("request_owner=? AND request_key=?", user, req.RequestKey).Take(&existing).Error == nil {
 				if existing.DeletedAt != nil {
@@ -417,7 +417,9 @@ func createPaperHandoff(ctx context.Context, tx *gorm.DB, user, dataset, record 
 		query += "\n先生成阅读心得，再携带心得和原论文清单生成汇报 PPT。"
 	}
 	workflowID := "paper_workflow_mock"
-	if kind == "ppt" && reflectionFirst {
+	if kind == "review" {
+		workflowID = "paper-writing"
+	} else if kind == "ppt" && reflectionFirst {
 		workflowID = "paper_ppt_with_reflection_mock"
 	}
 	return handoff, enqueueAcademicChat(ctx, tx, user, conv, workflowID, query, key)
@@ -1091,7 +1093,11 @@ func academicChatContext(ctx context.Context, db *gorm.DB, user, conversation st
 	}
 	var handoff orm.AcademicHandoff
 	if db.WithContext(ctx).Where("user_id=? AND conversation_id=?", user, conversation).Take(&handoff).Error == nil {
-		return "论文任务交接上下文：\n" + string(marshal(map[string]any{"handoff_id": handoff.ID, "dataset_id": handoff.DatasetID, "kind": handoff.Kind, "input": json.RawMessage(handoff.InputJSON)})) + "\n读取完整交接后原样提交。材料已接收，生成能力待对接；不声称已生成正式文稿或 PPT。"
+		context := string(marshal(map[string]any{"handoff_id": handoff.ID, "dataset_id": handoff.DatasetID, "kind": handoff.Kind, "input": json.RawMessage(handoff.InputJSON)}))
+		if handoff.Kind == "review" {
+			return "Paper review handoff:\n" + context + "\nStart paper-writing at literature_review. F2 reads this Chat's frozen selection and full texts directly; no input transcription is needed. Publish the real review. Do not start paper_expansion or submit a mock receipt."
+		}
+		return "论文任务交接上下文：\n" + context + "\n读取完整交接后原样提交。材料已接收，生成能力待对接；不声称已生成正式文稿或 PPT。"
 	}
 	return ""
 }
