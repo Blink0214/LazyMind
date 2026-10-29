@@ -385,16 +385,20 @@ def _heading_signature(markdown):
         previous = level
     return signature
 
+def _strip_outline_budget(description, budget):
+    """Strip only the generated suffix matching this heading's own metadata."""
+    if not isinstance(description, str) or type(budget) is not int or budget <= 0:
+        return description
+    suffix = rf'(?:（约{budget}字）| \(about {budget} (?:characters|words)\))(?=[。.!?！？]?$)'
+    return re.sub(suffix, '', description).strip()
+
+
 def _outline_budget_descriptions(outline):
     """Remove Writer budget suffixes only from their matching outline descriptions."""
     replacements = {}
     for payload in parse_markdown_outline_instructions(outline).values():
         description = payload.get('outline_description')
-        budget = payload.get('target_chars')
-        if not isinstance(description, str) or type(budget) is not int or budget <= 0:
-            continue
-        suffix = rf'(?:（约{budget}字）| \(about {budget} characters\))(?=[。.!?！？]?$)'
-        cleaned = re.sub(suffix, '', description).strip()
+        cleaned = _strip_outline_budget(description, payload.get('target_chars'))
         if cleaned != description:
             replacements[description] = cleaned
     return replacements

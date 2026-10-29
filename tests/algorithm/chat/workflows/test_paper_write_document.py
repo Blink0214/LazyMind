@@ -50,8 +50,9 @@ def test_draft_defers_semantic_review_but_keeps_hard_checks(monkeypatch, defect)
 
 
 @pytest.mark.parametrize('language,target', [('zh-CN', None), ('zh-CN', 1000), ('en', 1000)])
-def test_outline_relative_weights_do_not_leak_as_character_instructions(language, target):
-    descriptions = ['讨论60个问题与0.7权重（约3字）。', 'Discuss latency (about 2 characters).']
+@pytest.mark.parametrize('unit', ['characters', 'words'])
+def test_outline_relative_weights_do_not_leak_as_character_instructions(language, target, unit):
+    descriptions = ['讨论60个问题与0.7权重（约3字）。', f'Discuss latency (about 2 {unit}).']
     outline = '# T\n\n' + '\n\n'.join(
         f'<a id="block-sec-{i}"></a>\n## {title}\n<!-- writer:outline '
         + json.dumps({'node_id': f'sec-{i}', 'target_chars': weight, 'outline_description': description})

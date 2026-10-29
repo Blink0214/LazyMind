@@ -13,6 +13,7 @@ from lazyllm import AutoModel
 from lazyllm.tools.writer.tools.base import _WriterJsonFormatter
 from lazyllm.tools.writer.utils import locate_markdown_paragraph
 from lazyllm.tools.writer.utils.serialization import markdown_section_range
+from .recovery import repair_locators, repair_replacements
 
 from .common import (
     _heading_signature,
@@ -193,6 +194,35 @@ def _validate_review_plan(plan, issues):
     if not required <= covered:
         raise ValueError('Review plan does not cover all selected issues.')
 
+
+def _validated_ranges(source, plan):
+    failures = {}
+    for index, operation in enumerate(plan.instructions):
+        try:
+            _operation_ranges(source, plan.model_copy(update={'instructions': [operation]}))
+        except ValueError as error:
+            failures[index] = str(error)
+    if failures:
+        report_progress(38, '正在纠正失败的原文定位')
+        plan = repair_locators(source, plan, failures)
+    return plan, _operation_ranges(source, plan), bool(failures)
+
+
+def _validated_changes(source, plan, allowed, generated, *, allow_repair):
+    replacements = StringReplaceSet.model_validate(generated)
+    failures = {}
+    for index, replacement in enumerate(replacements.replacements):
+        try:
+            _bounded_replacements(source, allowed, {'replacements': [replacement.model_dump()]})
+        except ValueError as error:
+            failures[index] = str(error)
+    if failures and allow_repair:
+        report_progress(60, '正在纠正失败的修改补丁')
+        generated = repair_replacements(source, plan, allowed, replacements, failures)
+    # Recheck the entire set, including overlaps; the original guards remain authoritative.
+    return _bounded_replacements(source, allowed, generated)
+
+
 def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
     """Apply request edits or review-bound edits with the same public toolkit."""
     source = prepared['manuscript']
@@ -234,12 +264,12 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
         raise ValueError('Writer must return explicit manuscript modification operations.')
     if any(item.visual_instruction for item in plan.instructions):
         raise ValueError('Paper manuscript editing does not generate visual assets.')
-    operation_ranges = _operation_ranges(source, plan)
+    plan, operation_ranges, repaired = _validated_ranges(source, plan)
     allowed = [bounds for ranges in operation_ranges for bounds in ranges]
     report_progress(50, '正在生成修改内容')
-    changes, located_changes = _bounded_replacements(source, allowed, json.loads(editor.generate_string_replace_set(
+    changes, located_changes = _validated_changes(source, plan, allowed, json.loads(editor.generate_string_replace_set(
         markdown_document=source, modify_plan_json=plan.model_dump_json(), writing_context_json=context_json,
-    )))
+    )), allow_repair=not repaired)
     if reviewing:
         # Every selected text revision needs an edit in its associated operations. This is
         # mechanical coverage, not proof that the semantic problem was solved.

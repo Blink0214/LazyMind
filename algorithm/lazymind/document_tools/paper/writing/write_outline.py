@@ -2,17 +2,86 @@
 from ..prompts.write_document_prompt import CHART_OUTLINE_INSTRUCTIONS
 from ...toolkits import WriterCreateToolkit
 import copy
+import json
+import re
+
+from lazyllm.tools.writer.utils.serialization import (
+    MARKDOWN_OUTLINE_INSTRUCTION_RE,
+    parse_document_markdown,
+    parse_markdown_outline_instructions,
+)
+
 from ..runtime_events import current_events, report_progress
 
 from .common import (
     _CHART_OWNERS,
     _heading_signature,
     _json,
+    _markdown_prose,
     _outline_chart_owners,
+    _strip_outline_budget,
     _trace_call,
     prepare_writer_context,
     validate_inputs as validate_writing_inputs,
 )
+
+
+def _normalize_outline_budgets(outline, constraints):
+    """Publish real paper budgets, never label Writer's relative weights as length."""
+    instructions = parse_markdown_outline_instructions(outline)
+    if not instructions:
+        return outline
+    budgets = {}
+    target = constraints.get('word_target')
+    if target is not None:
+        document = parse_document_markdown(outline, document_id='paper-outline-budget')
+
+        def allocate(blocks, total):
+            headings = [block for block in blocks if block.type == 'heading']
+            weights = [block.target_chars or 1 for block in headings]
+            total_weight = sum(weights)
+            assigned, cumulative = 0, 0
+            for block, weight in zip(headings, weights):
+                cumulative += weight
+                end = total * cumulative // total_weight
+                budget = end - assigned
+                assigned = end
+                budgets[block.node_id] = budget
+                allocate(block.children, budget)
+
+        allocate(document.blocks, target)
+    updated = copy.deepcopy(instructions)
+    for node_id, payload in updated.items():
+        description = payload.get('outline_description')
+        if not isinstance(description, str):
+            continue
+        description = _strip_outline_budget(description, payload.get('target_chars'))
+        if node_id in budgets:
+            budget = budgets[node_id]
+            # A tiny requested total may leave a heading without a positive budget.
+            # Keep the sidecar valid and omit its length hint in that case.
+            payload['target_chars'] = budget or None
+            if description and budget:
+                hint = f' (about {budget} words)' if constraints.get('paper_language') == 'en' \
+                    else f'（约{budget}字）'
+                ending = description[-1:] if description.endswith(('。', '.', '!', '?', '！', '？')) else ''
+                body = description[:-1] if ending else description
+                description = body + hint + ending
+        payload['outline_description'] = description
+    # Edit only validated sidecar JSON. Preserve headings, anchors, chart ownership,
+    # research prose and fenced examples byte for byte.
+    matches = re.finditer(MARKDOWN_OUTLINE_INSTRUCTION_RE.pattern, _markdown_prose(outline), re.MULTILINE)
+    for match in reversed(list(matches)):
+        try:
+            payload = json.loads(match[1])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get('node_id'), str) \
+                and payload == instructions.get(payload['node_id']):
+            replacement = updated[payload['node_id']]
+            if replacement != payload:
+                outline = outline[:match.start(1)] + _json(replacement) + outline[match.end(1):]
+    return outline
 
 
 def prepare_outline(prepared, toolkit, *, on_delta=None):
@@ -42,7 +111,7 @@ def prepare_outline(prepared, toolkit, *, on_delta=None):
         if any(owners.get(key) != value for key, value in previous.items()):
             raise ValueError('Image planning moved an existing assignment.')
     _heading_signature(outline)
-    return outline
+    return _normalize_outline_budgets(outline, task.get('constraints', {}))
 
 def validate_inputs(inputs):
     validate_writing_inputs(inputs)
@@ -64,4 +133,6 @@ def run(inputs):
 
     outline = prepare_outline(prepared, toolkit, on_delta=on_delta)
     report_progress(85, '大纲已生成，正在校验并保存')
+    if events is not None:
+        events.completed_preview(outline)
     return {'outline': outline, 'is_demo': False}
