@@ -366,6 +366,12 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False, *
         raise ValueError(f'不允许的流程路径: {previous}→{node}')
     if fail:
         raise RuntimeError('[示例] 模拟执行失败；可重试。')
+    if step == 'write_outline':
+        # Commit one paper-length target with the outline so drafting inherits it.
+        pool = copy.deepcopy(pool)
+        pool['constraints'] = contracts.normalize_constraints(pool.get('constraints', {}))
+        if pool['constraints']['word_target'] is None:
+            pool['constraints']['word_target'] = 5000 if pool['constraints']['paper_language'] == 'en' else 8000
     module = contracts.ALIASES.get(step, step)
     relevant = contracts.FIELDS[module]
     if step == 'revise_document' and not pool.get('selected_issue_ids'):

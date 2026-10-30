@@ -17,6 +17,7 @@ from lazyllm.tools.writer.data_models.quality import ReviewReport
 from lazyllm.tools.writer.utils.serialization import (
     get_markdown_outline_targets,
     markdown_section_range,
+    parse_document_markdown,
     parse_markdown_sections,
     parse_markdown_outline_instructions,
 )
@@ -415,9 +416,14 @@ def _prepare_sections(plan, outline, constraints):
         raise ValueError('Writer section plan does not match the supplied outline.')
     target = constraints['word_target']
     unit = 'words' if constraints['paper_language'] == 'en' else 'chinese_characters'
-    # Weight by the existing planner's relative budgets, never reinterpret English
-    # word targets as characters. The final audit uses the legacy academic counter.
+    # Prefer confirmed outline budgets over a fresh section planner's weights.
+    # English targets remain word counts; the final audit uses the academic counter.
     weights = [max(1, int(item['meta'].get('target_chars') or 1)) for item in instructions]
+    outline_document = parse_document_markdown(outline, document_id='paper-section-budgets')
+    outline_weights = [block.target_chars for block in outline_document.blocks
+                       if block.type == 'heading' and block.numbering.get('level') == 1]
+    if len(outline_weights) == len(instructions) and all(outline_weights):
+        weights = outline_weights
     descriptions = _outline_budget_descriptions(outline)
     assigned = 0
     for index, item in enumerate(instructions):

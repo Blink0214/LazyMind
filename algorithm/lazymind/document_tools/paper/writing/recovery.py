@@ -4,6 +4,7 @@ from lazyllm.tools.writer.tools.base import _WriterJsonFormatter
 from lazyllm.tools.writer.utils.serialization import markdown_section_range
 
 from .common import _json
+from .matching import resolve_locator
 
 
 def _correct(instruction, items, fields):
@@ -58,12 +59,15 @@ def repair_locators(source, plan, failures):
     )
     revised = plan.model_copy(deep=True)
     for item in items:
-        locator = corrections[item['index']]['locator_text']
-        scope = item['source_scope']
-        if not locator or scope.count(locator) != 1:
-            raise ValueError('Corrected locator must match exactly once in its original scope.')
-        start = scope.index(locator)
-        revised.instructions[item['index']].locator_text = scope[start:start + len(locator)]
+        operation = revised.instructions[item['index']]
+        try:
+            locator, target_scope = resolve_locator(
+                item['source_scope'], corrections[item['index']]['locator_text'], operation.target_scope,
+            )
+        except ValueError as error:
+            raise ValueError('Corrected locator must match exactly once in its original scope.') from error
+        operation.locator_text = locator
+        operation.target_scope = target_scope
     return revised
 
 

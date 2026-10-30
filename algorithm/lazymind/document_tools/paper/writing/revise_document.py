@@ -14,9 +14,11 @@ from lazyllm.tools.writer.tools.base import _WriterJsonFormatter
 from lazyllm.tools.writer.utils import locate_markdown_paragraph
 from lazyllm.tools.writer.utils.serialization import markdown_section_range
 from .recovery import repair_locators, repair_replacements
+from .matching import resolve_locator
 
 from .common import (
     _heading_signature,
+    _markdown_prose,
     _json,
     _materialize_chart_insertions,
     _validate_manuscript,
@@ -28,6 +30,39 @@ from .common import (
 
 class RevisionInputRequired(contracts.MissingMaterials):
     """Revision scope needs a user answer, rather than an execution retry."""
+
+
+def _requested_issue_count(request):
+    number = r'(\d+|[一二三四五六七八九十两]+)'
+    qualifier = r'(?:最重要的?|最关键的?|重要的?|关键的?|前)?'
+    match = re.search(
+        r'(?:只|仅)(?:针对|处理|落实|修改|修订|解决|采用|选出|挑选|改)?\s*' + qualifier + r'\s*' + number
+        + r'\s*(?:条|个|项)\s*' + qualifier
+        + r'(?:审稿意见|问题|意见|建议|(?=[，,。；;.!！?？\s]*$))', request,
+    ) or re.search(r'(?:前|最重要的?|最关键的?)\s*' + number + r'\s*(?:条|个|项)(?:审稿意见|问题|意见|建议)?', request)
+    if match:
+        value = match[1]
+        if value.isdecimal():
+            return int(value)
+        digits = dict(zip('一二三四五六七八九两', [1, 2, 3, 4, 5, 6, 7, 8, 9, 2]))
+        if '十' in value:
+            left, right = value.split('十', 1)
+            return digits.get(left, 1) * 10 + digits.get(right, 0)
+        return digits.get(value)
+    match = re.search(r'\b(?:only\s+(?:the\s+)?|top\s+|first\s+)(?:most important\s+)?(\d+)\s+'
+                      r'(?:(?:most\s+)?important\s+)?(?:issues|comments|suggestions)\b', request, re.IGNORECASE)
+    return int(match[1]) if match else None
+
+
+def _selection_has_count(result, count, issue_ids):
+    if not isinstance(result, dict) or result.get('intent') != 'review':
+        return False
+    if result.get('selection') == 'all':
+        return set(result) == {'intent', 'selection'} and len(issue_ids) == count
+    ids = result.get('issue_ids')
+    return (set(result) == {'intent', 'selection', 'issue_ids'} and result.get('selection') == 'subset'
+            and isinstance(ids, list) and len(ids) == count
+            and all(isinstance(key, str) and key in issue_ids for key in ids) and len(set(ids)) == count)
 
 
 def resolve_review_issues(request, review, *, workflow_context=None):
@@ -64,6 +99,10 @@ def _resolve_review_issues(request, review, workflow_context):
         raise RevisionInputRequired('请明确本轮修改要求，或说明按当前审稿意见修订。')
     if review is None:
         return []
+    issue_ids = [issue['id'] for issue in review['issues']]
+    count = _requested_issue_count(request)
+    if count is not None and not 1 <= count <= len(issue_ids):
+        raise RevisionInputRequired(f'当前有 {len(issue_ids)} 条审稿意见，请确认本轮要处理的条数。')
     context = workflow_context or {}
     current_review = (context.get('current_step') == 'revise_document'
                       and context.get('previous_completed_step') == 'peer_review'
@@ -76,6 +115,17 @@ def _resolve_review_issues(request, review, workflow_context):
             'request': request, 'issues': review['issues'], 'workflow_context': context,
         }))).strip()
         result = _WriterJsonFormatter()(raw)
+    if count is not None and not _selection_has_count(result, count, issue_ids):
+        # Correct only issue selection, before any manuscript planning or edits.
+        raw = str(AutoModel(model='llm')(REVISION_SCOPE_INSTRUCTIONS + _json({
+            'request': request, 'issues': review['issues'], 'workflow_context': context,
+            'required_count': count, 'previous_selection': result,
+            'correction': 'Select exactly required_count distinct current issue IDs by the requested priority. '
+                          'Do not select all when it exceeds that count. Return unclear if selection is not possible.',
+        }))).strip()
+        result = _WriterJsonFormatter()(raw)
+        if not _selection_has_count(result, count, issue_ids):
+            raise RevisionInputRequired(f'本轮要求只处理 {count} 条意见，尚未取得符合要求的选择；稿件未修改。')
     if not isinstance(result, dict):
         raise ValueError('Invalid revision intent response')
     intent = result.get('intent')
@@ -87,7 +137,6 @@ def _resolve_review_issues(request, review, workflow_context):
         raise ValueError('Invalid revision intent response')
     if workflow_context is not None and context.get('review_matches_manuscript') is not True:
         raise RevisionInputRequired('当前审稿与稿件版本不匹配，请先确认使用哪份稿件和审稿报告；本轮未修改正文。')
-    issue_ids = [issue['id'] for issue in review['issues']]
     if result['selection'] == 'all':
         if set(result) != {'intent', 'selection'}:
             raise ValueError('Invalid revision intent response')
@@ -196,6 +245,22 @@ def _validate_review_plan(plan, issues):
 
 
 def _validated_ranges(source, plan):
+    plan = plan.model_copy(deep=True)
+    for operation in plan.instructions:
+        if operation.modify_type != 'update' or operation.target_scope not in {'fragment', 'paragraph'}:
+            continue
+        ref = operation.content_ref
+        if ref is None or ref.node_id or ref.placeholder_id:
+            continue
+        try:
+            start, end = (0, len(source)) if ref.document_root else markdown_section_range(
+                source, ref.heading_path, ref.occurrence,
+            )
+            operation.locator_text, operation.target_scope = resolve_locator(
+                source[start:end], operation.locator_text, operation.target_scope,
+            )
+        except ValueError:
+            pass  # Keep semantic mismatches for the existing single correction attempt.
     failures = {}
     for index, operation in enumerate(plan.instructions):
         try:
@@ -260,16 +325,29 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
         _validate_review_plan(plan, issues)
         if not plan.instructions and not plan.title_instruction:
             raise contracts.MissingMaterials('所选意见仍需补充材料或实验，稿件未修改。')
-    if plan.title_instruction or not plan.instructions:
+    if not plan.title_instruction and not plan.instructions:
         raise ValueError('Writer must return explicit manuscript modification operations.')
     if any(item.visual_instruction for item in plan.instructions):
         raise ValueError('Paper manuscript editing does not generate visual assets.')
     plan, operation_ranges, repaired = _validated_ranges(source, plan)
     allowed = [bounds for ranges in operation_ranges for bounds in ranges]
+    if plan.title_instruction:
+        title = next(re.finditer(r'^#[ \t]+[^\r\n]+', _markdown_prose(source), re.MULTILINE))
+        allowed.append(title.span())
     report_progress(50, '正在生成修改内容')
     changes, located_changes = _validated_changes(source, plan, allowed, json.loads(editor.generate_string_replace_set(
         markdown_document=source, modify_plan_json=plan.model_dump_json(), writing_context_json=context_json,
     )), allow_repair=not repaired)
+    if plan.title_instruction:
+        title_changes = [(start, end, replacement) for start, end, replacement in located_changes
+                         if start < title.end() and end >= title.start()]
+        if not title_changes:
+            raise ValueError('Writer did not apply the planned title change.')
+        for start, end, replacement in title_changes:
+            if (not title.start() <= start <= end <= title.end()
+                    or replacement.new_string.count('\n') != replacement.old_string.count('\n')
+                    or replacement.new_string.count('\r') != replacement.old_string.count('\r')):
+                raise ValueError('A paper title change must stay within its original heading line.')
     if reviewing:
         # Every selected text revision needs an edit in its associated operations. This is
         # mechanical coverage, not proof that the semantic problem was solved.

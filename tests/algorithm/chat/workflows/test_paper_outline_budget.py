@@ -11,11 +11,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from lazyllm.tools.writer.utils.serialization import parse_markdown_outline_instructions
+from lazyllm.tools.writer.utils.serialization import get_markdown_outline_targets, parse_markdown_outline_instructions
 from lazymind.document_tools.paper import workflow
 from lazymind.document_tools.paper.runtime_events import bind_runtime_events
 from lazymind.document_tools.paper.writing import write_outline
-from lazymind.document_tools.paper.writing.common import _heading_signature, _outline_chart_owners
+from lazymind.document_tools.paper.writing.common import _heading_signature, _outline_chart_owners, _prepare_sections
 
 
 @pytest.fixture
@@ -33,7 +33,12 @@ def without_sidecars(outline):
     return re.sub(r'<!-- writer:outline .*? -->', '', outline)
 
 
-def test_recorded_unset_length_cleans_preview_document_and_pool_together(recorded_outline, monkeypatch):
+@pytest.mark.parametrize('language,requested,target', [
+    ('zh-CN', None, 8000), ('en', None, 5000), ('zh-CN', 6600, 6600), ('en', 6600, 6600),
+])
+def test_recorded_outline_saves_length_in_preview_pool_and_next_draft(
+    recorded_outline, monkeypatch, language, requested, target,
+):
     original = parse_markdown_outline_instructions(recorded_outline)
     assert len(original) == 27
     assert original['sec-001-001']['target_chars'] == 2
@@ -50,23 +55,53 @@ def test_recorded_unset_length_cleans_preview_document_and_pool_together(recorde
         'writing_task': {'constraints': inputs['constraints']}, 'writing_context': {},
         'outline': None, 'charts': [],
     })
-    pool = workflow.pool_from_business({'topic': '论文写作 Agent', 'question': '比较分阶段与人工介入'})
+    pool = workflow.pool_from_business({
+        'topic': '论文写作 Agent', 'question': '比较分阶段与人工介入',
+        'constraints': {'paper_language': language, 'word_target': requested},
+    })
     before = copy.deepcopy(pool)
     emitted = []
     with bind_runtime_events(emitted.append, 'write_outline_document') as events:
         result = workflow.execute_step('write_outline', pool)
         events.complete()
     assert pool == before
+    assert result['pool']['constraints']['word_target'] == target
     outline = workflow.material(result['pool'], 'outline')['content']
     assert result['document'] == outline
     assert outline != recorded_outline
     assert without_sidecars(outline) == without_sidecars(recorded_outline)
     cleaned = parse_markdown_outline_instructions(outline)
-    for node_id, payload in original.items():
-        expected = copy.deepcopy(payload)
-        expected['outline_description'] = payload['outline_description'].replace(
-            f'（约{payload["target_chars"]}字）', '')
-        assert cleaned[node_id] == expected  # Relative weights and other metadata are retained.
+    chapter_budgets = [cleaned[f'sec-{i:03}']['target_chars'] for i in range(1, 8)]
+    assert sum(chapter_budgets) == target
+    for node_id, payload in cleaned.items():
+        budget = payload['target_chars']
+        hint = f'(about {budget} words)' if language == 'en' else f'（约{budget}字）'
+        assert hint in payload['outline_description']
+        assert {k: v for k, v in payload.items() if k not in {'target_chars', 'outline_description'}} == {
+            k: v for k, v in original[node_id].items() if k not in {'target_chars', 'outline_description'}
+        }
+        children = [child['target_chars'] for key, child in cleaned.items()
+                    if key.startswith(node_id + '-') and key.count('-') == node_id.count('-') + 1]
+        if children:
+            assert sum(children) == budget
+    # A serialized material pool is the boundary between outline approval and drafting.
+    saved = json.loads(json.dumps(result['pool'], ensure_ascii=False))
+    inputs = workflow.business_input('write_document', saved)
+    assert inputs['constraints']['word_target'] == target
+    assert inputs['outline'] == outline
+    _, targets = get_markdown_outline_targets(outline)
+    plan = {'instructions': [dict(
+        instruction_id=str(i), content_ref={'heading_path': path, 'occurrence': occurrence},
+        section_title=path[-1], section_goal='展开论证', required_points=[], expected_blocks=[],
+        fact_constraints=[], meta={'target_chars': 1},
+    ) for i, (_, path, occurrence, _) in enumerate(targets)]}
+    sections = _prepare_sections(plan, outline, inputs['constraints'])['instructions']
+    assert [item['meta']['word_target'] for item in sections] == chapter_budgets
+    assert all(item['meta']['count_unit'] == ('words' if language == 'en' else 'chinese_characters')
+               for item in sections)
+    # Reusing the confirmed outline must preserve both the allocation and the prose.
+    confirmed = prepared_outline(outline, inputs['constraints'])
+    assert write_outline.prepare_outline(confirmed, Mock()) == outline
     starts = [event for event in emitted if event['type'] == 'artifact_stream_start']
     assert len(starts) == 2  # Replace the raw Writer preview instead of appending to it.
     latest = [event for event in emitted if event.get('stream_id') == starts[-1]['stream_id']]
