@@ -2,11 +2,12 @@
 
 面向接入综述、阅读心得和科研 PPT 的同事。对应 [PR #863](https://github.com/LazyAGI/LazyMind/pull/863)。
 
-本 PR 已提供论文选择、真实 arXiv 拓展、版本化材料交接和全文读取。**综述、心得、PPT 目前接 Mock，只返回材料接收结果，正式生成能力由下游 Workflow 接入。**
+本 PR 已提供论文选择、真实 arXiv 拓展、版本化材料交接和全文读取。**综述已接入 `paper-writing` 的 F2，生成真实综述和可供后续节点使用的材料池；心得、PPT 仍接 Mock。**
 
 ## 1. 接入流程
 
 ```text
+论文集选文 → 新 Chat 的 paper-writing F2 生成综述
 论文集选文 / 输入研究方向 → 论文拓展 → 冻结所选轮次 → 新 Chat 接收综述任务
 论文集选文 → 新 Chat 接收阅读心得 / PPT 任务
 PPT 选择先写心得 → 保存心得正文 → 携原论文清单进入 PPT 步骤
@@ -15,7 +16,7 @@ PPT 选择先写心得 → 保存心得正文 → 携原论文清单进入 PPT �
 | 任务 | 当前 Workflow | 交接输入 |
 | --- | --- | --- |
 | 论文拓展 | `paper_expansion` | `expansion_id` |
-| 综述 | `paper_workflow_mock` | `ReviewWorkflowInput` |
+| 综述 | `paper-writing` → `literature_review` | `ReviewWorkflowInput` |
 | 独立心得 / 直接 PPT | `paper_workflow_mock` | `PaperTaskInput` |
 | 心得接续 PPT | `paper_ppt_with_reflection_mock` | `PaperTaskInput`，后续追加已保存的 `reflection_markdown` |
 
@@ -33,7 +34,7 @@ PPT 选择先写心得 → 保存心得正文 → 携原论文清单进入 PPT �
 }
 ```
 
-返回新任务的 `conversation_id` 和 `handoff_id`。所选论文须属于该轮成果，至少两篇不同论文且全文可用。直接从论文集发起 `review` 会先运行拓展，满足条件后再建立综述 Chat。
+返回新任务的 `conversation_id` 和 `handoff_id`。所选论文须属于该轮成果，至少两篇不同论文且全文可用。从论文集选定论文发起 `review` 会直接创建综述 Chat；仅提供研究方向时，先运行拓展，再建立综述 Chat。
 
 ## 2. 输入结构
 
@@ -146,7 +147,8 @@ HTTP 200 也可能处于 `processing`，应同时检查 `status`。读取正文�
 
 ## 4. 接正式生成能力时改哪里
 
-- **启动路由**：[workflows.go](../../backend/core/academic/workflows.go) 的 `createPaperHandoff` 目前选择两个 Mock Workflow；接入正式 Workflow 时同步调整这里。
+- **启动路由**：[workflows.go](../../backend/core/academic/workflows.go) 的 `createPaperHandoff` 将综述交给新 Chat 的 `paper-writing`，心得和 PPT 继续使用各自的 Mock。
+- **综述材料**：`paper-writing` 在 F2 前通过 `review_materials.py` 读取冻结选文和全文，整理为已有 `papers` 业务输入。论文不必入库；选文、题录、关系和正文版本继续保留。普通 F2 只使用知识库、附件与上游材料，不调用外部搜索或 `paper_expansion`。
 - **下游步骤**：参考 [通用交接包](../../workflows/paper_workflow_mock) 和 [心得接续 PPT 包](../../workflows/paper_ppt_with_reflection_mock)，保留输入绑定与上述读取工具，替换 Mock 步骤的生成逻辑。
 - **输出**：正式成果沿用现有 Workflow artifact 发布机制。当前 `academic_handoff_submit()` 只确认冻结输入并发布 `handoff_receipt / ppt_request`，返回 `awaiting_downstream`，不代表正式成果完成。
 - **心得接续 PPT**：读取已保存的 `reflection_markdown` 和原论文清单；当前 Mock 的心得正文也是占位内容，正式接入时需一并替换。

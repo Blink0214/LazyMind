@@ -102,7 +102,7 @@ describe('paper task startup routes', () => {
         fireEvent.click(menu.getByRole('menuitem', { name: new RegExp(label) }));
         if (direction) fireEvent.change(screen.getByLabelText('研究主题与要求'), { target: { value: 'agents' } });
         expect(screen.queryByRole('button', { name: /^继\s*续$/ })).not.toBeInTheDocument();
-        expect(screen.getByText('系统将查找相关论文，并基于结果生成综述')).toBeInTheDocument();
+        expect(screen.getByText(direction ? '系统将查找相关论文，并基于结果生成综述' : '基于选中的论文生成综述')).toBeInTheDocument();
         expect(screen.getAllByRole('textbox')).toHaveLength(1);
         await submit();
         expect(launchPaperTask).toHaveBeenCalledWith(expect.objectContaining({ kind: 'review', document_ids: direction ? [] : ['a'] }), false);

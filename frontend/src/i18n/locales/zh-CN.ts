@@ -10351,6 +10351,7 @@ const zhCN = {
     "enterTopic": "请输入研究主题与要求",
     "topicPlaceholder": "例如：研究智能体的工具调用方法，比较主要方法及其局限",
     "reviewStartHint": "系统将查找相关论文，并基于结果生成综述",
+    "reviewSelectedHint": "基于选中的论文生成综述",
     "reflectionFirst": "先生成阅读心得，再生成汇报 PPT",
     "invalidSelection": "请选择已确认的论文",
     "selectPaperFirst": "请先选择论文",
