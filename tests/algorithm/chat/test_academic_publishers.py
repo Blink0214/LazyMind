@@ -12,7 +12,8 @@ def publisher(tmp_path, monkeypatch):
     from lazymind.workflow_toolkit import load_workflow_package_tools
     package = {'files': {'scripts/tools.py': path.read_bytes()}}
     functions = load_workflow_package_tools(
-        package, ['academic_submit_relations', 'academic_publish_expansion_result', 'academic_validate_stage'],
+        package, ['academic_submit_directions', 'academic_submit_papers', 'academic_submit_relations',
+                  'academic_publish_expansion_result', 'academic_validate_stage'],
         'paper_expansion', 'test-revision',
     )
     namespace = functions['academic_submit_relations'].__globals__
@@ -28,10 +29,11 @@ def publisher(tmp_path, monkeypatch):
             'selected_directions': ['agents'], 'papers': [
                 {'paper': {'paper_id': 'a', 'title': 'model title'}, 'is_seed': False, 'is_important': False}]}
     events = []
+    slots = ['direction_research', 'seed_set', 'expanded_papers', 'paper_relations', 'expansion_result']
     ctx = context.SubAgentContext('task', 'chat', 'workflow_step', 'analyze', {
         'step_id': 'analyze_relations', 'remote_inputs': {'expanded_papers': body, 'expansion_id': 'exp'},
-        'workflow_runtime': {'publisher_owned_slots': ['paper_relations', 'expansion_result']},
-    }, str(tmp_path), [], ['paper_relations', 'expansion_result'], None, events.append)
+        'workflow_runtime': {'publisher_owned_slots': slots},
+    }, str(tmp_path), [], slots, None, events.append)
     monkeypatch.setattr(context, 'require_context', lambda: ctx)
     monkeypatch.setattr(tools, 'require_context', lambda: ctx)
     resolved = {'papers': [{'paper': {'paper_id': 'a', 'title': 'server title', 'source_version': 'v2'},
@@ -39,6 +41,59 @@ def publisher(tmp_path, monkeypatch):
                 'contents': [{'paper_id': 'a', 'status': 'ready'}]}
     monkeypatch.setattr(module, '_resolve', lambda ids: copy.deepcopy(resolved))
     return module, ctx, events, resolved
+
+
+def test_typed_directions_build_arrays_and_preserve_user_requirements(publisher, monkeypatch):
+    module, ctx, events, _ = publisher
+    ctx.params['step_id'] = 'explore_directions'
+    monkeypatch.setattr(module, 'academic_expansion_context', lambda _: {
+        'record': {'result': {'user_instruction': 'Original requirement'}},
+        'user_updates': ['Original requirement', 'Add one paper'],
+    })
+    from lazymind.chat.lazyllm_tool_docs import ensure_lazyllm_tool_docs
+    ensure_lazyllm_tool_docs([module.academic_submit_directions])
+    tool = ToolManager([module.academic_submit_directions]).all_tools[0]
+    direction = {'name': 'agents', 'rationale': 'Source-backed direction',
+                 'differences': 'Different from other approaches', 'representative_paper_ids': ['a'], 'selected': True}
+    args = tool._validate_input({'expansion_id': 'exp', 'directions': [direction]})
+    module.academic_submit_directions(**args)
+    result = events[0]['value']['data']
+    assert result['candidate_directions'] == result['selected_directions'] == ['agents']
+    assert result['needs_direction_selection'] is False
+    assert result['user_instruction'] == 'Original requirement\n\nAdd one paper'
+    assert module.academic_submit_directions(**args)['already_published'] is True
+    with pytest.raises(ValueError):
+        tool._validate_input({'expansion_id': 'exp', 'directions': {'item': args['directions']}})
+
+
+@pytest.mark.parametrize('step,slot', [('prepare_seed_set', 'seed_set'), ('expand_and_screen', 'expanded_papers')])
+def test_selected_ids_publish_server_metadata_without_model_transcription(publisher, monkeypatch, step, slot):
+    module, ctx, events, resolved = publisher
+    ctx.params['step_id'] = step
+    previous = ctx.params['remote_inputs']['expanded_papers']
+    ctx.params['remote_inputs'].update(direction_research=previous, seed_set=previous)
+    resolved['papers'][0]['paper']['arxiv_id'] = '2108.00580'
+    monkeypatch.setattr(module, '_resolve', lambda ids: {
+        **copy.deepcopy(resolved),
+        'papers': [copy.deepcopy(p) for p in resolved['papers'] if p['paper']['paper_id'] in ids],
+    })
+    monkeypatch.setattr(module, 'academic_expansion_context', lambda _: {
+        'record': {'result': {**previous, 'papers': resolved['papers']}}, 'user_updates': ['Prefer custom direction'],
+    })
+    from lazymind.chat.lazyllm_tool_docs import ensure_lazyllm_tool_docs
+    ensure_lazyllm_tool_docs([module.academic_submit_papers])
+    tool = ToolManager([module.academic_submit_papers]).all_tools[0]
+    args = tool._validate_input({'expansion_id': 'exp', 'paper_ids': [], 'selected_directions': ['custom'],
+                                'additional_directions': ['custom']})
+    module.academic_submit_papers(**args)
+    result = events[0]['value']['data']
+    assert events[0]['slot'] == slot
+    assert result['papers'] == resolved['papers']
+    assert result['candidate_directions'] == ['agents', 'custom']
+    assert result['selected_directions'] == ['custom']
+    assert result['user_instruction'].endswith('Prefer custom direction')
+    with pytest.raises(ToolExecutionError, match='bound expansion'):
+        module.academic_submit_papers(**{**args, 'expansion_id': 'another-expansion'})
 
 
 def test_typed_submission_uses_bound_authoritative_metadata_and_publishes_once(publisher):

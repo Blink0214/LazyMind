@@ -10538,6 +10538,7 @@ const enUS = {
     "enterTopic": "Enter a research topic and requirements",
     "topicPlaceholder": "For example: compare methods and limitations of tool use in AI agents",
     "reviewStartHint": "Related papers will be found and used to generate the review.",
+    "reviewSelectedHint": "Generate a review of the selected papers.",
     "reflectionFirst": "Generate reading notes before the presentation",
     "invalidSelection": "Select confirmed papers",
     "selectPaperFirst": "Select a paper first.",

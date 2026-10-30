@@ -24,6 +24,10 @@ def draft_pool():
 
 @pytest.fixture(autouse=True)
 def mock_f1_model(monkeypatch):
+    from lazymind.document_tools.paper import review_materials
+    monkeypatch.setattr(review_materials, 'prepare', lambda inputs, *_args, **_kwargs: inputs.get('papers', []))
+    monkeypatch.setattr(review_materials, 'current_handoff', lambda: None)
+
     def model(prompt):
         if '"paper_clues"' in prompt:
             return '{"topic": "证据可追溯性"}'
@@ -433,7 +437,7 @@ def test_bound_experiment_question_only_fills_missing_pool_material(existing_que
 
 
 @pytest.mark.parametrize('use_pool', [False, True])
-def test_f2_attachment_merge_preserves_bound_pool_priority(use_pool, runtime, tmp_path, monkeypatch):
+def test_f2_uses_explicit_selection_or_merges_attachments_into_saved_pool(use_pool, runtime, tmp_path, monkeypatch):
     ctx, batches = runtime
     papers = [{'id': 'P1', 'title': '原论文', 'abstract': '原摘要', 'citation': '原论文（测试材料）'}]
     value = {'topic': '既有主题', 'papers': papers}
@@ -445,7 +449,7 @@ def test_f2_attachment_merge_preserves_bound_pool_priority(use_pool, runtime, tm
                 {'id': 'P2', 'title': '新论文', 'text': '新正文', 'citation': '新论文（测试材料）'}]
 
     def attachments(_history):
-        assert not use_pool
+        assert use_pool
         return uploaded
 
     monkeypatch.setattr(tools, '_conversation_papers', attachments)
@@ -456,8 +460,9 @@ def test_f2_attachment_merge_preserves_bound_pool_priority(use_pool, runtime, tm
                   'remote_inputs': {'seed_pool' if use_pool else 'paper_input': str(source)}}
     tools.run_paper_step()
     outputs = {item['key']: item['value'] for item in batches[-1]}
+    assert set(outputs) == {'literature_review_pool', 'literature_review_document'}
     result = tools._read_bound(outputs['literature_review_pool'])
-    expected = papers if use_pool else [papers[0], uploaded[1]]
+    expected = papers if not use_pool else [papers[0], uploaded[1]]
     assert tools.material(result, 'papers')['content'] == expected
     assert tools._read_bound(str(source)) == value
 
@@ -671,25 +676,6 @@ def test_f1_explicit_topic_wins_while_using_conversation_pdfs(runtime, tmp_path,
     pool = tools._read_bound(outputs['research_topic_pool'])
     assert pool['topic'] == '用户指定的研究主题'
     assert tools.material(pool, 'papers')['content'][0]['id'] == 'P1'
-
-
-def test_f2_explicit_input_does_not_merge_conversation_papers(runtime, tmp_path, monkeypatch):
-    ctx, batches = runtime
-    monkeypatch.setattr(tools, '_conversation_papers', lambda _history: pytest.fail('F2 scanned PDFs'))
-    monkeypatch.setattr(api.ALGORITHMS['literature_review'], 'run', lambda inputs: {
-        'evidence': '# 指定材料综述', 'papers': inputs['papers'], 'is_demo': False,
-    })
-    paper_input = tmp_path / 'paper-input.json'
-    selected = [{'id': 'P1', 'title': '指定论文', 'text': '指定正文', 'citation': '指定引用'}]
-    paper_input.write_text(json.dumps({'topic': '文献主题', 'papers': selected}, ensure_ascii=False))
-    ctx.params = {'step_id': 'literature_review', 'user_input': '先做综述',
-                  'remote_inputs': {'paper_input': str(paper_input)},
-                  'history_files_per_turn': {'1': ['/uploads/研究论文.pdf']}}
-    tools.run_paper_step()
-    assert {item['key'] for item in batches[-1]} == {'literature_review_pool', 'literature_review_document'}
-    result = tools._read_bound(next(item['value'] for item in batches[-1]
-                                   if item['key'] == 'literature_review_pool'))
-    assert tools.material(result, 'papers')['content'] == selected
 
 
 @pytest.mark.parametrize('binding', [None, 'research_topic_pool', 'recovery_literature_pool'])

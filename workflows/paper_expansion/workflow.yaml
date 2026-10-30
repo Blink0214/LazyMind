@@ -4,7 +4,7 @@ description: 在独立 Chat 中分五步拓展论文，保存当前用户的成�
 when_to_use: 用户从知识库启动论文拓展、先拓展后综述，或继续同一论文拓展 Chat。保留原拓展记录 ID。
 runtime:
   transactional_outputs: true
-  publisher_owned_slots: [paper_relations, expansion_result]
+  publisher_owned_slots: [direction_research, seed_set, expanded_papers, paper_relations, expansion_result]
   post_step_checks:
   - step_id: explore_directions
     tool: academic_validate_stage
@@ -34,6 +34,8 @@ tool_scripts:
   - academic_read_paper
   - academic_validate_result
   - academic_validate_stage
+  - academic_submit_directions
+  - academic_submit_papers
   - academic_submit_relations
   - academic_publish_expansion_result
 steps:

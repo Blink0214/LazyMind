@@ -1,10 +1,25 @@
 """Academic workflow integration; HTTP context inherits the current Chat user."""
 import copy
+import json
 import threading
 
 from typing_extensions import NotRequired, TypedDict
 from lazyllm.tools.agent import ToolExecutionError
 from lazymind.chat.workflow.workflow_manager import _client
+
+
+class ResearchDirection(TypedDict):
+    name: str
+    rationale: str
+    differences: str
+    representative_paper_ids: list[str]
+    selected: bool
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source, handler):
+        schema = handler(source)
+        schema.pop('ref', None)
+        return schema
 
 
 class PaperAnalysis(TypedDict):
@@ -39,10 +54,12 @@ def _bound(material):
     return copy.deepcopy(values[material])
 
 
-def _expansion_id():
+def _expansion_id(requested=None):
     value = _bound('expansion_id')
     if not isinstance(value, str) or not value.strip():
         raise RuntimeError('Bound expansion_id must be a nonempty string')
+    if requested is not None and requested != value:
+        _invalid('expansion_id must match the bound expansion')
     return value
 
 
@@ -197,6 +214,7 @@ def _publish_once(key, result, tool):
     from lazymind.chat.engine.subagent.tools import _save_artifact
     with _PUBLISH_LOCK:
         ctx = require_context()
+        counts = {'paper_count': len(result['papers'])} if 'papers' in result else {}
         # Only the current task's own receipts are eligible, including resumed tasks.
         rows = [*(ctx.db.load_artifacts(ctx.task_id, keys=[key]) if ctx.db else []),
                 *ctx.local_artifacts(keys=[key])]
@@ -205,9 +223,57 @@ def _publish_once(key, result, tool):
             value = _result_body(value.get('data', value))
             if value != result:
                 _invalid(key + ': this attempt already published a different result; retry the step to revise it')
-            return {'status': 'ok', 'already_published': True, 'paper_count': len(result['papers'])}
+            return {'status': 'ok', 'already_published': True, **counts}
         saved = _save_artifact(key, result, content_type='json', source_tool=tool, internal_publish=True)
-        return {'status': 'ok', 'paper_count': len(result['papers']), 'artifact': saved}
+        return {'status': 'ok', **counts, 'artifact': saved}
+
+
+def _research_request(context):
+    parts = [context['record']['result']['user_instruction'], *context.get('user_updates', [])]
+    answers = [item['answers'] for item in context.get('interactions', []) if item.get('answered')]
+    if answers:
+        parts.append(json.dumps(answers, ensure_ascii=False))
+    return '\n\n'.join(dict.fromkeys(part for part in parts if part))
+
+
+def academic_submit_directions(expansion_id: str, directions: list[ResearchDirection]):
+    """Publish researched directions; select only a scope supported by the user's request."""
+    from lazymind.chat.engine.subagent.context import require_context
+    if require_context().params.get('step_id') != 'explore_directions':
+        raise RuntimeError('academic_submit_directions is only available in explore_directions')
+    context = academic_expansion_context(_expansion_id(expansion_id))
+    _resolve(list(dict.fromkeys(identity for item in directions for identity in item['representative_paper_ids'])))
+    result = {
+        'user_instruction': _research_request(context),
+        'candidate_directions': [item['name'] for item in directions],
+        'selected_directions': [item['name'] for item in directions if item['selected']],
+        'needs_direction_selection': not any(item['selected'] for item in directions),
+        'directions': [{key: value for key, value in item.items() if key != 'selected'} for item in directions],
+    }
+    academic_validate_stage(result)
+    return _publish_once('direction_research', result, 'academic_submit_directions')
+
+
+def academic_submit_papers(expansion_id: str, paper_ids: list[str], selected_directions: list[str],
+                           additional_directions: list[str] | None = None):
+    """Publish selected IDs and direction names; the server supplies all paper metadata and flags."""
+    from lazymind.chat.engine.subagent.context import require_context
+    step = require_context().params.get('step_id')
+    if step not in ('prepare_seed_set', 'expand_and_screen'):
+        raise RuntimeError('academic_submit_papers is only available in prepare_seed_set or expand_and_screen')
+    previous = _bound('direction_research' if step == 'prepare_seed_set' else 'seed_set')
+    context = academic_expansion_context(_expansion_id(expansion_id))
+    seeds = [item['paper']['paper_id'] for item in (context['record']['result'].get('papers') or []) if item['is_seed']]
+    result = {
+        'user_instruction': _research_request(context),
+        'candidate_directions': list(dict.fromkeys([*previous['candidate_directions'],
+                                                   *(additional_directions or [])])),
+        'selected_directions': selected_directions,
+        'papers': _resolve(list(dict.fromkeys([*seeds, *paper_ids])))['papers'],
+    }
+    academic_validate_stage(result)
+    key = 'seed_set' if step == 'prepare_seed_set' else 'expanded_papers'
+    return _publish_once(key, result, 'academic_submit_papers')
 
 
 def academic_submit_relations(analyses: list[PaperAnalysis]):
