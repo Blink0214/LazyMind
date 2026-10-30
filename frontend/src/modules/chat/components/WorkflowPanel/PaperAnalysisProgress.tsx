@@ -6,7 +6,7 @@ import { Method, SSE } from '@/modules/chat/utils/sse';
 import type { WorkflowSession } from '@/modules/chat/store/workflowPanel';
 import './PaperAnalysisProgress.scss';
 
-type Output = { text: string; format: 'json' | 'python' | 'text'; mode: 'streaming' | 'buffered' | 'complete' | 'interrupted'; truncated?: boolean };
+type Output = { text: string; estimated_tokens: number; format: 'json' | 'python' | 'text'; mode: 'streaming' | 'buffered' | 'complete' | 'interrupted'; truncated?: boolean };
 type Step = { step_id: string; order: number; title: string; status: string; summary?: string;
   started_at: string | null; finished_at: string | null; elapsed_ms: number | null; output?: Output; reasoning?: Output };
 type Snapshot = { task_id: string; execution_id: string; revision: number; status: string; process_steps: Step[];
@@ -66,7 +66,7 @@ function ModelOutput({ output, reasoning = false }: { output: Output; reasoning?
   useEffect(() => { if (body.current && follow.current) body.current.scrollTop = body.current.scrollHeight; }, [visible]);
   return <details className='paper-f4-progress__output' open={reasoning ? reasoningOpen : output.mode === 'streaming'}
     onToggle={reasoning ? event => setReasoningOpen(event.currentTarget.open) : undefined}>
-    <summary>{label}<span>{output.format.toUpperCase()} · {output.text.length.toLocaleString()} 字符{output.truncated ? ' · 仅展示部分内容' : ''}</span></summary>
+    <summary>{label}<span>{output.format.toUpperCase()} · 约 {output.estimated_tokens.toLocaleString()} tokens{output.truncated ? ' · 仅展示部分内容' : ''}</span></summary>
     <pre ref={body} onScroll={event => {
       const element = event.currentTarget;
       follow.current = element.scrollHeight - element.scrollTop - element.clientHeight < 30;

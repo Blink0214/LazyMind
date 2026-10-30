@@ -12,6 +12,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from lazymind.common.token_estimation import estimate_tokens
+
 from .live import MAX_REASONING, public_error
 
 router = APIRouter()
@@ -79,6 +81,7 @@ def read_snapshot(task_id, task):
                                 or len(output['text'].encode('utf-8')) > MAX_REASONING):
                             continue
                         step[channel] = {key: output[key] for key in ('text', 'format', 'mode', 'truncated') if key in output}
+                        step[channel]['estimated_tokens'] = estimate_tokens(output['text'])
                 steps.append(step)
             value.update(execution_id=trace_id, revision=public['revision'], process_steps=steps,
                          timing={**public['timing'], 'measured_at': measured},
