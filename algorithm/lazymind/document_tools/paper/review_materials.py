@@ -92,10 +92,8 @@ def _select(papers: list[dict], inputs: dict, knowledge_bases: list[str]):
 
 def prepare(inputs: dict, knowledge_bases: list[str], *, fixed_scope: bool = False) -> list[dict]:
     papers = copy.deepcopy(inputs.get('papers') or [])
-    if fixed_scope:
+    if fixed_scope or not (papers or knowledge_bases):
         return papers
-    if not papers and not knowledge_bases:
-        raise MissingMaterials('请先选择知识库、上传论文或提供已有论文材料。')
     report_progress(10, '正在选择本轮综述材料')
     selected, queries = _select(papers, inputs, knowledge_bases)
     if knowledge_bases and queries:

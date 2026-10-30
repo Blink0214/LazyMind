@@ -36,8 +36,8 @@ older questions, evidence and selections are background. Use the host's material
 paper for selected literature, background for non-paper context, exclude for unrequested material.
 Honor explicit filenames, exclusions and source restrictions. Retain supplied papers when no narrower
 selection is requested. Do not treat an old bibliography as a list of available papers.
-queries maps knowledge-base search terms to positive result counts. Search only the listed knowledge
-bases when needed by the request; return {} when none are available or the supplied selection suffices.
+queries maps knowledge-base search terms to positive result counts. Retrieve material from the listed
+knowledge bases: queries must be non-empty unless none are listed or the user explicitly excludes them.
 Do not search knowledge bases when the user asks to use only attachments or specified supplied papers.
 Choose useful queries and counts from the user's scope. No external search is available in this node.
 Retrieved candidates must be relevant to the requested topic; select papers, not isolated duplicate chunks.
@@ -69,4 +69,14 @@ non-literature context about the user's system; distinguish it as user-provided 
 and do not add it to references or cite its ID. Never import references from an old question or review.
 Preserve the scope of constraints: local experimental execution limits do not make the entire system offline.
 Do not invent sources, facts, numbers, quotations, or locations.
+"""
+
+KNOWLEDGE_REVIEW_PROMPT = """
+Write a complete literature-review Markdown using your existing knowledge of the research topic.
+Follow research.request for scope, structure and length; use the requested language, defaulting to Chinese.
+Compare relevant approaches, summarize established findings and discuss research gaps. Organize headings freely.
+Do not number headings.
+No source papers were supplied. Briefly state that the review is based on model knowledge, and do not claim
+to have searched a knowledge base or read papers. Do not invent source IDs, quotations or reference entries.
+Output the review only; leave research proposals and experiment plans to subsequent steps.
 """

@@ -6,6 +6,7 @@ when_to_use: >
   不需要模型逐行读取或重写附件内容。已有 paper_input 或材料池绑定时优先沿用绑定。
   Use when the user requests the paper-writing workflow or review of an uploaded academic manuscript.
   Literature reviews use supplied papers, selected knowledge bases, or attachments.
+  Without supplied materials, F2 reviews the topic using model knowledge.
   Start review handoffs at literature_review with the frozen selection.
   Use simulate_only for review and topic-only tasks. For experiments, use the framework ask_user
   clarification card for the declared execution preference unless already answered for this task.

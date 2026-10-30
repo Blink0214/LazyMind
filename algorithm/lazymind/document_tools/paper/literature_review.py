@@ -11,11 +11,12 @@ from lazymind.chat.engine.agent_runtime.budget import build_context_budget
 from lazymind.common.token_estimation import estimate_tokens
 from lazymind.model_config import _role_entry, load_model_config
 
-from .contracts import MissingMaterials, validate_input
+from .contracts import validate_input
 from .material_bindings import MaterialBindings
 from .runtime_events import report_progress
 from .prompts.literature_review_prompt import (
     INPUT_PROMPT,
+    KNOWLEDGE_REVIEW_PROMPT,
     READING_NOTE_PROMPT,
     SYNTHESIS_PROMPT,
 )
@@ -125,7 +126,7 @@ def _render(inputs: dict, notes: list[dict], background: list[dict]) -> str:
     report_progress(85, '正在生成文献综述')
     bindings = MaterialBindings(notes + background)
     from .runtime_events import generate_markdown
-    prompt = _prompt(SYNTHESIS_PROMPT, bindings.model_view({
+    prompt = _prompt(SYNTHESIS_PROMPT if notes else KNOWLEDGE_REVIEW_PROMPT, bindings.model_view({
         'research': {key: inputs.get(key) for key in ('topic', 'request', 'question')},
         'sources': notes, 'background': background,
     }))
@@ -136,8 +137,6 @@ def run(inputs: dict) -> dict:
     inputs = validate_input('literature_review', inputs)
     sources = [paper for paper in inputs['papers'] if paper.get('review_role') != 'background']
     background = [paper for paper in inputs['papers'] if paper.get('review_role') == 'background']
-    if not sources:
-        raise MissingMaterials('没有可综述的论文，请选择知识库材料、上传论文或提供已选论文。')
     context = {key: inputs.get(key) for key in ('topic', 'request', 'question')}
     report_progress(20, '正在整理已选论文的阅读笔记')
     notes = _notes(sources, context)

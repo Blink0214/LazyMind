@@ -109,10 +109,25 @@ def test_kb_candidates_are_selected_together_with_existing_papers(paper, monkeyp
     read.assert_called_once_with('library', 'new')
 
 
-@pytest.mark.parametrize('papers', [[], [{'id': 'P1', 'title': 'Missing text'}]])
-def test_review_requires_readable_papers(papers):
+def test_review_requires_readable_supplied_papers():
     with pytest.raises(contracts.MissingMaterials):
-        api.run_algorithm('literature_review', {'topic': 'Learning', 'papers': papers})
+        api.run_algorithm('literature_review', {'topic': 'Learning', 'papers': [{'id': 'P1', 'title': 'Missing text'}]})
+
+
+def test_review_without_materials_uses_model_knowledge(monkeypatch):
+    generate = Mock(return_value='# Learning review\n\nAn overview based on model knowledge.')
+    monkeypatch.setattr(literature_review, 'AutoModel', lambda **_: SimpleNamespace(share=lambda **_: generate))
+    monkeypatch.setattr(literature_review, '_input_budget', lambda: 8192)
+    monkeypatch.setattr(review_materials, '_select', lambda *_: pytest.fail('No materials to select or search'))
+    inputs = {'topic': 'Learning', 'request': 'Compare approaches in about 300 words.'}
+    inputs['papers'] = review_materials.prepare(inputs, [])
+    result = api.run_algorithm('literature_review', inputs)
+    prompt = generate.call_args.args[0]
+    data = json.loads(prompt.split('Input JSON:\n', 1)[1])
+    assert generate.call_count == 1
+    assert data['research']['request'] == inputs['request'] and data['sources'] == []
+    assert 'using your existing knowledge' in prompt
+    assert result == {'evidence': generate.return_value, 'papers': [], 'is_demo': False}
 
 
 @pytest.fixture
