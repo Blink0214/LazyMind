@@ -17,10 +17,14 @@ def setup_writer(tmp_path, monkeypatch, flat=False):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     events = []
+    workflow_state = yaml.safe_load(
+        (ROOT / 'workflows/writer-workflow/scenario/state.yml').read_text(encoding='utf-8'))
+    step = 'write_flat_document' if flat else 'write_document'
+    output_slots = [item['material'] for item in workflow_state['steps'][step]['outputs']]
     context = SubAgentContext(
         task_id='writer-task', conversation_id='conversation', agent_type='workflow_step',
         objective='write', params={}, workspace_path=str(tmp_path / 'workspace'),
-        input_slots=[], output_slots=[], db=None, emit=events.append,
+        input_slots=[], output_slots=output_slots, db=None, emit=events.append,
     )
     monkeypatch.setattr(module, 'require_context', lambda: context)
     monkeypatch.setattr(artifact_tools, 'require_context', lambda: context)
@@ -171,7 +175,7 @@ def test_lost_ack_replays_same_sequence_after_process_restart(tmp_path, monkeypa
 
 
 def test_body_contract_only_requires_delivery_outputs():
-    state = yaml.safe_load((ROOT / 'workflows/writer-workflow/scenario/state.yml').read_text())
+    state = yaml.safe_load((ROOT / 'workflows/writer-workflow/scenario/state.yml').read_text(encoding='utf-8'))
     # Exercise the actual contract shape used by the workflow compiler.
     steps = state['steps']
     for name, body in [('write_document', 'draft_document'), ('write_flat_document', 'flat_draft_document')]:
