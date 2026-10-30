@@ -1,8 +1,10 @@
 """Per-request F4 client controls, never provider API generation parameters."""
 from dataclasses import dataclass
+from functools import partial
 import os
 import time
 
+from .code_response import _reasoning_text
 from ..analysis import trace as diagnostics
 
 
@@ -27,6 +29,27 @@ def configuration():
     return Policy(values['CONNECT_TIMEOUT'], values['READ_TIMEOUT'], values['MAX_ATTEMPTS'])
 
 
+def _stream_parser(parser_type, **settings):
+    emit = settings.get('emit_message')
+    if emit is not None:
+        def emit_channels(message):
+            choices = message.get('choices')
+            if not isinstance(choices, list):
+                return emit(message)
+            preview = []
+            for choice in choices:
+                if isinstance(choice, dict):
+                    key = 'message' if 'message' in choice else 'delta'
+                    delta = choice.get(key)
+                    if isinstance(delta, dict) and (text := _reasoning_text(delta)):
+                        choice = dict(choice, **{key: dict(delta, reasoning_content=text)})
+                preview.append(choice)
+            # Normalize only the preview copy; the SDK retains its native frames.
+            emit(dict(message, choices=preview))
+        settings['emit_message'] = emit_channels
+    return parser_type(**settings)
+
+
 def configure(client, policy):
     from lazyllm.module.llms.onlinemodule.chat import OnlineChatModule
     from lazyllm.module.llms.onlinemodule.base.onlineChatModuleBase import LazyLLMOnlineChatModuleBase
@@ -46,11 +69,14 @@ def configure(client, policy):
             from lazyllm import globals
             with globals.stack_enter(client.identities):
                 supplier = client._get_supplier()
+        # A cached supplier keeps the formatter and timeout from its creation.
+        # Configure the actual F4 caller as well as the outer router.
+        supplier.formatter(client._formatter)
+        supplier._timeout = client._timeout
+        # Only this F4 client uses the preview callback; provider parsing stays intact.
+        supplier.RESPONSE_PARSER_CLASS = partial(_stream_parser, supplier.RESPONSE_PARSER_CLASS)
         if supplier.PROVIDER_NAME == 'minimax':
             supplier._model_optional_params['reasoning_split'] = True
-            # This F4 request reads native fields; bypass the SDK's lossy details
-            # conversion on this newly created instance only.
-            supplier._convert_msg_format = lambda message: message
     return supported
 
 
