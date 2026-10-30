@@ -80,7 +80,8 @@ SECTION_BUDGET_INSTRUCTIONS = (
 MODIFICATION_LOCATION_INSTRUCTIONS = (
     '\nFor exact replacements, use target_scope=fragment and set locator_text to the complete original text to replace. '
     'Do not use paragraph when body text immediately follows a heading without a blank line; the shared locator does not support that format. '
-    'For heading edits, use fragment update with the original heading line in locator_text; do not use title_instruction.'
+    'For the overall H1 paper title, title_instruction is supported and authorizes only that title line. '
+    'For H2 and deeper heading edits, use fragment update with the original heading line in locator_text.'
 )
 
 REVIEW_REVISION_INSTRUCTIONS = MODIFICATION_LOCATION_INSTRUCTIONS + (
@@ -109,6 +110,8 @@ REVISION_SCOPE_INSTRUCTIONS = (
     'Ordinary editing instructions are direct even when a matching review exists. '
     'An explicit request to revise according to the review without restrictions selects all issues. '
     'For selected numbers, exclusions, or explicit categories, return the exact matching current issue IDs as a subset. '
+    'A requested count such as "only the five most important issues" selects exactly that many distinct current '
+    'issue IDs by the requested priority; do not interpret this as selecting all issues. '
     'For example, "先改第1、3条，第2条先留着" selects R1 and R3 only. '
     'Respect negation and defer instructions; do not broaden a subset to all or invent IDs. '
     'If the selection is ambiguous, refers to unknown IDs, or selects nothing, return unclear. '

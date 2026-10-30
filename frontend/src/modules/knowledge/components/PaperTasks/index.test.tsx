@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConfigProvider, Modal } from 'antd';
+import { ConfigProvider } from 'antd';
+import { setupAntdStaticCleanup } from '@/test/antdStatic';
 import { createInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
 import zhCN from '@/i18n/locales/zh-CN';
@@ -11,6 +12,7 @@ import PaperTasks from './index';
 import PaperImportanceButton from './PaperImportanceButton';
 import { deleteExpansion, getExpansion, launchPaperTask, listExpansions, resolvePaperSelection, setPaperImportance, type ExpansionDetail, type PaperTask } from '../../api/paperWorkflows';
 import { previewPaperImport, startReferenceImport, getPaperImportStatus, type ImportPreviewItem } from '../../api/academicReferences';
+setupAntdStaticCleanup();
 vi.mock('../../api/paperWorkflows', () => ({ launchPaperTask: vi.fn(), getExpansion: vi.fn(), listExpansions: vi.fn(), resolvePaperSelection: vi.fn(), retryPaperContent: vi.fn(), deleteExpansion: vi.fn(), setPaperImportance: vi.fn() }));
 vi.mock('../../api/academicReferences', () => ({ previewPaperImport: vi.fn(), startReferenceImport: vi.fn(), getPaperImportStatus: vi.fn(), isImportPreviewExpired: () => false }));
 const importsChanged = vi.fn();
@@ -41,7 +43,7 @@ beforeEach(() => {
     vi.mocked(previewPaperImport).mockResolvedValue([preview('a'), preview('b')]);
     vi.mocked(startReferenceImport).mockResolvedValue({ batch_id: 'batch' } as Awaited<ReturnType<typeof startReferenceImport>>);
 });
-afterEach(() => { Modal.destroyAll(); cleanup(); vi.useRealTimers(); });
+afterEach(() => { vi.useRealTimers(); });
 const submit = async () => {
     fireEvent.click(screen.getByRole('button', { name: /^开\s*始$/ }));
     await waitFor(() => expect(launchPaperTask).toHaveBeenCalled());
@@ -100,7 +102,7 @@ describe('paper task startup routes', () => {
         fireEvent.click(menu.getByRole('menuitem', { name: new RegExp(label) }));
         if (direction) fireEvent.change(screen.getByLabelText('研究主题与要求'), { target: { value: 'agents' } });
         expect(screen.queryByRole('button', { name: /^继\s*续$/ })).not.toBeInTheDocument();
-        expect(screen.getByText('系统将查找相关论文，并基于结果生成综述')).toBeInTheDocument();
+        expect(screen.getByText(direction ? '系统将查找相关论文，并基于结果生成综述' : '基于选中的论文生成综述')).toBeInTheDocument();
         expect(screen.getAllByRole('textbox')).toHaveLength(1);
         await submit();
         expect(launchPaperTask).toHaveBeenCalledWith(expect.objectContaining({ kind: 'review', document_ids: direction ? [] : ['a'] }), false);

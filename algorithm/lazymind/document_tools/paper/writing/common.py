@@ -17,6 +17,7 @@ from lazyllm.tools.writer.data_models.quality import ReviewReport
 from lazyllm.tools.writer.utils.serialization import (
     get_markdown_outline_targets,
     markdown_section_range,
+    parse_document_markdown,
     parse_markdown_sections,
     parse_markdown_outline_instructions,
 )
@@ -385,16 +386,20 @@ def _heading_signature(markdown):
         previous = level
     return signature
 
+def _strip_outline_budget(description, budget):
+    """Strip only the generated suffix matching this heading's own metadata."""
+    if not isinstance(description, str) or type(budget) is not int or budget <= 0:
+        return description
+    suffix = rf'(?:（约{budget}字）| \(about {budget} (?:characters|words)\))(?=[。.!?！？]?$)'
+    return re.sub(suffix, '', description).strip()
+
+
 def _outline_budget_descriptions(outline):
     """Remove Writer budget suffixes only from their matching outline descriptions."""
     replacements = {}
     for payload in parse_markdown_outline_instructions(outline).values():
         description = payload.get('outline_description')
-        budget = payload.get('target_chars')
-        if not isinstance(description, str) or type(budget) is not int or budget <= 0:
-            continue
-        suffix = rf'(?:（约{budget}字）| \(about {budget} characters\))(?=[。.!?！？]?$)'
-        cleaned = re.sub(suffix, '', description).strip()
+        cleaned = _strip_outline_budget(description, payload.get('target_chars'))
         if cleaned != description:
             replacements[description] = cleaned
     return replacements
@@ -411,9 +416,14 @@ def _prepare_sections(plan, outline, constraints):
         raise ValueError('Writer section plan does not match the supplied outline.')
     target = constraints['word_target']
     unit = 'words' if constraints['paper_language'] == 'en' else 'chinese_characters'
-    # Weight by the existing planner's relative budgets, never reinterpret English
-    # word targets as characters. The final audit uses the legacy academic counter.
+    # Prefer confirmed outline budgets over a fresh section planner's weights.
+    # English targets remain word counts; the final audit uses the academic counter.
     weights = [max(1, int(item['meta'].get('target_chars') or 1)) for item in instructions]
+    outline_document = parse_document_markdown(outline, document_id='paper-section-budgets')
+    outline_weights = [block.target_chars for block in outline_document.blocks
+                       if block.type == 'heading' and block.numbering.get('level') == 1]
+    if len(outline_weights) == len(instructions) and all(outline_weights):
+        weights = outline_weights
     descriptions = _outline_budget_descriptions(outline)
     assigned = 0
     for index, item in enumerate(instructions):

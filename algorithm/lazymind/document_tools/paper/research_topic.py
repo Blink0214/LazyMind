@@ -225,7 +225,7 @@ def _condensed_papers(papers: list[dict], prompt_limit: int) -> list[dict]:
     return result
 
 
-def _validate_question_markdown(markdown: str, mode: str) -> None:
+def _validate_question_markdown(markdown: str) -> None:
     if not markdown:
         raise ValueError('研究选题输出不能为空。')
     lines = markdown.splitlines()
@@ -234,8 +234,6 @@ def _validate_question_markdown(markdown: str, mode: str) -> None:
         raise ValueError('研究选题输出不能是外层代码围栏。')
     headings = list(_SECTION_RE.finditer(markdown))
     required = ['研究问题']
-    if mode == 'refine':
-        required.append('文献反馈与调整依据')
     for section in required:
         matches = [(index, match) for index, match in enumerate(headings)
                    if match.group(1).strip() == section]
@@ -271,5 +269,5 @@ def run(inputs: dict) -> dict:
     if re.match(r'^<think\b', markdown, flags=re.IGNORECASE):
         raise ValueError('研究选题输出格式错误：存在未闭合的思考内容。')
     report_progress(90, '正在校验选题结构与引用')
-    _validate_question_markdown(markdown, inputs['mode'])
+    _validate_question_markdown(markdown)
     return {'question': markdown, 'is_demo': False}

@@ -46,6 +46,14 @@
   scrollbar-gutter: stable;
   scroll-padding-block: 12px;
 
+  // The artifact list grows inside this scroll owner; it must not trap wheel
+  // gestures in a second, content-height scroll container.
+  > .workflow-panel__tab-content {
+    flex: none;
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
+
   &:focus-visible {
     outline: 2px solid var(--ant-color-primary, #356dff);
     outline-offset: -2px;

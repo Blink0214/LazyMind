@@ -30,13 +30,8 @@ def request_model(prompt: str, json_output=True, *, output_format=None):
         preview = diagnostics.response_preview(json_output, output_format=output_format)
         streaming = (preview is not None and supported and not getattr(preview.recorder, 'streaming_rejected', False)
                      and os.environ.get('LAZYMIND_PAPER_MODEL_STREAM', 'auto') != 'off')
-        reasoning_chunks = []
         if streaming:
-            def sink(event):
-                if event.get('tag') == 'think' and event.get('delta'):
-                    reasoning_chunks.append(str(event['delta']))
-                preview.sink(event)
-            options['stream_output'] = {'_stream_sink': sink}
+            options['stream_output'] = {'_stream_sink': preview.sink}
         try:
             try:
                 raw = transport.call(client, prompt, options, policy, supported)
@@ -54,10 +49,6 @@ def request_model(prompt: str, json_output=True, *, output_format=None):
                     raise
                 preview.recorder.streaming_rejected = True
                 raw = transport.call(client, prompt, {**options, 'stream_output': False}, policy, supported)
-            # F4 keeps every emitted reasoning delta, including repeated ones;
-            # the shared SDK's metadata merge policy remains unchanged.
-            if reasoning_chunks and isinstance(raw, dict):
-                raw = dict(raw, reasoning_content=''.join(reasoning_chunks))
             normalized = normalize_response(raw)
             if preview:
                 preview.finish(raw, normalized=normalized)

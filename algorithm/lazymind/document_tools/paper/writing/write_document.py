@@ -1,6 +1,7 @@
 """Draft a new manuscript using public Writer section planning and streaming."""
 from ...toolkits import WriterCreateToolkit
 from ..publication import validate_chart_references as _validate_chart_references
+from ..publication import normalize_source_citations
 from ..runtime_events import current_events, report_progress
 import json
 
@@ -67,7 +68,8 @@ def _write_draft(inputs, *, toolkit=None, on_delta=None):
         draft_sections_json=_json(sections), writing_context_json=context_json,
         outline_json=_CHART_OWNERS.sub('', outline), title=signature[0][1],
     ))
-    body = _materialize_chart_insertions(result['draft_document'], prepared['charts'])
+    body = normalize_source_citations(result['draft_document'], prepared['reference_candidates'])
+    body = _materialize_chart_insertions(body, prepared['charts'])
     objects = _validate_chart_references(body, prepared['charts'])
     if {match[1] for match in objects} != {chart['id'] for chart in prepared['charts']}:
         raise ValueError('Draft must insert every planned chart exactly once.')

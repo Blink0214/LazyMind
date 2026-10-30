@@ -230,7 +230,7 @@ export default function PaperTasks({ dataset, selected, selectedTitles = [], sel
             const result = await launchPaperTask({ ...body, request_key: requestKey.current }, !!onNotification);
             onNotificationResolved?.('paper-task-launch');
             setLaunch(undefined);
-            goChat(result.conversation_id, launch.kind === 'review');
+            goChat(result.conversation_id, launch.kind === 'review' && !!result.expansion_id);
         } catch (error) {
             if (onNotification) {
                 setActionError('任务尚未创建，请重试或查看通知。');
@@ -424,7 +424,7 @@ export default function PaperTasks({ dataset, selected, selectedTitles = [], sel
             title={launch ? taskLabel(launch.kind) : ''}
             onCancel={() => !busy && setLaunch(undefined)} onOk={() => void submit()} confirmLoading={busy}>
             {actionError && onNotification && <p role="status">{actionError}</p>}
-            {launch?.kind === 'review' && <Alert type="info" showIcon message={t('paperTasks.reviewStartHint')} />}
+            {launch?.kind === 'review' && <Alert type="info" showIcon message={t(launch.direction ? 'paperTasks.reviewStartHint' : 'paperTasks.reviewSelectedHint')} />}
             {launch && !launch.direction && <div className="paper-task-launch-selection">
                 <Typography.Text type="secondary">{t('paperTasks.selectedLibraryPapers', { count: selected.length })}</Typography.Text>
                 {selectedTitles.length > 0 && <Typography.Paragraph type="secondary" ellipsis={{ rows: 2, tooltip: true }}>{selectedTitles.join(' · ')}</Typography.Paragraph>}

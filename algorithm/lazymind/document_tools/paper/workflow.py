@@ -366,6 +366,12 @@ def execute_step(step: str, pool: dict, request: str = '', fail: bool = False, *
         raise ValueError(f'不允许的流程路径: {previous}→{node}')
     if fail:
         raise RuntimeError('[示例] 模拟执行失败；可重试。')
+    if step == 'write_outline':
+        # Commit one paper-length target with the outline so drafting inherits it.
+        pool = copy.deepcopy(pool)
+        pool['constraints'] = contracts.normalize_constraints(pool.get('constraints', {}))
+        if pool['constraints']['word_target'] is None:
+            pool['constraints']['word_target'] = 5000 if pool['constraints']['paper_language'] == 'en' else 8000
     module = contracts.ALIASES.get(step, step)
     relevant = contracts.FIELDS[module]
     if step == 'revise_document' and not pool.get('selected_issue_ids'):
@@ -696,6 +702,11 @@ def _run_paper_step(context, stream=None) -> dict:
     if not isinstance(bound, dict):
         raise ValueError('Runtime remote_inputs 格式错误')
     request, instruction = _runtime_request(context.params)
+    review_context = None
+    if step == 'literature_review' and 'paper_input' not in bound:
+        from .review_materials import current_handoff
+        review_context = current_handoff()
+    fixed_review_scope = 'paper_input' in bound or review_context is not None
     if step == 'prepare':
         # Old sessions pin their graph; keep them runnable without exposing this node in new graphs.
         if not bound and '[paper:demo]' not in request and '默认演示材料' not in request:
@@ -751,11 +762,16 @@ def _run_paper_step(context, stream=None) -> dict:
             with stage('pool_initialization', getattr(context, 'task_id', 'peer_review'),
                        bindings=sorted(bound)):
                 pool = initialize_pool(bound, request)
+        elif review_context is not None and not any(
+            key.endswith('_pool') for key in bound
+        ):
+            from .review_materials import handoff_input
+            pool = pool_from_business(handoff_input(review_context))
         else:
             pool = initialize_pool(bound, request)
         # Saved upstream materials do not include papers uploaded in later turns.
         # An explicit programmatic input still owns its selected paper scope.
-        if step == 'literature_review' and 'paper_input' not in bound:
+        if step == 'literature_review' and not fixed_review_scope:
             uploaded = _conversation_papers(context.params.get('history_files_per_turn'))
             current = material(pool, 'papers')
             papers = copy.deepcopy(current['content']) if current else []
@@ -771,6 +787,16 @@ def _run_paper_step(context, stream=None) -> dict:
             if papers is None or not papers['content']:
                 raise MissingMaterials('请先选择至少一篇论文，或上传论文附件，再生成阅读心得。')
         request = _step_request(step, pool, context.params, bound)
+        if step == 'literature_review':
+            import lazyllm
+            from .review_materials import prepare
+            knowledge_bases = ((lazyllm.globals.get('agentic_config') or {}).get('filters') or {}).get('kb_id', [])
+            current = material(pool, 'papers')
+            papers = prepare(business_input(step, pool, request), knowledge_bases,
+                             fixed_scope=fixed_review_scope)
+            if current is None or current['content'] != papers:
+                add_material(pool, 'papers', papers, [pool['current']['papers']] if current else [],
+                             paper_source_ids(papers))
         if step == 'revise_document':
             from .writing.revise_document import resolve_review_issues
             review = material(pool, 'review_data')
