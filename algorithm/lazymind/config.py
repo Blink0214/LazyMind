@@ -140,6 +140,11 @@ _load_internal_service_token_environment()
 # All LAZYMIND_* environment variables are registered here.
 config = Config(prefix='LAZYMIND', home='~/.lazyllm_rag')
 _LAZYMIND_ROOT = os.path.dirname(__file__)
+config.add('llm_trace_diagnostics', bool, False, 'LLM_TRACE_DIAGNOSTICS',
+           description='Capture final model inputs and client timings for performance diagnosis.')
+config.add('llm_trace_payload_max_chars', int, 0, 'LLM_TRACE_PAYLOAD_MAX_CHARS',
+           description='Diagnostic JSON character limit; zero captures full payloads.')
+
 config.add('runtime_mode', str, 'cloud', 'RUNTIME_MODE',
            description='LazyMind runtime mode profile: cloud or local.')
 

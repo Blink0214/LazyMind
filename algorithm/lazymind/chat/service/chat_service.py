@@ -773,6 +773,8 @@ def _resolve_task_profile_with_model(
     session_id: str = '',
 ) -> Any:
     set_trace_context({
+        'debug_llm_diagnostics': _cfg['llm_trace_diagnostics'],
+        'debug_llm_payload_max_chars': _cfg['llm_trace_payload_max_chars'],
         'trace_id': trace_id,
         'session_id': session_id or trace_id,
         'sampled': True,
@@ -1744,6 +1746,8 @@ async def _handle_chat_impl(
             skill_config = selected_skills
             workflow_skill_dir = workflow_skills_dir()
     set_trace_context({
+        'debug_llm_diagnostics': _cfg['llm_trace_diagnostics'],
+        'debug_llm_payload_max_chars': _cfg['llm_trace_payload_max_chars'],
         'trace_id': conversation_id or conversation.session_id,
         'session_id': conversation.session_id, 'sampled': True,
         'module_trace': {
@@ -2342,6 +2346,8 @@ async def _handle_chat_impl(
                     session_id=conversation.session_id,
                     request_tags=['handle_chat', 'agent'],
                     debug_capture_payload=False,
+                    debug_llm_diagnostics=_cfg['llm_trace_diagnostics'],
+                    debug_llm_payload_max_chars=_cfg['llm_trace_payload_max_chars'],
                 )
                 guarded_agent_stream = guard_workflow_agent_stream(
                     initial_agent_stream,

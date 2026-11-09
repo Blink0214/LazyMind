@@ -1488,6 +1488,8 @@ async def run_subagent_stream(
         lazyllm.globals._init_sid(sid=sid)
         lazyllm.locals._init_sid(sid=sid)
         lazyllm.set_trace_context({
+            'debug_llm_diagnostics': _cfg['llm_trace_diagnostics'],
+            'debug_llm_payload_max_chars': _cfg['llm_trace_payload_max_chars'],
             'trace_id': params.get('trace_id') or None,
             'parent_span_id': params.get('parent_span_id') or None,
             'session_id': (
