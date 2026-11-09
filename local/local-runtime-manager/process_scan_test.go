@@ -145,3 +145,15 @@ func TestStopLocalProcessRecordsUsesGracefulInterrupt(t *testing.T) {
 		t.Fatalf("force kills = %d, want 0", forceKills)
 	}
 }
+
+func TestSignalLocalProcessGroupsDeduplicatesSafeTargets(t *testing.T) {
+	seen := []int{}
+	signalLocalProcessGroups([]LocalProcessRecord{
+		{PID: 2147483000, PGID: 2147482000},
+		{PID: 2147483000, PGID: 2147482000},
+		{PID: 2147483001, PGID: 2147482000},
+	}, func(target int) error { seen = append(seen, target); return nil })
+	if len(seen) != 2 || seen[0] != 2147483000 || seen[1] != 2147483001 {
+		t.Fatalf("unsafe or duplicate signal targets: %v", seen)
+	}
+}

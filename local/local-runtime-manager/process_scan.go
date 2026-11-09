@@ -150,6 +150,25 @@ func stopLocalProcessRecordsWith(ctx context.Context, records []LocalProcessReco
 	}
 }
 
+func signalLocalProcessGroups(records []LocalProcessRecord, signal func(int) error) {
+	currentPGID := processGroupID(os.Getpid())
+	targets := make(map[int]struct{}, len(records))
+	for _, record := range records {
+		target := processStopTarget(record, currentPGID, processGroupID)
+		if record.Service == "local-runtime-orphan" {
+			target = record.PID
+		}
+		if target <= 0 {
+			continue
+		}
+		if _, exists := targets[target]; exists {
+			continue
+		}
+		targets[target] = struct{}{}
+		_ = signal(target)
+	}
+}
+
 func waitForStoppedLocalProcessRecords(ctx context.Context, records []LocalProcessRecord, options processStopOptions) error {
 	deadline := time.NewTimer(options.forceTimeout)
 	defer deadline.Stop()

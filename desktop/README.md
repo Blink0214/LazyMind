@@ -47,6 +47,8 @@ Run the dedicated browser connection and adapter tests with `node --test desktop
 
 Platform-maintained Skill directories and installable Skill links are declared together in `skills/builtin-sources.yaml`; curated experiences keep their schema, locales, and images under `skills/featured/<id>/`. Desktop packages the locked Skill catalog, complete `SKILL.md` previews, and patch assets under `resources/runtime/builtin-skills`, plus the curated catalog and content-hashed assets under `resources/runtime/featured-skills`. Remote Skill ZIPs are downloaded and verified when the user clicks Install or Try; the installer does not include them. Bundled Caddy serves featured assets through `/showcase-assets/` on both macOS and Windows. A Skill already installed in the personal revision store remains usable offline.
 
+For local packaging diagnostics only, set `LAZYMIND_DESKTOP_SKIP_SKILLS=true` to skip all Skill downloads and write valid empty builtin and featured catalogs. The resulting application can exercise the remaining packaging and runtime smoke tests, but contains no bundled or featured Skills and must not be distributed as a release build.
+
 The frontend dependency tree is installed while building, but raw `frontend/node_modules` is not distributed. Vite compiles browser dependencies into `frontend/dist`, and Desktop serves that static output through bundled Caddy.
 
 ## Outputs

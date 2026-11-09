@@ -2119,7 +2119,7 @@ function ensureWindowsTray() {
       {
         label: "Exit",
         click: () => {
-          void enterBackgroundMode("tray exit", { discoverable: false });
+          beginFastQuit("tray exit");
         },
       },
     ]));
@@ -3256,7 +3256,7 @@ if (!hasSingleInstanceLock) {
     }
     if (!isQuitting) {
       event.preventDefault();
-      void enterBackgroundMode("app quit", { discoverable: false });
+      beginFastQuit("app quit");
     }
   });
 }

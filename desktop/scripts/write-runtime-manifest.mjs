@@ -125,6 +125,24 @@ if (existsSync(featuredDownloadsPath)) {
     }
   }
 }
+
+function requireCatalogSchema(catalogPath, expectedVersion, label) {
+  let catalog;
+  try {
+    catalog = JSON.parse(readFileSync(catalogPath, "utf8"));
+  } catch (error) {
+    console.error(`${label} catalog is not valid JSON: ${error.message}`);
+    process.exit(1);
+  }
+  if (catalog?.schema_version !== expectedVersion) {
+    console.error(`${label} catalog schema must be ${expectedVersion}, got ${catalog?.schema_version ?? "missing"}`);
+    process.exit(1);
+  }
+}
+
+requireCatalogSchema(builtinSkillCatalog, 1, "builtin Skill");
+requireCatalogSchema(featuredSkillCatalog, 2, "featured Skill");
+
 const historyInjectionArchive = path.join(runtimeRoot, "history-injection.zip");
 const historyInjectionDescriptor = path.join(runtimeRoot, "history-injection-package.json");
 let historyInjectionDownload;

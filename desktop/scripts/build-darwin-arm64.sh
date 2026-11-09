@@ -25,6 +25,7 @@ SIGNING_MODE="${LAZYMIND_DESKTOP_SIGNING_MODE:-adhoc}"
 LAZYLLM_VERSION="${LAZYMIND_LAZYLLM_VERSION:-$(tr -d '[:space:]' < "${ROOT}/LAZYLLM_VERSION")}"
 RELEASE_BUILD="${LAZYMIND_RELEASE_BUILD:-false}"
 FEISHU_CLI_RELEASE="${ROOT}/backend/core/providerconnection/feishu-cli-release.json"
+SKIP_SKILLS="${LAZYMIND_DESKTOP_SKIP_SKILLS:-false}"
 
 GO_BIN="${GO:-go}"
 # Go 1.26.0/1.26.1 can panic in arm64.gensymlate when linking the CGO Core.
@@ -385,20 +386,30 @@ assert_desktop_runtime_app "${RUNTIME_ROOT}/app"
 assert_no_absolute_symlinks "${RUNTIME_ROOT}"
 node "${ROOT}/desktop/scripts/stage-pdf-font.mjs" "${RUNTIME_ROOT}"
 
-echo "==> Materializing locked Skill previews and featured catalog"
-remove_generated_path "${RUNTIME_ROOT}/builtin-skills"
-BUILTIN_SKILL_BUNDLE_ARGS=(
-  run ./cmd/builtin-skill-bundle
-  --sources "${ROOT}/skills/builtin-sources.yaml"
-  --lock "${ROOT}/skills/builtin-skills.lock.json"
-  --cache "${ROOT}/desktop/cache/builtin-skills"
-  --output "${RUNTIME_ROOT}/builtin-skills"
-  --featured-sources "${ROOT}/skills/featured"
-  --featured-output "${RUNTIME_ROOT}/featured-skills"
-  --frozen-lockfile
-  --catalog-only
-)
-(cd "${ROOT}/backend/core" && "${GO_BIN}" "${BUILTIN_SKILL_BUNDLE_ARGS[@]}")
+echo "==> Materializing offline Skill packages and featured catalog"
+if [[ "${SKIP_SKILLS}" == "true" ]]; then
+  echo "==> Skipping Desktop Skill downloads; writing empty development catalogs"
+  remove_generated_path "${RUNTIME_ROOT}/builtin-skills"
+  remove_generated_path "${RUNTIME_ROOT}/featured-skills"
+  mkdir -p "${RUNTIME_ROOT}/builtin-skills/packages" "${RUNTIME_ROOT}/featured-skills/assets"
+  printf '%s\n' '{"schema_version":1,"skills":[]}' > "${RUNTIME_ROOT}/builtin-skills/catalog.json"
+  printf '%s\n' '{"schema_version":2,"cases":[]}' > "${RUNTIME_ROOT}/featured-skills/catalog.json"
+else
+  echo "==> Materializing locked Skill previews and featured catalog"
+  remove_generated_path "${RUNTIME_ROOT}/builtin-skills"
+  BUILTIN_SKILL_BUNDLE_ARGS=(
+    run ./cmd/builtin-skill-bundle
+    --sources "${ROOT}/skills/builtin-sources.yaml"
+    --lock "${ROOT}/skills/builtin-skills.lock.json"
+    --cache "${ROOT}/desktop/cache/builtin-skills"
+    --output "${RUNTIME_ROOT}/builtin-skills"
+    --featured-sources "${ROOT}/skills/featured"
+    --featured-output "${RUNTIME_ROOT}/featured-skills"
+    --frozen-lockfile
+    --catalog-only
+  )
+  (cd "${ROOT}/backend/core" && "${GO_BIN}" "${BUILTIN_SKILL_BUNDLE_ARGS[@]}")
+fi
 
 "${RUNTIME_ROOT}/deps/python/algorithm/bin/python" "${ROOT}/desktop/scripts/stage-featured-assets.py" "${RUNTIME_ROOT}" --bundle-unpublished
 

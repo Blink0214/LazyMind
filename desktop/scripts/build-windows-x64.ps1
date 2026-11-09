@@ -325,6 +325,18 @@ function Copy-RuntimeApp {
 }
 
 function Materialize-OfflineSkills {
+    if ($env:LAZYMIND_DESKTOP_SKIP_SKILLS -eq 'true') {
+        Write-Host '==> Skipping Desktop Skill downloads; writing empty development catalogs'
+        $builtinRoot = Join-Path $runtimeRoot 'builtin-skills'
+        $featuredRoot = Join-Path $runtimeRoot 'featured-skills'
+        Remove-GeneratedPath $builtinRoot
+        Remove-GeneratedPath $featuredRoot
+        New-Item -ItemType Directory -Force -Path (Join-Path $builtinRoot 'packages') | Out-Null
+        New-Item -ItemType Directory -Force -Path (Join-Path $featuredRoot 'assets') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $builtinRoot 'catalog.json'), "{`"schema_version`":1,`"skills`":[]}`n", [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText((Join-Path $featuredRoot 'catalog.json'), "{`"schema_version`":2,`"cases`":[]}`n", [Text.UTF8Encoding]::new($false))
+        return
+    }
     Remove-GeneratedPath (Join-Path $runtimeRoot 'builtin-skills')
     Remove-GeneratedPath (Join-Path $runtimeRoot 'featured-skills')
     $arguments = @(

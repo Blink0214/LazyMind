@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -58,7 +58,7 @@ function writeSkillCatalogFixtures(root) {
   const featured = path.join(root, "featured-skills");
   mkdirSync(featured, { recursive: true });
   mkdirSync(path.join(featured, "assets"), { recursive: true });
-  writeFileSync(path.join(featured, "catalog.json"), '{"schema_version":1,"cases":[]}\n');
+  writeFileSync(path.join(featured, "catalog.json"), '{"schema_version":2,"cases":[]}\n');
   writeFileSync(path.join(root, "history-injection.zip"), "history-injection-fixture");
 }
 
@@ -162,10 +162,15 @@ test("macOS and Windows builds materialize locked catalogs before writing the ru
     assert.match(source, /--catalog-only/);
     assert.match(source, /featured-sources/);
     assert.match(source, /featured-output/);
+    assert.match(source, /LAZYMIND_DESKTOP_SKIP_SKILLS/);
+    assert.match(source, /\{.*schema_version.*skills.*\[\].*\}/);
+    assert.match(source, /\{.*schema_version.*cases.*\[\].*\}/);
   }
   assert.match(darwin, /remove_generated_path "\$\{RUNTIME_ROOT\}\/builtin-skills"/);
   assert.match(windows, /Remove-GeneratedPath \(Join-Path \$runtimeRoot 'builtin-skills'\)/);
   assert.match(windows, /Remove-GeneratedPath \(Join-Path \$runtimeRoot 'featured-skills'\)/);
+  assert.match(darwin, /schema_version\":2,\"cases\":\[\]/);
+  assert.match(windows, /schema_version`\":2,`\"cases`\":\[\]/);
   assert.match(darwin, /--exclude "skills\/\.runtime"/);
   assert.match(darwin, /remove_generated_path "\$\{app_root\}\/skills\/\.runtime"/);
   for (const category of ["research", "review", "search"]) {
@@ -925,7 +930,28 @@ test("Desktop supervises the external Agent host until the application quits", (
   );
 });
 
-test("Desktop close and quit destroy renderers while keeping the runtime resident", () => {
+test("Desktop Agent login returns immediately and refreshes the Host when login exits", () => {
+  const source = readFileSync(electronMainScript, "utf8");
+  assert.match(source, /workbuddy: new Set\(\["connect", "status", "disconnect", "login"\]\)/);
+  assert.match(
+    source,
+    /function runAgentConnector[\s\S]*action === "login"[\s\S]*return startAgentLogin\(agent\)/,
+  );
+  assert.match(
+    source,
+    /function startAgentLogin[\s\S]*spawn\(agentConnectorPath, \["internal", "agent", agent, "login"\][\s\S]*return runAgentConnector\(agent, "status"\)/,
+  );
+  assert.match(
+    source,
+    /function startAgentLogin[\s\S]*restartAgentHost\(\)[\s\S]*child\.once\("close"/,
+  );
+  assert.match(
+    source,
+    /function beginFastQuit[\s\S]*clearAgentLogin\(/,
+  );
+});
+
+test("Desktop window close stays resident while application quit stops the runtime", () => {
   const source = readFileSync(electronMainScript, "utf8");
   const backgroundStart = source.indexOf("function enterBackgroundMode");
   const backgroundEnd = source.indexOf("function sameRuntimePath", backgroundStart);
@@ -956,8 +982,8 @@ test("Desktop close and quit destroy renderers while keeping the runtime residen
   assert.match(source, /app\.on\("activate"[\s\S]*showActiveWindow\(\)/);
   assert.match(
     source,
-    /app\.on\("before-quit",[\s\S]*event\.preventDefault\(\);\s*(?:void\s+)?enterBackgroundMode\("app quit", \{ discoverable: false \}\)/,
-    "Dock, menu, and keyboard quit actions must enter hidden background mode",
+    /app\.on\("before-quit",[\s\S]*event\.preventDefault\(\);\s*beginFastQuit\("app quit"\)/,
+    "Dock, menu, and keyboard quit actions must stop the Desktop runtime",
   );
   assert.match(
     windowsClosedHandler,
@@ -971,7 +997,7 @@ test("Desktop close and quit destroy renderers while keeping the runtime residen
   );
 });
 
-test("Windows tray reopens the frontend and Exit removes the visible background entry", () => {
+test("Windows tray reopens the frontend and Exit stops the runtime", () => {
   const source = readFileSync(electronMainScript, "utf8");
   const trayStart = source.indexOf("function ensureWindowsTray()");
   const trayEnd = source.indexOf("function attachManagedClose", trayStart);
@@ -982,7 +1008,7 @@ test("Windows tray reopens the frontend and Exit removes the visible background 
   assert.match(traySource, /label: "Open LazyMind"[\s\S]*showActiveWindow\(\)/);
   assert.match(
     traySource,
-    /label: "Exit"[\s\S]*enterBackgroundMode\("tray exit", \{ discoverable: false \}\)/,
+    /label: "Exit"[\s\S]*beginFastQuit\("tray exit"\)/,
   );
   assert.match(source, /function destroyWindowsTray\(\)[\s\S]*tray\.destroy\(\);\s*tray = undefined/);
 });
@@ -1036,5 +1062,19 @@ test("deferred example manifests contain download identity and no bundled ZIP re
       assert.ok(manifest.checksums["history-injection-package.json"]);
       assert.equal(manifest.features.offlineBuiltinSkills, false);
     } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+});
+
+
+test("rejects the obsolete featured Skill catalog schema", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "lazymind-manifest-featured-schema-"));
+  try {
+    writeSkillCatalogFixtures(root);
+    writeFileSync(path.join(root, "featured-skills", "catalog.json"), JSON.stringify({ schema_version: 1, cases: [] }));
+    const result = spawnSync(process.execPath, [manifestScript, root, "--platform", "darwin", "--arch", "arm64"], { encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /featured Skill catalog schema must be 2/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

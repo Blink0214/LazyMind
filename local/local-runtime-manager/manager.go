@@ -1284,11 +1284,20 @@ func (m *RuntimeManager) killStaleRuntimeProcesses(ctx context.Context, cfg Runt
 			}
 			return nil
 		}
-		m.progressf("stopping %d orphan local runtime process(es), pass %d: %s", len(records), pass, summarizeLocalProcessRecords(records))
-		if err := stopLocalProcessRecords(ctx, records); err != nil {
-			return err
-		}
+		m.progressf("force-stopping %d orphan local runtime process(es), pass %d: %s", len(records), pass, summarizeLocalProcessRecords(records))
+		// process-compose has already had its ordered graceful shutdown window.
+		// Anything discovered here is stale. In particular, Python's
+		// multiprocessing resource_tracker ignores SIGINT and SIGTERM and can
+		// replace itself while a graceful wait watches only its previous PID.
+		// Kill each recorded process group immediately, then rescan for any
+		// descendants that raced with the signal.
+		signalLocalProcessGroups(records, forceKillProcessTree)
 		cleanupLocalProcessRecords(paths, records)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
 		if m.now().Sub(startedAt) >= 15*time.Second {
 			remaining, scanErr := discoverLocalRuntimeProcessesChecked(paths, cfg, m.processScanner)
 			if scanErr != nil {
