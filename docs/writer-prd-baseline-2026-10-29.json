@@ -1,0 +1,49 @@
+{
+  "LazyMind": {
+    "head": "00da93fa9d15f5844fe19b3c83830e29e8b1f8b3",
+    "status": " M .dockerignore\n M algorithm/Dockerfile\n m algorithm/lazyllm\n M algorithm/lazymind/document_tools/artifacts.py\n M algorithm/lazymind/document_tools/execution.py\n M algorithm/lazymind/document_tools/paper/analysis/attachments.py\n M algorithm/lazymind/document_tools/paper/contracts.py\n M algorithm/lazymind/document_tools/paper/data_analysis.py\n M algorithm/lazymind/document_tools/paper/prompts/write_document_prompt.py\n M algorithm/lazymind/document_tools/paper/workflow.py\n M algorithm/lazymind/document_tools/paper/writing/attachments.py\n M algorithm/lazymind/document_tools/paper/writing/common.py\n M algorithm/lazymind/document_tools/paper/writing/revise_document.py\n M algorithm/lazymind/document_tools/paper/writing/write_document.py\n M algorithm/lazymind/document_tools/paper/writing/write_outline.py\n M algorithm/lazymind/document_tools/revision.py\n M algorithm/lazymind/document_tools/writing.py\n M docker-compose.yml\n M tests/algorithm/chat/test_writer_plugin_draft_stream.py\n M tests/algorithm/chat/test_writer_stream_recovery.py\n M tests/algorithm/chat/workflows/conftest.py\n M tests/algorithm/chat/workflows/test_paper_f4_core_smoke.py\n M tests/algorithm/chat/workflows/test_paper_outline.py\n D tests/algorithm/chat/workflows/test_paper_uploaded_media.py\n M tests/algorithm/chat/workflows/test_paper_write_document.py\n M tests/algorithm/chat/workflows/test_paper_writing.py\n M tests/algorithm/chat/workflows/test_paper_writing_algorithms.py\n M tests/fixtures/paper-writing/revise_document.json\n M workflows/bid_tech_proposal_writer/scripts/writer_bridge.py\n M workflows/paper-writing/workflow.yaml\n M workflows/product_solution_delivery/scripts/writer_bridge.py\n M workflows/writer-workflow/scripts/tools.py\n?? docs/writer-prompt-analysis-2026-10-26.md\n?? docs/writer-prompt-measurements-2026-10-26.json\n?? docs/writer-stage-rules-analysis-2026-10-26.md\n?? docs/writer-stage-rules-baseline-2026-10-26.json\n?? docs/writer-stage-rules-measurements-2026-10-26.json\n?? scripts/measure_f5_stage_rules.py\n?? scripts/measure_writer_prompt_inputs.py\n?? tests/algorithm/chat/test_minimax_thinking.py\n?? tests/algorithm/chat/test_writer_query_adapter.py\n?? tests/algorithm/chat/test_writer_temporary_cleanup.py\n?? tests/algorithm/chat/test_writer_whole_timing.py\n?? tests/algorithm/chat/workflows/test_paper_f5_import.py\n?? tests/fixtures/paper-writing/write_outline.json\n?? workflows/paper-writing/temp/F5-IMPLEMENT.md\n?? workflows/paper-writing/temp/F5-IMPORT-PLAN.md\n?? workflows/paper-writing/temp/F5-PLAN.md\n?? workflows/paper-writing/temp/WRITING-UPSTREAM-AGREEMENTS.md\n?? workflows/paper-writing/temp/examples/f5-acceptance-2.5/\n?? workflows/paper-writing/temp/f5-performance-evidence.json\n",
+    "patch_sha256": "1e345e904904bb7ee5e565d9f9161b17f854c3fecff6752ef8bde5caf9d95495",
+    "untracked_sha256": {
+      "docs/writer-prompt-analysis-2026-10-26.md": "54e63b0fe5ce27eef9ecab6c46a333a85a81af9462f55af583198f1c49a100ab",
+      "docs/writer-prompt-measurements-2026-10-26.json": "5b77a179d57f8695b9c62ad361fd81f513e5229957614c2d94bee1581c5f9c43",
+      "docs/writer-stage-rules-analysis-2026-10-26.md": "05d7768dc46414c9d3e5ad4206ee33f54d8af8fb8a9d20f0d3435f2fd22515bb",
+      "docs/writer-stage-rules-baseline-2026-10-26.json": "0ec1113728def37e4f39e08ff072223c64964b05c5d7bde5a3b6e3bc784fff0a",
+      "docs/writer-stage-rules-measurements-2026-10-26.json": "f3c75165ef316320ca4e25c3520c46b67693e21ebfef958486d33eecd1a9da7a",
+      "scripts/measure_f5_stage_rules.py": "9fc5f53d59c99d1a3d1b1e06129b9f411646f87cec0e957776c509f597b04384",
+      "scripts/measure_writer_prompt_inputs.py": "c1c582183ccde5cd442a8b0917f8adbc192e98f7b1b2d7d6c2ac862d92ac13c6",
+      "tests/algorithm/chat/test_minimax_thinking.py": "8b8837579a91e342785b36507e019f416f17853913ed5f518ab24abed161a618",
+      "tests/algorithm/chat/test_writer_query_adapter.py": "c2e838a5fdfb25108d0fca2446bb9f98efa1d30c3a56a66624dc36244dc25766",
+      "tests/algorithm/chat/test_writer_temporary_cleanup.py": "6dbd045338f6c444ae47464549a3a8cf6b2bd722bbd84c3b756d556cd81e9333",
+      "tests/algorithm/chat/test_writer_whole_timing.py": "ffd72d3776c1a8f19768a87d32723f2febcb1f556a95c18c2d25e813546c4e0a",
+      "tests/algorithm/chat/workflows/test_paper_f5_import.py": "ed9ae0470402a37a5d41abff513f668986d1da259416cdb077ccc3da2c133a00",
+      "tests/fixtures/paper-writing/write_outline.json": "ebe7b13d037b38b8a44643fc932ebb7f5caf77a9414af972d339fd77bceca4ae",
+      "workflows/paper-writing/temp/F5-IMPLEMENT.md": "29b1deb2ae1b16c685e80ab073b35ef47ec464ee022053b767f2d56511101075",
+      "workflows/paper-writing/temp/F5-IMPORT-PLAN.md": "bf3b139005c987e32bbc835a5b3c17c387929167ac737a396eb56fb485dc810a",
+      "workflows/paper-writing/temp/F5-PLAN.md": "3015244c1c976f61a3fa7bf3b0bad9fb544324035a35914a57db9f6bef3855b6",
+      "workflows/paper-writing/temp/WRITING-UPSTREAM-AGREEMENTS.md": "4ebf1a1a9675762623b9af59417084d2c4445ad01fd1c2ead5fbacec0cc802f5",
+      "workflows/paper-writing/temp/examples/f5-acceptance-2.5/README.md": "51ce59201d489ff192d44dd362bcd5ffdf79c6aedf214b88ee180e2dad235f0d",
+      "workflows/paper-writing/temp/examples/f5-acceptance-2.5/chart-deltas.svg": "6cdf38e4e37fe3dafa978f7a0762115a3dffe130daab479c038a74f73643b3e8",
+      "workflows/paper-writing/temp/examples/f5-acceptance-2.5/chart-rates.svg": "e658dec551ba5fa0fc29129118df12b5404312de698749644d684d0019ab37e4",
+      "workflows/paper-writing/temp/examples/f5-acceptance-2.5/f4-source-data.json": "4b5da191fa90049bc8c430c824f38a43df21bfe9ecf50df8f8b69fb52b0c4e71",
+      "workflows/paper-writing/temp/examples/f5-acceptance-2.5/f5-paper-input.json": "d53783e19f9879ee332b42a74cf46bddaa05c90e5a2a14f2f679806cb5833792",
+      "workflows/paper-writing/temp/examples/f5-acceptance-2.5/f5-research-materials.md": "df14f9662b9dead0ab209ab76a65cfcd9bd6fd1b1fed42d977a79f366304e8b4",
+      "workflows/paper-writing/temp/f5-performance-evidence.json": "e01f475402b18aeea4cbce59669fd6cbd24db27dd6edd11e544c9f303d4fc8fa"
+    }
+  },
+  "LazyLLM": {
+    "head": "c1c82175626eacc4b97c205b735cc28d5c82bcdb",
+    "status": " M lazyllm/docs/tools/tool_writer.py\n M lazyllm/module/llms/onlinemodule/supplier/minimax.py\n M lazyllm/tools/agent/toolsManager.py\n M lazyllm/tools/writer/data_models/__init__.py\n M lazyllm/tools/writer/data_models/context.py\n M lazyllm/tools/writer/data_models/task.py\n M lazyllm/tools/writer/tools/base.py\n M lazyllm/tools/writer/tools/context_tools.py\n M lazyllm/tools/writer/tools/drafting_tools.py\n M lazyllm/tools/writer/tools/execution_tools.py\n M lazyllm/tools/writer/tools/planning_tools.py\n M lazyllm/tools/writer/tools/quality_tools.py\n M lazyllm/tools/writer/tools/revision_tools.py\n M lazyllm/tools/writer/tools/stream_tools.py\n M lazyllm/tools/writer/workflow/naive_writer_workflow.py\n M tests/basic_tests/Tools/test_writer_speed.py\n M tests/basic_tests/Tools/test_writer_stream_tools.py\n M tests/basic_tests/Tools/test_writer_tools.py\n?? tests/basic_tests/Tools/test_writer_query_contract.py\n",
+    "patch_sha256": "25a1357f013d3b6b53bca02c7afd5f058553779462bf3eff86206daff757f928",
+    "untracked_sha256": {
+      "tests/basic_tests/Tools/test_writer_query_contract.py": "7c0f17c62eb52587c600ca61c7c214debb754eb068345609c0718f1091004681"
+    }
+  },
+  "recorded_at": "2026-10-29T11:54:34.799213+08:00",
+  "verification": {
+    "focused_writer": "68 passed",
+    "workflow": "84 passed, 1 failed: test_live_transition_compacts_only_rewindable_target (string attempt_history fixture)",
+    "stream_probe": "30ms idle timeout still blocked at 150ms until worker released",
+    "online_ab": "not measured"
+  },
+  "backup_directory": "/tmp/lazymind-prd-baseline-20261029"
+}

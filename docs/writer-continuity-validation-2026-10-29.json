@@ -1,0 +1,95 @@
+{
+  "date": "2026-10-29",
+  "scope": "同一对话内的生成、编辑、重试、恢复与下载；第3项保持不动",
+  "verified": {
+    "item_2": [
+      "连续3次真实本地HTTP流超时后连接关闭，单工作线程可继续处理任务，取消后不保存成稿",
+      "超时、取消、传输相关测试34项通过"
+    ],
+    "item_4": [
+      "算法、编辑、context、清理和恢复相关测试191项通过",
+      "artifact服务：生成→编辑→幂等重试→过期编辑冲突→恢复→继续编辑，保留3份版本",
+      "历史消息绑定固定版本；历史版本通过签名下载处理器逐字节校验，包括引用链接",
+      "真实模型编辑保留选区外内容、段落数值和旧context，新旧context均保留模型摘要"
+    ],
+    "item_5": [
+      "MiniMax-M3合成材料小规模生成与编辑验证完成；不能据此认定整体速度验收通过"
+    ]
+  },
+  "confirmed_fix": {
+    "file": "algorithm/lazyllm/lazyllm/tools/writer/tools/context_tools.py",
+    "problem": "真实MiniMax返回以think块开头的合法摘要JSON，直接json.loads失败，退化为摘录",
+    "change": "复用现有_strip_leading_think_blocks后解析JSON，保留模型摘要能力和执行时机",
+    "regression": "test_reasoning_prefix_does_not_discard_valid_summary"
+  },
+  "live_generation": {
+    "variant": "current-retained-fixed-1",
+    "model": "MiniMax-M3",
+    "sample": "synthetic three-section report, about 1200 Chinese characters",
+    "region": "cn",
+    "prompt_sha256": "cbddc1e3885d31f1e19f691618a8b6406244258f6f5980c9c40dc9128b7b1f17",
+    "prompt_chars": 2068,
+    "stream_timings": {
+      "started_at_unix_ms": 1793256172355.9111,
+      "call_started_ms": 0.099,
+      "first_response_ms": 1164.809,
+      "first_visible_ms": 49865.242,
+      "generation_finished_ms": 55061.39,
+      "first_text_ms": 1164.824,
+      "last_event_ms": 55057.146,
+      "visible_chars": 1256,
+      "text_events": 946,
+      "text_chars": 14128,
+      "think_events": 0,
+      "think_chars": 0,
+      "runtime_event_events": 2,
+      "runtime_event_chars": 0,
+      "other_events": 0,
+      "other_chars": 0,
+      "normalized_chars": 1255
+    },
+    "saved_ms": 55063.05,
+    "body_path": "/tmp/lazymind-prd-online-20261029/current-retained-fixed-1/draft_document.md",
+    "body_chars": 1256,
+    "checks": {
+      "现状": true,
+      "方案": true,
+      "评估": true,
+      "虚构": true,
+      "20": true,
+      "30": true,
+      "5": true,
+      "3": true
+    },
+    "context_update_ms": 2111.32,
+    "summary_kind": "summary",
+    "status": "completed"
+  },
+  "live_edit": {
+    "model": "MiniMax-M3",
+    "region": "cn",
+    "scope": "real algorithm calls on same document, not browser E2E",
+    "rewrite_ms": 4358.31,
+    "status": "completed",
+    "original_kind": "summary",
+    "edited_kind": "summary",
+    "original_context_unchanged": true,
+    "paragraph_numbers_preserved": true,
+    "outside_selection_unchanged": true,
+    "body_changed": true,
+    "old_chars": 1804,
+    "new_chars": 1803
+  },
+  "limitations": [
+    "分层验证，未执行浏览器内完整多轮端到端验收",
+    "服务回归使用SQLite；未覆盖部署环境数据库及网络",
+    "超时释放验证使用有限HTTP读取超时，不保证任意不响应取消的供应商立即退出",
+    "真实模型样本少且耗时波动，仍需多类型重复对照确认速度与质量",
+    "本次签名下载回归验证Markdown及引用链接，未覆盖全部导出格式和媒体下载"
+  ],
+  "logs": [
+    "/tmp/writer-continuity-final.log",
+    "/tmp/writer-transport-cancel.log",
+    "/tmp/writer-continuity-go-final.log"
+  ]
+}

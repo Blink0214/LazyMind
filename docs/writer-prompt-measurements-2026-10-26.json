@@ -1,0 +1,1392 @@
+{
+  "large": {
+    "method": "Current-code offline prompt reconstruction from real local artifacts; characters, not tokens. Includes Writer structured-output system/schema; excludes provider-injected messages and transport wrappers. No model requests. Sections and whole-document are alternative generation paths. Revision locate reuses the task text to measure input size, not revision quality. No historical latency claim. Section plans regenerated deterministically.",
+    "sources": {
+      "f5_pool": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/2cc2ee81-680d-4186-97ca-0d8420f89f73/inputs/write_document_pool.json",
+      "basic_task": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/71352544-97f6-43c0-b63f-e1b331edec42/writing_task.json",
+      "basic_context": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/d7466c01-c4fb-4d82-8e50-367a031f1974/writing_context.json",
+      "basic_outline": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/d7466c01-c4fb-4d82-8e50-367a031f1974/outline_document.md",
+      "basic_manuscript": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/3f21f02d-dcea-43e2-9b4d-db1f75ad941c/draft_document.md",
+      "output": "/tmp/writer-prompt-large-final.json",
+      "revision_dir": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/8f115522-248f-4af4-95dd-3bb3e6ffd9b4/.writer-tools/47fbc337e88b4aa88c24b254876d286e",
+      "revision_plan": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/8f115522-248f-4af4-95dd-3bb3e6ffd9b4/.writer-tools/9347591d882f43ae8bcf3de8a73a08d2/modify_plan.json",
+      "duplicate_chart_findings_baseline": false,
+      "unbound_historical_outline": true
+    },
+    "f5": {
+      "outline": {
+        "total": 132294,
+        "chars": {
+          "task": 14215,
+          "context": 111126,
+          "instructions": 0,
+          "source": 0,
+          "other": 6,
+          "template": 6947,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 10.75,
+          "context": 84.0,
+          "instructions": 0.0,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 5.25,
+          "system_schema": 0.0
+        }
+      },
+      "section_plan": {
+        "model_calls": 0,
+        "instructions": 7
+      },
+      "sections": [
+        {
+          "total": 130124,
+          "chars": {
+            "task": 12893,
+            "context": 111058,
+            "instructions": 2057,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 9.91,
+            "context": 85.35,
+            "instructions": 1.58,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 3.16,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 130392,
+          "chars": {
+            "task": 12893,
+            "context": 111058,
+            "instructions": 2325,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 9.89,
+            "context": 85.17,
+            "instructions": 1.78,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 3.15,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 130561,
+          "chars": {
+            "task": 12893,
+            "context": 111058,
+            "instructions": 2494,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 9.88,
+            "context": 85.06,
+            "instructions": 1.91,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 3.15,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 130432,
+          "chars": {
+            "task": 12893,
+            "context": 111058,
+            "instructions": 2365,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 9.88,
+            "context": 85.15,
+            "instructions": 1.81,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 3.15,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 130430,
+          "chars": {
+            "task": 12893,
+            "context": 111058,
+            "instructions": 2363,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 9.88,
+            "context": 85.15,
+            "instructions": 1.81,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 3.15,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 130562,
+          "chars": {
+            "task": 12893,
+            "context": 111058,
+            "instructions": 2495,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 9.88,
+            "context": 85.06,
+            "instructions": 1.91,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 3.15,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 130404,
+          "chars": {
+            "task": 12893,
+            "context": 111058,
+            "instructions": 2337,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 9.89,
+            "context": 85.16,
+            "instructions": 1.79,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 3.15,
+            "system_schema": 0.0
+          }
+        }
+      ],
+      "whole_document": {
+        "total": 142203,
+        "chars": {
+          "task": 12846,
+          "context": 111058,
+          "instructions": 17122,
+          "source": 0,
+          "other": 2,
+          "template": 1175,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.03,
+          "context": 78.1,
+          "instructions": 12.04,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 0.83,
+          "system_schema": 0.0
+        }
+      },
+      "quality": {
+        "total": 166769,
+        "chars": {
+          "task": 12893,
+          "context": 130108,
+          "instructions": 0,
+          "source": 17977,
+          "other": 211,
+          "template": 2492,
+          "system_schema": 3088
+        },
+        "percent": {
+          "task": 7.73,
+          "context": 78.02,
+          "instructions": 0.0,
+          "source": 10.78,
+          "other": 0.13,
+          "template": 1.49,
+          "system_schema": 1.85
+        }
+      },
+      "revision_locate": {
+        "total": 40409,
+        "chars": {
+          "task": 12894,
+          "context": 0,
+          "instructions": 0,
+          "source": 21380,
+          "other": 4,
+          "template": 3230,
+          "system_schema": 2901
+        },
+        "percent": {
+          "task": 31.91,
+          "context": 0.0,
+          "instructions": 0.0,
+          "source": 52.91,
+          "other": 0.01,
+          "template": 7.99,
+          "system_schema": 7.18
+        }
+      },
+      "material_chars_per_section": [
+        {
+          "key": "write_document:paper:SRC-001",
+          "chars": 382,
+          "locked": true
+        },
+        {
+          "key": "write_document:paper:KB-001",
+          "chars": 419,
+          "locked": true
+        },
+        {
+          "key": "write_document:reference_candidates",
+          "chars": 145,
+          "locked": false
+        },
+        {
+          "key": "write_document:evidence",
+          "chars": 322,
+          "locked": true
+        },
+        {
+          "key": "write_document:analysis",
+          "chars": 90042,
+          "locked": true
+        },
+        {
+          "key": "write_document:charts",
+          "chars": 3035,
+          "locked": false
+        },
+        {
+          "key": "write_document:outline_structure",
+          "chars": 294,
+          "locked": false
+        }
+      ]
+    },
+    "basic": {
+      "outline": {
+        "total": 8446,
+        "chars": {
+          "task": 152,
+          "context": 1341,
+          "instructions": 0,
+          "source": 0,
+          "other": 6,
+          "template": 6947,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 1.8,
+          "context": 15.88,
+          "instructions": 0.0,
+          "source": 0.0,
+          "other": 0.07,
+          "template": 82.25,
+          "system_schema": 0.0
+        }
+      },
+      "section_plan": {
+        "model_calls": 0,
+        "instructions": 3
+      },
+      "sections": [
+        {
+          "total": 6508,
+          "chars": {
+            "task": 152,
+            "context": 1341,
+            "instructions": 899,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 2.34,
+            "context": 20.61,
+            "instructions": 13.81,
+            "source": 0.09,
+            "other": 0.0,
+            "template": 63.15,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 6518,
+          "chars": {
+            "task": 152,
+            "context": 1341,
+            "instructions": 909,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 2.33,
+            "context": 20.57,
+            "instructions": 13.95,
+            "source": 0.09,
+            "other": 0.0,
+            "template": 63.06,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 6495,
+          "chars": {
+            "task": 152,
+            "context": 1341,
+            "instructions": 886,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 2.34,
+            "context": 20.65,
+            "instructions": 13.64,
+            "source": 0.09,
+            "other": 0.0,
+            "template": 63.28,
+            "system_schema": 0.0
+          }
+        }
+      ],
+      "whole_document": {
+        "total": 5546,
+        "chars": {
+          "task": 128,
+          "context": 1341,
+          "instructions": 2900,
+          "source": 0,
+          "other": 2,
+          "template": 1175,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 2.31,
+          "context": 24.18,
+          "instructions": 52.29,
+          "source": 0.0,
+          "other": 0.04,
+          "template": 21.19,
+          "system_schema": 0.0
+        }
+      },
+      "quality": {
+        "total": 8314,
+        "chars": {
+          "task": 152,
+          "context": 1341,
+          "instructions": 0,
+          "source": 1116,
+          "other": 125,
+          "template": 2492,
+          "system_schema": 3088
+        },
+        "percent": {
+          "task": 1.83,
+          "context": 16.13,
+          "instructions": 0.0,
+          "source": 13.42,
+          "other": 1.5,
+          "template": 29.97,
+          "system_schema": 37.14
+        }
+      },
+      "revision_locate": {
+        "total": 7943,
+        "chars": {
+          "task": 153,
+          "context": 0,
+          "instructions": 0,
+          "source": 1655,
+          "other": 4,
+          "template": 3230,
+          "system_schema": 2901
+        },
+        "percent": {
+          "task": 1.93,
+          "context": 0.0,
+          "instructions": 0.0,
+          "source": 20.84,
+          "other": 0.05,
+          "template": 40.66,
+          "system_schema": 36.52
+        }
+      },
+      "material_chars_per_section": []
+    },
+    "saved_revision": {
+      "locate": {
+        "total": 23026,
+        "chars": {
+          "task": 14764,
+          "context": 0,
+          "instructions": 0,
+          "source": 2127,
+          "other": 4,
+          "template": 3230,
+          "system_schema": 2901
+        },
+        "percent": {
+          "task": 64.12,
+          "context": 0.0,
+          "instructions": 0.0,
+          "source": 9.24,
+          "other": 0.02,
+          "template": 14.03,
+          "system_schema": 12.6
+        }
+      },
+      "plan": {
+        "total": 53900,
+        "chars": {
+          "task": 14764,
+          "context": 17563,
+          "instructions": 0,
+          "source": 1604,
+          "other": 593,
+          "template": 11722,
+          "system_schema": 7654
+        },
+        "percent": {
+          "task": 27.39,
+          "context": 32.58,
+          "instructions": 0.0,
+          "source": 2.98,
+          "other": 1.1,
+          "template": 21.75,
+          "system_schema": 14.2
+        }
+      },
+      "content": {
+        "total": 44955,
+        "chars": {
+          "task": 14764,
+          "context": 17563,
+          "instructions": 1326,
+          "source": 1604,
+          "other": 157,
+          "template": 6490,
+          "system_schema": 3051
+        },
+        "percent": {
+          "task": 32.84,
+          "context": 39.07,
+          "instructions": 2.95,
+          "source": 3.57,
+          "other": 0.35,
+          "template": 14.44,
+          "system_schema": 6.79
+        }
+      }
+    }
+  },
+  "large_duplicate_findings_baseline": {
+    "method": "Current-code offline prompt reconstruction from real local artifacts; characters, not tokens. Includes Writer structured-output system/schema; excludes provider-injected messages and transport wrappers. No model requests. Sections and whole-document are alternative generation paths. Revision locate reuses the task text to measure input size, not revision quality. No historical latency claim. Section plans regenerated deterministically.",
+    "sources": {
+      "f5_pool": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/2cc2ee81-680d-4186-97ca-0d8420f89f73/inputs/write_document_pool.json",
+      "basic_task": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/71352544-97f6-43c0-b63f-e1b331edec42/writing_task.json",
+      "basic_context": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/d7466c01-c4fb-4d82-8e50-367a031f1974/writing_context.json",
+      "basic_outline": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/d7466c01-c4fb-4d82-8e50-367a031f1974/outline_document.md",
+      "basic_manuscript": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/3f21f02d-dcea-43e2-9b4d-db1f75ad941c/draft_document.md",
+      "output": "/tmp/writer-prompt-large_duplicate_findings_baseline-final.json",
+      "revision_dir": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/8f115522-248f-4af4-95dd-3bb3e6ffd9b4/.writer-tools/47fbc337e88b4aa88c24b254876d286e",
+      "revision_plan": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/8f115522-248f-4af4-95dd-3bb3e6ffd9b4/.writer-tools/9347591d882f43ae8bcf3de8a73a08d2/modify_plan.json",
+      "duplicate_chart_findings_baseline": true,
+      "unbound_historical_outline": true
+    },
+    "f5": {
+      "outline": {
+        "total": 196149,
+        "chars": {
+          "task": 14215,
+          "context": 174981,
+          "instructions": 0,
+          "source": 0,
+          "other": 6,
+          "template": 6947,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 7.25,
+          "context": 89.21,
+          "instructions": 0.0,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.54,
+          "system_schema": 0.0
+        }
+      },
+      "section_plan": {
+        "model_calls": 0,
+        "instructions": 7
+      },
+      "sections": [
+        {
+          "total": 193979,
+          "chars": {
+            "task": 12893,
+            "context": 174913,
+            "instructions": 2057,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 6.65,
+            "context": 90.17,
+            "instructions": 1.06,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 2.12,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 194247,
+          "chars": {
+            "task": 12893,
+            "context": 174913,
+            "instructions": 2325,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 6.64,
+            "context": 90.05,
+            "instructions": 1.2,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 2.12,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 194416,
+          "chars": {
+            "task": 12893,
+            "context": 174913,
+            "instructions": 2494,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 6.63,
+            "context": 89.97,
+            "instructions": 1.28,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 2.11,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 194287,
+          "chars": {
+            "task": 12893,
+            "context": 174913,
+            "instructions": 2365,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 6.64,
+            "context": 90.03,
+            "instructions": 1.22,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 2.12,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 194285,
+          "chars": {
+            "task": 12893,
+            "context": 174913,
+            "instructions": 2363,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 6.64,
+            "context": 90.03,
+            "instructions": 1.22,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 2.12,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 194417,
+          "chars": {
+            "task": 12893,
+            "context": 174913,
+            "instructions": 2495,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 6.63,
+            "context": 89.97,
+            "instructions": 1.28,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 2.11,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 194259,
+          "chars": {
+            "task": 12893,
+            "context": 174913,
+            "instructions": 2337,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 6.64,
+            "context": 90.04,
+            "instructions": 1.2,
+            "source": 0.0,
+            "other": 0.0,
+            "template": 2.12,
+            "system_schema": 0.0
+          }
+        }
+      ],
+      "whole_document": {
+        "total": 206058,
+        "chars": {
+          "task": 12846,
+          "context": 174913,
+          "instructions": 17122,
+          "source": 0,
+          "other": 2,
+          "template": 1175,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 6.23,
+          "context": 84.89,
+          "instructions": 8.31,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 0.57,
+          "system_schema": 0.0
+        }
+      },
+      "quality": {
+        "total": 230624,
+        "chars": {
+          "task": 12893,
+          "context": 193963,
+          "instructions": 0,
+          "source": 17977,
+          "other": 211,
+          "template": 2492,
+          "system_schema": 3088
+        },
+        "percent": {
+          "task": 5.59,
+          "context": 84.1,
+          "instructions": 0.0,
+          "source": 7.79,
+          "other": 0.09,
+          "template": 1.08,
+          "system_schema": 1.34
+        }
+      },
+      "revision_locate": {
+        "total": 40409,
+        "chars": {
+          "task": 12894,
+          "context": 0,
+          "instructions": 0,
+          "source": 21380,
+          "other": 4,
+          "template": 3230,
+          "system_schema": 2901
+        },
+        "percent": {
+          "task": 31.91,
+          "context": 0.0,
+          "instructions": 0.0,
+          "source": 52.91,
+          "other": 0.01,
+          "template": 7.99,
+          "system_schema": 7.18
+        }
+      },
+      "material_chars_per_section": [
+        {
+          "key": "write_document:paper:SRC-001",
+          "chars": 382,
+          "locked": true
+        },
+        {
+          "key": "write_document:paper:KB-001",
+          "chars": 419,
+          "locked": true
+        },
+        {
+          "key": "write_document:reference_candidates",
+          "chars": 145,
+          "locked": false
+        },
+        {
+          "key": "write_document:evidence",
+          "chars": 322,
+          "locked": true
+        },
+        {
+          "key": "write_document:analysis",
+          "chars": 90042,
+          "locked": true
+        },
+        {
+          "key": "write_document:charts",
+          "chars": 56946,
+          "locked": false
+        },
+        {
+          "key": "write_document:outline_structure",
+          "chars": 294,
+          "locked": false
+        }
+      ]
+    },
+    "basic": {
+      "outline": {
+        "total": 8446,
+        "chars": {
+          "task": 152,
+          "context": 1341,
+          "instructions": 0,
+          "source": 0,
+          "other": 6,
+          "template": 6947,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 1.8,
+          "context": 15.88,
+          "instructions": 0.0,
+          "source": 0.0,
+          "other": 0.07,
+          "template": 82.25,
+          "system_schema": 0.0
+        }
+      },
+      "section_plan": {
+        "model_calls": 0,
+        "instructions": 3
+      },
+      "sections": [
+        {
+          "total": 6508,
+          "chars": {
+            "task": 152,
+            "context": 1341,
+            "instructions": 899,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 2.34,
+            "context": 20.61,
+            "instructions": 13.81,
+            "source": 0.09,
+            "other": 0.0,
+            "template": 63.15,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 6518,
+          "chars": {
+            "task": 152,
+            "context": 1341,
+            "instructions": 909,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 2.33,
+            "context": 20.57,
+            "instructions": 13.95,
+            "source": 0.09,
+            "other": 0.0,
+            "template": 63.06,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 6495,
+          "chars": {
+            "task": 152,
+            "context": 1341,
+            "instructions": 886,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 2.34,
+            "context": 20.65,
+            "instructions": 13.64,
+            "source": 0.09,
+            "other": 0.0,
+            "template": 63.28,
+            "system_schema": 0.0
+          }
+        }
+      ],
+      "whole_document": {
+        "total": 5546,
+        "chars": {
+          "task": 128,
+          "context": 1341,
+          "instructions": 2900,
+          "source": 0,
+          "other": 2,
+          "template": 1175,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 2.31,
+          "context": 24.18,
+          "instructions": 52.29,
+          "source": 0.0,
+          "other": 0.04,
+          "template": 21.19,
+          "system_schema": 0.0
+        }
+      },
+      "quality": {
+        "total": 8314,
+        "chars": {
+          "task": 152,
+          "context": 1341,
+          "instructions": 0,
+          "source": 1116,
+          "other": 125,
+          "template": 2492,
+          "system_schema": 3088
+        },
+        "percent": {
+          "task": 1.83,
+          "context": 16.13,
+          "instructions": 0.0,
+          "source": 13.42,
+          "other": 1.5,
+          "template": 29.97,
+          "system_schema": 37.14
+        }
+      },
+      "revision_locate": {
+        "total": 7943,
+        "chars": {
+          "task": 153,
+          "context": 0,
+          "instructions": 0,
+          "source": 1655,
+          "other": 4,
+          "template": 3230,
+          "system_schema": 2901
+        },
+        "percent": {
+          "task": 1.93,
+          "context": 0.0,
+          "instructions": 0.0,
+          "source": 20.84,
+          "other": 0.05,
+          "template": 40.66,
+          "system_schema": 36.52
+        }
+      },
+      "material_chars_per_section": []
+    },
+    "saved_revision": {
+      "locate": {
+        "total": 23026,
+        "chars": {
+          "task": 14764,
+          "context": 0,
+          "instructions": 0,
+          "source": 2127,
+          "other": 4,
+          "template": 3230,
+          "system_schema": 2901
+        },
+        "percent": {
+          "task": 64.12,
+          "context": 0.0,
+          "instructions": 0.0,
+          "source": 9.24,
+          "other": 0.02,
+          "template": 14.03,
+          "system_schema": 12.6
+        }
+      },
+      "plan": {
+        "total": 53900,
+        "chars": {
+          "task": 14764,
+          "context": 17563,
+          "instructions": 0,
+          "source": 1604,
+          "other": 593,
+          "template": 11722,
+          "system_schema": 7654
+        },
+        "percent": {
+          "task": 27.39,
+          "context": 32.58,
+          "instructions": 0.0,
+          "source": 2.98,
+          "other": 1.1,
+          "template": 21.75,
+          "system_schema": 14.2
+        }
+      },
+      "content": {
+        "total": 44955,
+        "chars": {
+          "task": 14764,
+          "context": 17563,
+          "instructions": 1326,
+          "source": 1604,
+          "other": 157,
+          "template": 6490,
+          "system_schema": 3051
+        },
+        "percent": {
+          "task": 32.84,
+          "context": 39.07,
+          "instructions": 2.95,
+          "source": 3.57,
+          "other": 0.35,
+          "template": 14.44,
+          "system_schema": 6.79
+        }
+      }
+    }
+  },
+  "small": {
+    "method": "Current-code offline prompt reconstruction from real local artifacts; characters, not tokens. Includes Writer structured-output system/schema; excludes provider-injected messages and transport wrappers. No model requests. Sections and whole-document are alternative generation paths. Revision locate reuses the task text to measure input size, not revision quality. No historical latency claim. Section plans regenerated deterministically.",
+    "sources": {
+      "f5_pool": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/8f115522-248f-4af4-95dd-3bb3e6ffd9b4/inputs/write_document_pool.json",
+      "basic_task": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/71352544-97f6-43c0-b63f-e1b331edec42/writing_task.json",
+      "basic_context": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/d7466c01-c4fb-4d82-8e50-367a031f1974/writing_context.json",
+      "basic_outline": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/d7466c01-c4fb-4d82-8e50-367a031f1974/outline_document.md",
+      "basic_manuscript": "data/subagent/12c089c6-b522-4972-8b9b-e58d6a5370f2/3f21f02d-dcea-43e2-9b4d-db1f75ad941c/draft_document.md",
+      "output": "/tmp/writer-prompt-small-final.json",
+      "revision_dir": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/8f115522-248f-4af4-95dd-3bb3e6ffd9b4/.writer-tools/47fbc337e88b4aa88c24b254876d286e",
+      "revision_plan": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/8f115522-248f-4af4-95dd-3bb3e6ffd9b4/.writer-tools/9347591d882f43ae8bcf3de8a73a08d2/modify_plan.json",
+      "duplicate_chart_findings_baseline": false,
+      "unbound_historical_outline": false
+    },
+    "f5": {
+      "outline": {
+        "total": 23362,
+        "chars": {
+          "task": 14127,
+          "context": 2282,
+          "instructions": 0,
+          "source": 0,
+          "other": 6,
+          "template": 6947,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 60.47,
+          "context": 9.77,
+          "instructions": 0.0,
+          "source": 0.0,
+          "other": 0.03,
+          "template": 29.74,
+          "system_schema": 0.0
+        }
+      },
+      "section_plan": {
+        "model_calls": 0,
+        "instructions": 1
+      },
+      "sections": [
+        {
+          "total": 21678,
+          "chars": {
+            "task": 12805,
+            "context": 1358,
+            "instructions": 3399,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 59.07,
+            "context": 6.26,
+            "instructions": 15.68,
+            "source": 0.03,
+            "other": 0.0,
+            "template": 18.96,
+            "system_schema": 0.0
+          }
+        }
+      ],
+      "whole_document": {
+        "total": 18830,
+        "chars": {
+          "task": 12758,
+          "context": 1358,
+          "instructions": 3537,
+          "source": 0,
+          "other": 2,
+          "template": 1175,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 67.75,
+          "context": 7.21,
+          "instructions": 18.78,
+          "source": 0.0,
+          "other": 0.01,
+          "template": 6.24,
+          "system_schema": 0.0
+        }
+      },
+      "quality": {
+        "total": 24261,
+        "chars": {
+          "task": 12805,
+          "context": 4143,
+          "instructions": 0,
+          "source": 1604,
+          "other": 129,
+          "template": 2492,
+          "system_schema": 3088
+        },
+        "percent": {
+          "task": 52.78,
+          "context": 17.08,
+          "instructions": 0.0,
+          "source": 6.61,
+          "other": 0.53,
+          "template": 10.27,
+          "system_schema": 12.73
+        }
+      },
+      "revision_locate": {
+        "total": 21068,
+        "chars": {
+          "task": 12806,
+          "context": 0,
+          "instructions": 0,
+          "source": 2127,
+          "other": 4,
+          "template": 3230,
+          "system_schema": 2901
+        },
+        "percent": {
+          "task": 60.78,
+          "context": 0.0,
+          "instructions": 0.0,
+          "source": 10.1,
+          "other": 0.02,
+          "template": 15.33,
+          "system_schema": 13.77
+        }
+      },
+      "material_chars_per_section": [
+        {
+          "key": "write_document:writing_materials",
+          "chars": 352,
+          "locked": false
+        },
+        {
+          "key": "write_document:charts",
+          "chars": 381,
+          "locked": false
+        },
+        {
+          "key": "write_document:outline_structure",
+          "chars": 62,
+          "locked": false
+        }
+      ]
+    },
+    "basic": {
+      "outline": {
+        "total": 8446,
+        "chars": {
+          "task": 152,
+          "context": 1341,
+          "instructions": 0,
+          "source": 0,
+          "other": 6,
+          "template": 6947,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 1.8,
+          "context": 15.88,
+          "instructions": 0.0,
+          "source": 0.0,
+          "other": 0.07,
+          "template": 82.25,
+          "system_schema": 0.0
+        }
+      },
+      "section_plan": {
+        "model_calls": 0,
+        "instructions": 3
+      },
+      "sections": [
+        {
+          "total": 6508,
+          "chars": {
+            "task": 152,
+            "context": 1341,
+            "instructions": 899,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 2.34,
+            "context": 20.61,
+            "instructions": 13.81,
+            "source": 0.09,
+            "other": 0.0,
+            "template": 63.15,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 6518,
+          "chars": {
+            "task": 152,
+            "context": 1341,
+            "instructions": 909,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 2.33,
+            "context": 20.57,
+            "instructions": 13.95,
+            "source": 0.09,
+            "other": 0.0,
+            "template": 63.06,
+            "system_schema": 0.0
+          }
+        },
+        {
+          "total": 6495,
+          "chars": {
+            "task": 152,
+            "context": 1341,
+            "instructions": 886,
+            "source": 6,
+            "other": 0,
+            "template": 4110,
+            "system_schema": 0
+          },
+          "percent": {
+            "task": 2.34,
+            "context": 20.65,
+            "instructions": 13.64,
+            "source": 0.09,
+            "other": 0.0,
+            "template": 63.28,
+            "system_schema": 0.0
+          }
+        }
+      ],
+      "whole_document": {
+        "total": 5546,
+        "chars": {
+          "task": 128,
+          "context": 1341,
+          "instructions": 2900,
+          "source": 0,
+          "other": 2,
+          "template": 1175,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 2.31,
+          "context": 24.18,
+          "instructions": 52.29,
+          "source": 0.0,
+          "other": 0.04,
+          "template": 21.19,
+          "system_schema": 0.0
+        }
+      },
+      "quality": {
+        "total": 8314,
+        "chars": {
+          "task": 152,
+          "context": 1341,
+          "instructions": 0,
+          "source": 1116,
+          "other": 125,
+          "template": 2492,
+          "system_schema": 3088
+        },
+        "percent": {
+          "task": 1.83,
+          "context": 16.13,
+          "instructions": 0.0,
+          "source": 13.42,
+          "other": 1.5,
+          "template": 29.97,
+          "system_schema": 37.14
+        }
+      },
+      "revision_locate": {
+        "total": 7943,
+        "chars": {
+          "task": 153,
+          "context": 0,
+          "instructions": 0,
+          "source": 1655,
+          "other": 4,
+          "template": 3230,
+          "system_schema": 2901
+        },
+        "percent": {
+          "task": 1.93,
+          "context": 0.0,
+          "instructions": 0.0,
+          "source": 20.84,
+          "other": 0.05,
+          "template": 40.66,
+          "system_schema": 36.52
+        }
+      },
+      "material_chars_per_section": []
+    },
+    "saved_revision": {
+      "locate": {
+        "total": 23026,
+        "chars": {
+          "task": 14764,
+          "context": 0,
+          "instructions": 0,
+          "source": 2127,
+          "other": 4,
+          "template": 3230,
+          "system_schema": 2901
+        },
+        "percent": {
+          "task": 64.12,
+          "context": 0.0,
+          "instructions": 0.0,
+          "source": 9.24,
+          "other": 0.02,
+          "template": 14.03,
+          "system_schema": 12.6
+        }
+      },
+      "plan": {
+        "total": 53900,
+        "chars": {
+          "task": 14764,
+          "context": 17563,
+          "instructions": 0,
+          "source": 1604,
+          "other": 593,
+          "template": 11722,
+          "system_schema": 7654
+        },
+        "percent": {
+          "task": 27.39,
+          "context": 32.58,
+          "instructions": 0.0,
+          "source": 2.98,
+          "other": 1.1,
+          "template": 21.75,
+          "system_schema": 14.2
+        }
+      },
+      "content": {
+        "total": 44955,
+        "chars": {
+          "task": 14764,
+          "context": 17563,
+          "instructions": 1326,
+          "source": 1604,
+          "other": 157,
+          "template": 6490,
+          "system_schema": 3051
+        },
+        "percent": {
+          "task": 32.84,
+          "context": 39.07,
+          "instructions": 2.95,
+          "source": 3.57,
+          "other": 0.35,
+          "template": 14.44,
+          "system_schema": 6.79
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,266 @@
+{
+  "baseline": "writer-prd-baseline-2026-10-29.json",
+  "date": "2026-10-29",
+  "items": [
+    {
+      "id": 1,
+      "name": "摘要等后处理不阻塞正文",
+      "status": "默认摘录替换已撤回，保留原模型摘要行为",
+      "implemented": [
+        "恢复 NaiveWriterWorkflow 将 llm 传给上下文工具；保留显式 context_tools 覆盖",
+        "LazyMind 原有 llm=None 入口未改变"
+      ],
+      "verification": "新增回归：原文 240 字符之后的关键结论通过模型摘要进入正文起草提示词；同文摘录及块摘录均无法保留该结论",
+      "remaining": "按实际消费者划分必需摘要与可延后摘要；最终交付不应等待仅供后续操作的摘要，尚未调整此执行边界"
+    },
+    {
+      "id": 2,
+      "name": "流式超时和结束及时退出",
+      "implemented": [
+        "取消后不再无期限等待 future",
+        "复用 ModelCallControl，将取消传给显式支持该参数的模型",
+        "取消后阻止迟到回调和最终落盘"
+      ],
+      "verification": "超时、提前关闭、不协作调用及协作调用回归通过",
+      "remaining": "正在阻塞的底层网络读或不协作自定义模型不能由 Python future 强制终止，仍受后端超时约束"
+    },
+    {
+      "id": 3,
+      "name": "正文交付与 PPT 共用结束机制",
+      "implemented": [
+        "复用现有 _agent_control.stop；未新建结束机制"
+      ],
+      "verification": "工作流选择、PPT 发布契约和持久化测试通过",
+      "remaining": "未运行前端端到端状态、实际编辑和下载联调"
+    },
+    {
+      "id": 4,
+      "name": "新会话参数与临时产物清理",
+      "implemented": [
+        "删除 WritingContext.query、relation_graph、BlockRelationGraph 及导出",
+        "删除旧 context.query 的任务要求回退；当前要求由 task 提供",
+        "整篇提示词构建避免重复序列化",
+        "内联 context 交接成功后清理调用目录，失败保留"
+      ],
+      "verification": "删除专门的历史兼容测试；保留新会话事实、素材来源、临时清理和摘要更新等价性验证",
+      "remaining": "新会话内的编辑、恢复和下载端到端验收尚未完成"
+    },
+    {
+      "id": 5,
+      "name": "真实速度与质量验证",
+      "implemented": [
+        "同一提示词和配置的 MiniMax-M3 中国区基线与当前各运行一次",
+        "补充离线参数构建及受控超时对照"
+      ],
+      "verification": "两份正文均包含三章节、虚构声明、预算上限及未达成目标说明；正文长度不同，不能判定质量全面无回归",
+      "remaining": "单样本不代表稳定性能收益；缺少多场景重复测量、token 统计及产品端到端耗时"
+    }
+  ],
+  "tests": {
+    "result": "517 passed, 1 warning",
+    "log": "/tmp/lazymind-prd-validation-tests.log",
+    "syntax": "modified tracked Python AST parsed",
+    "diff_check": "both repositories passed",
+    "docs": "changed writer API documentation registered in Chinese and English",
+    "lint": "flake8 and ruff not installed; full lint/CI not run"
+  },
+  "online": {
+    "baseline": {
+      "variant": "baseline",
+      "model": "MiniMax-M3",
+      "sample": "synthetic three-section report, about 1200 Chinese characters",
+      "region": "cn",
+      "prompt_sha256": "cbddc1e3885d31f1e19f691618a8b6406244258f6f5980c9c40dc9128b7b1f17",
+      "prompt_chars": 2068,
+      "stream_timings": {
+        "started_at_unix_ms": 1793246504723.725,
+        "call_started_ms": 0.107,
+        "first_response_ms": 639.691,
+        "first_visible_ms": 54175.717,
+        "generation_finished_ms": 67966.806,
+        "first_text_ms": 639.705,
+        "last_event_ms": 67960.27,
+        "visible_chars": 1187,
+        "text_events": 908,
+        "text_chars": 13263,
+        "think_events": 0,
+        "think_chars": 0,
+        "runtime_event_events": 2,
+        "runtime_event_chars": 0,
+        "other_events": 0,
+        "other_chars": 0,
+        "normalized_chars": 1186
+      },
+      "saved_ms": 68073.5,
+      "body_path": "/tmp/lazymind-prd-online-20261029/baseline/draft_document.md",
+      "body_chars": 1187,
+      "checks": {
+        "现状": true,
+        "方案": true,
+        "评估": true,
+        "虚构": true,
+        "20": true,
+        "30": true,
+        "5": true,
+        "3": true
+      },
+      "context_update_ms": 8719.55,
+      "summary_kind": "summary",
+      "status": "completed",
+      "body_sha256": "1dee135fd5ab0ede6f880c10c7fcf9de4c164ebf1be021b60b69a7f639e12671"
+    },
+    "current": {
+      "variant": "current",
+      "model": "MiniMax-M3",
+      "sample": "synthetic three-section report, about 1200 Chinese characters",
+      "region": "cn",
+      "prompt_sha256": "cbddc1e3885d31f1e19f691618a8b6406244258f6f5980c9c40dc9128b7b1f17",
+      "prompt_chars": 2068,
+      "stream_timings": {
+        "started_at_unix_ms": 1793246607134.1838,
+        "call_started_ms": 0.099,
+        "first_response_ms": 2221.664,
+        "first_visible_ms": 36242.229,
+        "generation_finished_ms": 52044.205,
+        "first_text_ms": 2221.683,
+        "last_event_ms": 52040.96,
+        "visible_chars": 1618,
+        "text_events": 279,
+        "text_chars": 9517,
+        "think_events": 0,
+        "think_chars": 0,
+        "runtime_event_events": 2,
+        "runtime_event_chars": 0,
+        "other_events": 0,
+        "other_chars": 0,
+        "normalized_chars": 1617
+      },
+      "saved_ms": 52046.76,
+      "body_path": "/tmp/lazymind-prd-online-20261029/current/draft_document.md",
+      "body_chars": 1618,
+      "checks": {
+        "现状": true,
+        "方案": true,
+        "评估": true,
+        "虚构": true,
+        "20": true,
+        "30": true,
+        "5": true,
+        "3": true
+      },
+      "context_update_ms": 2.63,
+      "summary_kind": "excerpt",
+      "status": "completed",
+      "body_sha256": "6b5727f8a6b64c75351387a3224f17613ecdd1ecfb14503bfefd3208307318ae"
+    }
+  },
+  "cpu": {
+    "baseline": {
+      "variant": "baseline",
+      "kind": "offline prompt construction only; no model latency",
+      "chapters": 30,
+      "facts": 100,
+      "material_chars": 190000,
+      "repeats": 10,
+      "median_ms": 14.296062523499131,
+      "min_ms": 13.591666705906391,
+      "max_ms": 15.098208095878363,
+      "prompt_hashes": [
+        "bd3009999b6dd5de7f09ae73cc14d7a720408dae851545c9f74eca76ba4c6d1d"
+      ]
+    },
+    "current": {
+      "variant": "current",
+      "kind": "offline prompt construction only; no model latency",
+      "chapters": 30,
+      "facts": 100,
+      "material_chars": 190000,
+      "repeats": 10,
+      "median_ms": 0.5943328142166138,
+      "min_ms": 0.5777091719210148,
+      "max_ms": 0.6761667318642139,
+      "prompt_hashes": [
+        "bd3009999b6dd5de7f09ae73cc14d7a720408dae851545c9f74eca76ba4c6d1d"
+      ]
+    }
+  },
+  "timeout": {
+    "baseline": {
+      "variant": "baseline",
+      "idle_timeout_ms": 30,
+      "simulated_worker_release_ms": 150,
+      "returned_ms": 151.61254117265344,
+      "exception": "TimeoutError"
+    },
+    "current": {
+      "variant": "current",
+      "idle_timeout_ms": 30,
+      "simulated_worker_release_ms": 150,
+      "returned_ms": 48.95045794546604,
+      "exception": "TimeoutError"
+    }
+  },
+  "interpretation": "Real-model single-run time differences include model/network variation and differing output lengths. No broad PRD performance or quality acceptance claimed.",
+  "reproduction_scripts": [
+    "/tmp/lazymind-prd-baseline-20261029/writer_prd_online_probe.py",
+    "/tmp/lazymind-prd-baseline-20261029/writer_prd_cpu_probe.py",
+    "/tmp/lazymind-prd-baseline-20261029/writer_prd_timeout_probe.py"
+  ],
+  "online_measurement_scope": "下列 current 为撤回默认摘录替换前的实验版本。其 2.63ms 摘录耗时不代表当前代码，8.7s→3ms 不再作为已落地收益。原始测量保留用于追溯。",
+  "summary_dependency_audit": {
+    "consumers": [
+      "大纲及部分规划",
+      "正文/章节起草",
+      "写作子任务",
+      "章节及全文审阅",
+      "部分修订生成"
+    ],
+    "non_consumers": [
+      "确定性草稿组装",
+      "最终文档渲染/落盘",
+      "修订补丁审阅的精简 context（仅锁定事实与风格）"
+    ],
+    "limits": [
+      "模型摘要只输入前3000字符，并非全文覆盖保证",
+      "无模型摘录及 block_summaries 均会截断，不能保证关键事实完整",
+      "有些调用同时传入完整正文，但不能据此推断所有消费者都有完整原文"
+    ],
+    "verification": "26 focused tests passed after reverting default excerpt replacement"
+  },
+  "context_update_field_audit": {
+    "updated": {
+      "document_summary.summary": "每个输入重算；进入 context 提示词，保留",
+      "document_summary.structure_summary": "Markdown/WriterDocument 重算；WriterBlock 更新保留已有结构，保留",
+      "document_summary.key_points": "已有的新会话要点保持；仅首次创建 summary 时置空",
+      "block_summaries": "每个输入整体替换；含 content_ref、截断摘要、空 key_points；进入 context 提示词，保留",
+      "meta.document_summary_kind": "按配置写 summary/excerpt；进入提示词。模型失败回退时仍标 summary 为已有局限",
+      "meta.source": "更新为 update_writing_context；诊断/存储用途，不进入模型提示词",
+      "artifact envelope": "保存 writing_context.json，刷新 created_at/created_by/last_updated_from；ToolResult 含路径、计数和状态"
+    },
+    "preserved": [
+      "context_id",
+      "doc_id",
+      "facts（含来源和作用范围）",
+      "style_profile",
+      "其他 meta"
+    ],
+    "edge_cases": [
+      "artifacts=None 只重新保存，不更改 context 内容",
+      "artifacts=[] 只改变 meta.source 并保存",
+      "多输入顺序更新，最后 WriterBlock 可保留更早文档的结构，不能简单只取最后输入"
+    ],
+    "implemented": "仅移除 NaiveWriterWorkflow.write 在章节审阅之后、全文组装之前的 context 更新；在组装后保留完整 context 更新。默认工具合同下，组装仅读取不变的 context_id/doc_id，中间更新无消费者。",
+    "kept": [
+      "大纲后的更新，供起草及章节审阅使用",
+      "全文后的更新，供全文审阅及后续操作使用",
+      "修订后的更新，供返回 context 及后续操作使用"
+    ],
+    "parallel_candidates": [
+      "大纲更新与确定性章节指令生成：起草前汇合",
+      "修订后 context 更新与最终渲染：需独立快照、版本化文件及正文可用通知"
+    ],
+    "parallel_not_implemented": "目前同名 context 文件可被覆盖，返回接口也等待所有 stage_results；直接增加线程不足以安全实现提前交付。",
+    "verification": "Markdown/IR 对照保留新会话完整 context、最终正文、审阅提示词和最后一次摘要模型输入；不再验证旧数据兼容。"
+  },
+  "scope": "仅考虑后续新会话；不提供旧 WritingContext 数据兼容。基线及早期测量作为历史记录保留。"
+}

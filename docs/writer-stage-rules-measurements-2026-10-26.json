@@ -1,0 +1,1236 @@
+{
+  "sources": {
+    "pool": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/2cc2ee81-680d-4186-97ca-0d8420f89f73/inputs/write_document_pool.json",
+    "outline": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/ecf3794d-1585-4f0c-8f5a-7ad650721224/.writer-tools/fc2d67aa3a8a4ec0882ce374a832e1cc/outline.md",
+    "outline_context": "data/subagent/de99c0e2-33cd-4aca-b1d7-2f65a0bc85f9/ecf3794d-1585-4f0c-8f5a-7ad650721224/.writer-tools/fc2d67aa3a8a4ec0882ce374a832e1cc/writing_context.json",
+    "baseline_rules": "docs/writer-stage-rules-baseline-2026-10-26.json",
+    "output": "docs/writer-stage-rules-measurements-2026-10-26.json"
+  },
+  "method": "Offline Writer prompts including structured-output schema; characters, not tokens or latency. Confirmed outline and pool analysis compared exactly; chart IDs validated. Selection candidates are an UNSAFE placement-only upper bound, never used in production. All unlinked findings and all other analysis fields/materials remain unchanged. Figures may be cited across chapters, so ownership does not prove omission is safe.",
+  "stage_rules_before": {
+    "outline": {
+      "total": 140127,
+      "chars": {
+        "task": 14215,
+        "context": 118959,
+        "instructions": 0,
+        "source": 0,
+        "other": 6,
+        "template": 6947,
+        "system_schema": 0
+      },
+      "percent": {
+        "task": 10.14,
+        "context": 84.89,
+        "instructions": 0.0,
+        "source": 0.0,
+        "other": 0.0,
+        "template": 4.96,
+        "system_schema": 0.0
+      }
+    },
+    "section_plan": {
+      "model_calls": 0,
+      "instructions": 7
+    },
+    "sections": [
+      {
+        "total": 132990,
+        "chars": {
+          "task": 12893,
+          "context": 111058,
+          "instructions": 4923,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.69,
+          "context": 83.51,
+          "instructions": 3.7,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.09,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133385,
+        "chars": {
+          "task": 12893,
+          "context": 111058,
+          "instructions": 5318,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.67,
+          "context": 83.26,
+          "instructions": 3.99,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133719,
+        "chars": {
+          "task": 12893,
+          "context": 111058,
+          "instructions": 5652,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.64,
+          "context": 83.05,
+          "instructions": 4.23,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.07,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133769,
+        "chars": {
+          "task": 12893,
+          "context": 111058,
+          "instructions": 5702,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.64,
+          "context": 83.02,
+          "instructions": 4.26,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.07,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133656,
+        "chars": {
+          "task": 12893,
+          "context": 111058,
+          "instructions": 5589,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.65,
+          "context": 83.09,
+          "instructions": 4.18,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133767,
+        "chars": {
+          "task": 12893,
+          "context": 111058,
+          "instructions": 5700,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.64,
+          "context": 83.02,
+          "instructions": 4.26,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.07,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133464,
+        "chars": {
+          "task": 12893,
+          "context": 111058,
+          "instructions": 5397,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.66,
+          "context": 83.21,
+          "instructions": 4.04,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      }
+    ],
+    "whole_document": {
+      "total": 164644,
+      "chars": {
+        "task": 12846,
+        "context": 111058,
+        "instructions": 39563,
+        "source": 0,
+        "other": 2,
+        "template": 1175,
+        "system_schema": 0
+      },
+      "percent": {
+        "task": 7.8,
+        "context": 67.45,
+        "instructions": 24.03,
+        "source": 0.0,
+        "other": 0.0,
+        "template": 0.71,
+        "system_schema": 0.0
+      }
+    },
+    "quality": {
+      "total": 174602,
+      "chars": {
+        "task": 12893,
+        "context": 137941,
+        "instructions": 0,
+        "source": 17977,
+        "other": 211,
+        "template": 2492,
+        "system_schema": 3088
+      },
+      "percent": {
+        "task": 7.38,
+        "context": 79.0,
+        "instructions": 0.0,
+        "source": 10.3,
+        "other": 0.12,
+        "template": 1.43,
+        "system_schema": 1.77
+      }
+    },
+    "revision_locate": {
+      "total": 40409,
+      "chars": {
+        "task": 12894,
+        "context": 0,
+        "instructions": 0,
+        "source": 21380,
+        "other": 4,
+        "template": 3230,
+        "system_schema": 2901
+      },
+      "percent": {
+        "task": 31.91,
+        "context": 0.0,
+        "instructions": 0.0,
+        "source": 52.91,
+        "other": 0.01,
+        "template": 7.99,
+        "system_schema": 7.18
+      }
+    },
+    "material_chars_per_section": [
+      {
+        "key": "write_document:paper:SRC-001",
+        "chars": 382,
+        "locked": true
+      },
+      {
+        "key": "write_document:paper:KB-001",
+        "chars": 419,
+        "locked": true
+      },
+      {
+        "key": "write_document:reference_candidates",
+        "chars": 145,
+        "locked": false
+      },
+      {
+        "key": "write_document:evidence",
+        "chars": 322,
+        "locked": true
+      },
+      {
+        "key": "write_document:analysis",
+        "chars": 90042,
+        "locked": true
+      },
+      {
+        "key": "write_document:charts",
+        "chars": 3035,
+        "locked": false
+      },
+      {
+        "key": "write_document:outline_structure",
+        "chars": 294,
+        "locked": false
+      }
+    ]
+  },
+  "stage_rules_after": {
+    "outline": {
+      "total": 134515,
+      "chars": {
+        "task": 8603,
+        "context": 118959,
+        "instructions": 0,
+        "source": 0,
+        "other": 6,
+        "template": 6947,
+        "system_schema": 0
+      },
+      "percent": {
+        "task": 6.4,
+        "context": 88.44,
+        "instructions": 0.0,
+        "source": 0.0,
+        "other": 0.0,
+        "template": 5.16,
+        "system_schema": 0.0
+      }
+    },
+    "section_plan": {
+      "model_calls": 0,
+      "instructions": 7
+    },
+    "sections": [
+      {
+        "total": 132811,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 4923,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.57,
+          "context": 83.62,
+          "instructions": 3.71,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.09,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133206,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5318,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.54,
+          "context": 83.37,
+          "instructions": 3.99,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.09,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133540,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5652,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.52,
+          "context": 83.16,
+          "instructions": 4.23,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133590,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5702,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.52,
+          "context": 83.13,
+          "instructions": 4.27,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133477,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5589,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.53,
+          "context": 83.2,
+          "instructions": 4.19,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133588,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5700,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.52,
+          "context": 83.13,
+          "instructions": 4.27,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      },
+      {
+        "total": 133285,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5397,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.54,
+          "context": 83.32,
+          "instructions": 4.05,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      }
+    ],
+    "whole_document": {
+      "total": 164465,
+      "chars": {
+        "task": 12667,
+        "context": 111058,
+        "instructions": 39563,
+        "source": 0,
+        "other": 2,
+        "template": 1175,
+        "system_schema": 0
+      },
+      "percent": {
+        "task": 7.7,
+        "context": 67.53,
+        "instructions": 24.06,
+        "source": 0.0,
+        "other": 0.0,
+        "template": 0.71,
+        "system_schema": 0.0
+      }
+    },
+    "quality": {
+      "total": 174320,
+      "chars": {
+        "task": 12611,
+        "context": 137941,
+        "instructions": 0,
+        "source": 17977,
+        "other": 211,
+        "template": 2492,
+        "system_schema": 3088
+      },
+      "percent": {
+        "task": 7.23,
+        "context": 79.13,
+        "instructions": 0.0,
+        "source": 10.31,
+        "other": 0.12,
+        "template": 1.43,
+        "system_schema": 1.77
+      }
+    },
+    "revision_locate": {
+      "total": 31027,
+      "chars": {
+        "task": 3512,
+        "context": 0,
+        "instructions": 0,
+        "source": 21380,
+        "other": 4,
+        "template": 3230,
+        "system_schema": 2901
+      },
+      "percent": {
+        "task": 11.32,
+        "context": 0.0,
+        "instructions": 0.0,
+        "source": 68.91,
+        "other": 0.01,
+        "template": 10.41,
+        "system_schema": 9.35
+      }
+    },
+    "material_chars_per_section": [
+      {
+        "key": "write_document:paper:SRC-001",
+        "chars": 382,
+        "locked": true
+      },
+      {
+        "key": "write_document:paper:KB-001",
+        "chars": 419,
+        "locked": true
+      },
+      {
+        "key": "write_document:reference_candidates",
+        "chars": 145,
+        "locked": false
+      },
+      {
+        "key": "write_document:evidence",
+        "chars": 322,
+        "locked": true
+      },
+      {
+        "key": "write_document:analysis",
+        "chars": 90042,
+        "locked": true
+      },
+      {
+        "key": "write_document:charts",
+        "chars": 3035,
+        "locked": false
+      },
+      {
+        "key": "write_document:outline_structure",
+        "chars": 294,
+        "locked": false
+      }
+    ]
+  },
+  "chart_selection_candidate": [
+    {
+      "heading_path": [
+        "【模拟】图像分类方法的准确性、模型规模与训练成本比较：基于配对训练重复的分析",
+        "摘要"
+      ],
+      "chart_ids": [],
+      "kept_finding_ids": [
+        "macro_mean_objects_a",
+        "macro_mean_objects_b",
+        "macro_mean_objects_p",
+        "macro_mean_textures_a",
+        "macro_mean_textures_b",
+        "macro_mean_textures_p",
+        "time_mean_objects_a",
+        "time_mean_objects_b",
+        "time_mean_objects_p",
+        "time_mean_textures_a",
+        "time_mean_textures_b",
+        "time_mean_textures_p"
+      ],
+      "omitted_finding_ids": [
+        "accuracy_mean_objects_a",
+        "accuracy_mean_objects_b",
+        "accuracy_mean_objects_p",
+        "accuracy_mean_textures_a",
+        "accuracy_mean_textures_b",
+        "accuracy_mean_textures_p",
+        "accuracy_pair_objects_b_vs_a",
+        "accuracy_pair_objects_proposed_vs_a",
+        "accuracy_pair_objects_proposed_vs_b",
+        "accuracy_pair_textures_b_vs_a",
+        "accuracy_pair_textures_proposed_vs_a",
+        "accuracy_pair_textures_proposed_vs_b",
+        "macro_pair_objects_b_vs_a",
+        "macro_pair_objects_proposed_vs_a",
+        "macro_pair_objects_proposed_vs_b",
+        "macro_pair_textures_b_vs_a",
+        "macro_pair_textures_proposed_vs_a",
+        "macro_pair_textures_proposed_vs_b",
+        "parameter_mean_objects_a",
+        "parameter_mean_objects_b",
+        "parameter_mean_objects_p",
+        "parameter_mean_textures_a",
+        "parameter_mean_textures_b",
+        "parameter_mean_textures_p",
+        "time_pair_objects_b_vs_a",
+        "time_pair_objects_proposed_vs_a",
+        "time_pair_objects_proposed_vs_b",
+        "time_pair_textures_b_vs_a",
+        "time_pair_textures_proposed_vs_a",
+        "time_pair_textures_proposed_vs_b"
+      ],
+      "full": {
+        "total": 132811,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 4923,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.57,
+          "context": 83.62,
+          "instructions": 3.71,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.09,
+          "system_schema": 0.0
+        }
+      },
+      "candidate": {
+        "total": 69020,
+        "chars": {
+          "task": 12714,
+          "context": 47267,
+          "instructions": 4923,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 18.42,
+          "context": 68.48,
+          "instructions": 7.13,
+          "source": 0.01,
+          "other": 0.0,
+          "template": 5.95,
+          "system_schema": 0.0
+        }
+      }
+    },
+    {
+      "heading_path": [
+        "【模拟】图像分类方法的准确性、模型规模与训练成本比较：基于配对训练重复的分析",
+        "引言"
+      ],
+      "chart_ids": [],
+      "kept_finding_ids": [
+        "macro_mean_objects_a",
+        "macro_mean_objects_b",
+        "macro_mean_objects_p",
+        "macro_mean_textures_a",
+        "macro_mean_textures_b",
+        "macro_mean_textures_p",
+        "time_mean_objects_a",
+        "time_mean_objects_b",
+        "time_mean_objects_p",
+        "time_mean_textures_a",
+        "time_mean_textures_b",
+        "time_mean_textures_p"
+      ],
+      "omitted_finding_ids": [
+        "accuracy_mean_objects_a",
+        "accuracy_mean_objects_b",
+        "accuracy_mean_objects_p",
+        "accuracy_mean_textures_a",
+        "accuracy_mean_textures_b",
+        "accuracy_mean_textures_p",
+        "accuracy_pair_objects_b_vs_a",
+        "accuracy_pair_objects_proposed_vs_a",
+        "accuracy_pair_objects_proposed_vs_b",
+        "accuracy_pair_textures_b_vs_a",
+        "accuracy_pair_textures_proposed_vs_a",
+        "accuracy_pair_textures_proposed_vs_b",
+        "macro_pair_objects_b_vs_a",
+        "macro_pair_objects_proposed_vs_a",
+        "macro_pair_objects_proposed_vs_b",
+        "macro_pair_textures_b_vs_a",
+        "macro_pair_textures_proposed_vs_a",
+        "macro_pair_textures_proposed_vs_b",
+        "parameter_mean_objects_a",
+        "parameter_mean_objects_b",
+        "parameter_mean_objects_p",
+        "parameter_mean_textures_a",
+        "parameter_mean_textures_b",
+        "parameter_mean_textures_p",
+        "time_pair_objects_b_vs_a",
+        "time_pair_objects_proposed_vs_a",
+        "time_pair_objects_proposed_vs_b",
+        "time_pair_textures_b_vs_a",
+        "time_pair_textures_proposed_vs_a",
+        "time_pair_textures_proposed_vs_b"
+      ],
+      "full": {
+        "total": 133206,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5318,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.54,
+          "context": 83.37,
+          "instructions": 3.99,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.09,
+          "system_schema": 0.0
+        }
+      },
+      "candidate": {
+        "total": 69415,
+        "chars": {
+          "task": 12714,
+          "context": 47267,
+          "instructions": 5318,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 18.32,
+          "context": 68.09,
+          "instructions": 7.66,
+          "source": 0.01,
+          "other": 0.0,
+          "template": 5.92,
+          "system_schema": 0.0
+        }
+      }
+    },
+    {
+      "heading_path": [
+        "【模拟】图像分类方法的准确性、模型规模与训练成本比较：基于配对训练重复的分析",
+        "研究设计与方法"
+      ],
+      "chart_ids": [],
+      "kept_finding_ids": [
+        "macro_mean_objects_a",
+        "macro_mean_objects_b",
+        "macro_mean_objects_p",
+        "macro_mean_textures_a",
+        "macro_mean_textures_b",
+        "macro_mean_textures_p",
+        "time_mean_objects_a",
+        "time_mean_objects_b",
+        "time_mean_objects_p",
+        "time_mean_textures_a",
+        "time_mean_textures_b",
+        "time_mean_textures_p"
+      ],
+      "omitted_finding_ids": [
+        "accuracy_mean_objects_a",
+        "accuracy_mean_objects_b",
+        "accuracy_mean_objects_p",
+        "accuracy_mean_textures_a",
+        "accuracy_mean_textures_b",
+        "accuracy_mean_textures_p",
+        "accuracy_pair_objects_b_vs_a",
+        "accuracy_pair_objects_proposed_vs_a",
+        "accuracy_pair_objects_proposed_vs_b",
+        "accuracy_pair_textures_b_vs_a",
+        "accuracy_pair_textures_proposed_vs_a",
+        "accuracy_pair_textures_proposed_vs_b",
+        "macro_pair_objects_b_vs_a",
+        "macro_pair_objects_proposed_vs_a",
+        "macro_pair_objects_proposed_vs_b",
+        "macro_pair_textures_b_vs_a",
+        "macro_pair_textures_proposed_vs_a",
+        "macro_pair_textures_proposed_vs_b",
+        "parameter_mean_objects_a",
+        "parameter_mean_objects_b",
+        "parameter_mean_objects_p",
+        "parameter_mean_textures_a",
+        "parameter_mean_textures_b",
+        "parameter_mean_textures_p",
+        "time_pair_objects_b_vs_a",
+        "time_pair_objects_proposed_vs_a",
+        "time_pair_objects_proposed_vs_b",
+        "time_pair_textures_b_vs_a",
+        "time_pair_textures_proposed_vs_a",
+        "time_pair_textures_proposed_vs_b"
+      ],
+      "full": {
+        "total": 133540,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5652,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.52,
+          "context": 83.16,
+          "instructions": 4.23,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      },
+      "candidate": {
+        "total": 69749,
+        "chars": {
+          "task": 12714,
+          "context": 47267,
+          "instructions": 5652,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 18.23,
+          "context": 67.77,
+          "instructions": 8.1,
+          "source": 0.01,
+          "other": 0.0,
+          "template": 5.89,
+          "system_schema": 0.0
+        }
+      }
+    },
+    {
+      "heading_path": [
+        "【模拟】图像分类方法的准确性、模型规模与训练成本比较：基于配对训练重复的分析",
+        "分类性能结果"
+      ],
+      "chart_ids": [
+        "fig_accuracy_paired_effects",
+        "fig_macro_paired_effects"
+      ],
+      "kept_finding_ids": [
+        "accuracy_pair_objects_b_vs_a",
+        "accuracy_pair_objects_proposed_vs_a",
+        "accuracy_pair_objects_proposed_vs_b",
+        "accuracy_pair_textures_b_vs_a",
+        "accuracy_pair_textures_proposed_vs_a",
+        "accuracy_pair_textures_proposed_vs_b",
+        "macro_mean_objects_a",
+        "macro_mean_objects_b",
+        "macro_mean_objects_p",
+        "macro_mean_textures_a",
+        "macro_mean_textures_b",
+        "macro_mean_textures_p",
+        "macro_pair_objects_b_vs_a",
+        "macro_pair_objects_proposed_vs_a",
+        "macro_pair_objects_proposed_vs_b",
+        "macro_pair_textures_b_vs_a",
+        "macro_pair_textures_proposed_vs_a",
+        "macro_pair_textures_proposed_vs_b",
+        "time_mean_objects_a",
+        "time_mean_objects_b",
+        "time_mean_objects_p",
+        "time_mean_textures_a",
+        "time_mean_textures_b",
+        "time_mean_textures_p"
+      ],
+      "omitted_finding_ids": [
+        "accuracy_mean_objects_a",
+        "accuracy_mean_objects_b",
+        "accuracy_mean_objects_p",
+        "accuracy_mean_textures_a",
+        "accuracy_mean_textures_b",
+        "accuracy_mean_textures_p",
+        "parameter_mean_objects_a",
+        "parameter_mean_objects_b",
+        "parameter_mean_objects_p",
+        "parameter_mean_textures_a",
+        "parameter_mean_textures_b",
+        "parameter_mean_textures_p",
+        "time_pair_objects_b_vs_a",
+        "time_pair_objects_proposed_vs_a",
+        "time_pair_objects_proposed_vs_b",
+        "time_pair_textures_b_vs_a",
+        "time_pair_textures_proposed_vs_a",
+        "time_pair_textures_proposed_vs_b"
+      ],
+      "full": {
+        "total": 133590,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5702,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.52,
+          "context": 83.13,
+          "instructions": 4.27,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      },
+      "candidate": {
+        "total": 98568,
+        "chars": {
+          "task": 12714,
+          "context": 76036,
+          "instructions": 5702,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 12.9,
+          "context": 77.14,
+          "instructions": 5.78,
+          "source": 0.01,
+          "other": 0.0,
+          "template": 4.17,
+          "system_schema": 0.0
+        }
+      }
+    },
+    {
+      "heading_path": [
+        "【模拟】图像分类方法的准确性、模型规模与训练成本比较：基于配对训练重复的分析",
+        "模型规模与训练成本"
+      ],
+      "chart_ids": [
+        "fig_training_time_paired_effects",
+        "fig_accuracy_parameter_tradeoff"
+      ],
+      "kept_finding_ids": [
+        "accuracy_mean_objects_a",
+        "accuracy_mean_objects_b",
+        "accuracy_mean_objects_p",
+        "accuracy_mean_textures_a",
+        "accuracy_mean_textures_b",
+        "accuracy_mean_textures_p",
+        "macro_mean_objects_a",
+        "macro_mean_objects_b",
+        "macro_mean_objects_p",
+        "macro_mean_textures_a",
+        "macro_mean_textures_b",
+        "macro_mean_textures_p",
+        "parameter_mean_objects_a",
+        "parameter_mean_objects_b",
+        "parameter_mean_objects_p",
+        "parameter_mean_textures_a",
+        "parameter_mean_textures_b",
+        "parameter_mean_textures_p",
+        "time_mean_objects_a",
+        "time_mean_objects_b",
+        "time_mean_objects_p",
+        "time_mean_textures_a",
+        "time_mean_textures_b",
+        "time_mean_textures_p",
+        "time_pair_objects_b_vs_a",
+        "time_pair_objects_proposed_vs_a",
+        "time_pair_objects_proposed_vs_b",
+        "time_pair_textures_b_vs_a",
+        "time_pair_textures_proposed_vs_a",
+        "time_pair_textures_proposed_vs_b"
+      ],
+      "omitted_finding_ids": [
+        "accuracy_pair_objects_b_vs_a",
+        "accuracy_pair_objects_proposed_vs_a",
+        "accuracy_pair_objects_proposed_vs_b",
+        "accuracy_pair_textures_b_vs_a",
+        "accuracy_pair_textures_proposed_vs_a",
+        "accuracy_pair_textures_proposed_vs_b",
+        "macro_pair_objects_b_vs_a",
+        "macro_pair_objects_proposed_vs_a",
+        "macro_pair_objects_proposed_vs_b",
+        "macro_pair_textures_b_vs_a",
+        "macro_pair_textures_proposed_vs_a",
+        "macro_pair_textures_proposed_vs_b"
+      ],
+      "full": {
+        "total": 133477,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5589,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.53,
+          "context": 83.2,
+          "instructions": 4.19,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      },
+      "candidate": {
+        "total": 104708,
+        "chars": {
+          "task": 12714,
+          "context": 82289,
+          "instructions": 5589,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 12.14,
+          "context": 78.59,
+          "instructions": 5.34,
+          "source": 0.01,
+          "other": 0.0,
+          "template": 3.93,
+          "system_schema": 0.0
+        }
+      }
+    },
+    {
+      "heading_path": [
+        "【模拟】图像分类方法的准确性、模型规模与训练成本比较：基于配对训练重复的分析",
+        "综合讨论"
+      ],
+      "chart_ids": [],
+      "kept_finding_ids": [
+        "macro_mean_objects_a",
+        "macro_mean_objects_b",
+        "macro_mean_objects_p",
+        "macro_mean_textures_a",
+        "macro_mean_textures_b",
+        "macro_mean_textures_p",
+        "time_mean_objects_a",
+        "time_mean_objects_b",
+        "time_mean_objects_p",
+        "time_mean_textures_a",
+        "time_mean_textures_b",
+        "time_mean_textures_p"
+      ],
+      "omitted_finding_ids": [
+        "accuracy_mean_objects_a",
+        "accuracy_mean_objects_b",
+        "accuracy_mean_objects_p",
+        "accuracy_mean_textures_a",
+        "accuracy_mean_textures_b",
+        "accuracy_mean_textures_p",
+        "accuracy_pair_objects_b_vs_a",
+        "accuracy_pair_objects_proposed_vs_a",
+        "accuracy_pair_objects_proposed_vs_b",
+        "accuracy_pair_textures_b_vs_a",
+        "accuracy_pair_textures_proposed_vs_a",
+        "accuracy_pair_textures_proposed_vs_b",
+        "macro_pair_objects_b_vs_a",
+        "macro_pair_objects_proposed_vs_a",
+        "macro_pair_objects_proposed_vs_b",
+        "macro_pair_textures_b_vs_a",
+        "macro_pair_textures_proposed_vs_a",
+        "macro_pair_textures_proposed_vs_b",
+        "parameter_mean_objects_a",
+        "parameter_mean_objects_b",
+        "parameter_mean_objects_p",
+        "parameter_mean_textures_a",
+        "parameter_mean_textures_b",
+        "parameter_mean_textures_p",
+        "time_pair_objects_b_vs_a",
+        "time_pair_objects_proposed_vs_a",
+        "time_pair_objects_proposed_vs_b",
+        "time_pair_textures_b_vs_a",
+        "time_pair_textures_proposed_vs_a",
+        "time_pair_textures_proposed_vs_b"
+      ],
+      "full": {
+        "total": 133588,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5700,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.52,
+          "context": 83.13,
+          "instructions": 4.27,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      },
+      "candidate": {
+        "total": 69797,
+        "chars": {
+          "task": 12714,
+          "context": 47267,
+          "instructions": 5700,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 18.22,
+          "context": 67.72,
+          "instructions": 8.17,
+          "source": 0.01,
+          "other": 0.0,
+          "template": 5.89,
+          "system_schema": 0.0
+        }
+      }
+    },
+    {
+      "heading_path": [
+        "【模拟】图像分类方法的准确性、模型规模与训练成本比较：基于配对训练重复的分析",
+        "结论与局限"
+      ],
+      "chart_ids": [],
+      "kept_finding_ids": [
+        "macro_mean_objects_a",
+        "macro_mean_objects_b",
+        "macro_mean_objects_p",
+        "macro_mean_textures_a",
+        "macro_mean_textures_b",
+        "macro_mean_textures_p",
+        "time_mean_objects_a",
+        "time_mean_objects_b",
+        "time_mean_objects_p",
+        "time_mean_textures_a",
+        "time_mean_textures_b",
+        "time_mean_textures_p"
+      ],
+      "omitted_finding_ids": [
+        "accuracy_mean_objects_a",
+        "accuracy_mean_objects_b",
+        "accuracy_mean_objects_p",
+        "accuracy_mean_textures_a",
+        "accuracy_mean_textures_b",
+        "accuracy_mean_textures_p",
+        "accuracy_pair_objects_b_vs_a",
+        "accuracy_pair_objects_proposed_vs_a",
+        "accuracy_pair_objects_proposed_vs_b",
+        "accuracy_pair_textures_b_vs_a",
+        "accuracy_pair_textures_proposed_vs_a",
+        "accuracy_pair_textures_proposed_vs_b",
+        "macro_pair_objects_b_vs_a",
+        "macro_pair_objects_proposed_vs_a",
+        "macro_pair_objects_proposed_vs_b",
+        "macro_pair_textures_b_vs_a",
+        "macro_pair_textures_proposed_vs_a",
+        "macro_pair_textures_proposed_vs_b",
+        "parameter_mean_objects_a",
+        "parameter_mean_objects_b",
+        "parameter_mean_objects_p",
+        "parameter_mean_textures_a",
+        "parameter_mean_textures_b",
+        "parameter_mean_textures_p",
+        "time_pair_objects_b_vs_a",
+        "time_pair_objects_proposed_vs_a",
+        "time_pair_objects_proposed_vs_b",
+        "time_pair_textures_b_vs_a",
+        "time_pair_textures_proposed_vs_a",
+        "time_pair_textures_proposed_vs_b"
+      ],
+      "full": {
+        "total": 133285,
+        "chars": {
+          "task": 12714,
+          "context": 111058,
+          "instructions": 5397,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 9.54,
+          "context": 83.32,
+          "instructions": 4.05,
+          "source": 0.0,
+          "other": 0.0,
+          "template": 3.08,
+          "system_schema": 0.0
+        }
+      },
+      "candidate": {
+        "total": 69494,
+        "chars": {
+          "task": 12714,
+          "context": 47267,
+          "instructions": 5397,
+          "source": 6,
+          "other": 0,
+          "template": 4110,
+          "system_schema": 0
+        },
+        "percent": {
+          "task": 18.3,
+          "context": 68.02,
+          "instructions": 7.77,
+          "source": 0.01,
+          "other": 0.0,
+          "template": 5.91,
+          "system_schema": 0.0
+        }
+      }
+    }
+  ],
+  "full_findings": 42
+}
