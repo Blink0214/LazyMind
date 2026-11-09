@@ -46,15 +46,18 @@ RUN LAZYLLM_VERSION="$(tr -d '[:space:]' < /tmp/LAZYLLM_VERSION)" \
 
 # Optional runtime tools and extensions belong after LazyLLM so changes here do
 # not invalidate its large dependency layer.
-ARG GITHUB_PROXY=""
-ARG PANDOC_VERSION=3.11
-ARG PANDOC_SHA256_AMD64=37edb3bbcf722f921a009941bf5874e2e0c09263226c9b4a2d980788cb062ab6
-ARG PANDOC_SHA256_ARM64=56ed5566ec41d22ec9ee0704e6ac0b98ba102e92384efd5306173a22d314c79a
 RUN set -eu; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         curl ffmpeg fonts-noto-cjk fonts-wqy-zenhei nodejs \
         libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 libxcb1 ripgrep libseccomp2; \
+    rm -rf /var/lib/apt/lists/*
+
+ARG GITHUB_PROXY=""
+ARG PANDOC_VERSION=3.11
+ARG PANDOC_SHA256_AMD64=37edb3bbcf722f921a009941bf5874e2e0c09263226c9b4a2d980788cb062ab6
+ARG PANDOC_SHA256_ARM64=56ed5566ec41d22ec9ee0704e6ac0b98ba102e92384efd5306173a22d314c79a
+RUN set -eu; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
       amd64) pandoc_arch="amd64"; pandoc_sha="${PANDOC_SHA256_AMD64}" ;; \
@@ -62,14 +65,14 @@ RUN set -eu; \
       *) echo "Unsupported architecture: ${arch}"; exit 1 ;; \
     esac; \
     pandoc_archive="pandoc-${PANDOC_VERSION}-linux-${pandoc_arch}.tar.gz"; \
-    curl -fL "${GITHUB_PROXY}https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/${pandoc_archive}" \
+    curl -fL --retry 3 --retry-all-errors --connect-timeout 20 --max-time 300 "${GITHUB_PROXY}https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/${pandoc_archive}" \
         -o /tmp/pandoc.tar.gz; \
     printf '%s  %s\n' "${pandoc_sha}" /tmp/pandoc.tar.gz | sha256sum -c -; \
     tar -xzf /tmp/pandoc.tar.gz --strip-components=2 -C /usr/local/bin \
         "pandoc-${PANDOC_VERSION}/bin/pandoc"; \
     chmod 0755 /usr/local/bin/pandoc; \
     test "$(pandoc --version | head -n 1)" = "pandoc ${PANDOC_VERSION}"; \
-    rm -f /tmp/pandoc.tar.gz; rm -rf /var/lib/apt/lists/*
+    rm -f /tmp/pandoc.tar.gz
 
 # Copy only the dependency manifest so this layer is invalidated only when
 # requirements change, not when LazyMind source code changes.

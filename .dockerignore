@@ -1,3 +1,4 @@
+# Runtime data and host-local build outputs are not image inputs.
 data/
 .git/
 local/build/
@@ -9,3 +10,34 @@ desktop/cache/
 **/.codex-gocache/
 **/.codex-gomodcache/
 **/__pycache__/
+local/build/
+
+# Git metadata is large and Docker builds use the source working tree itself.
+.git/
+**/.git/
+
+# Python environments and generated caches must be recreated in the image.
+.venv/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# Frontend dependencies and bundles are produced by frontend/Dockerfile.
+frontend/node_modules/
+frontend/.pnpm-store/
+frontend/dist/
+frontend/.vite/
+
+# Repository integration/e2e fixtures run from the host and are not copied by
+# any production Dockerfile.
+tests/
+
+# Local editor and OS metadata.
+**/.DS_Store
+**/.idea/
+**/.vscode/
+**/venv/

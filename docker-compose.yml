@@ -12,7 +12,7 @@ x-mirror-args: &mirror-args
   NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
   GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
   GOSUMDB: ${GOSUMDB:-sum.golang.google.cn}
-  GITHUB_PROXY: ${GITHUB_PROXY:-https://gh-proxy.com/}
+  GITHUB_PROXY: ${GITHUB_PROXY-}
   BASE_LAZYLLM_IMAGE: ${BASE_LAZYLLM_IMAGE:-base_env}
   BASE_LAZYMIND_IMAGE: ${BASE_LAZYMIND_IMAGE:-base_code}
 
