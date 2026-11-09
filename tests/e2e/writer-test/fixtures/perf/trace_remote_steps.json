@@ -1,0 +1,566 @@
+{
+  "id": "8e78474e5a0e113c3be78a1010ec002e",
+  "metadata": {
+    "run_context": {
+      "workflow_session_id": "79b4d53a7cc94bf0a4530490bca250e9",
+      "conversation_id": "3095d7ba-14b3-44a1-9c80-53a75409ce54"
+    }
+  },
+  "observations": [
+    {
+      "id": "fbccaebd233b3f66",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "3095d7ba14b344a19c8053a75409ce54",
+      "startTime": "2026-09-22T07:10:28.569Z",
+      "endTime": "2026-09-22T07:11:05.695Z",
+      "parentObservationId": "1c8e7ff40a641258",
+      "level": "DEFAULT",
+      "latency": 37.126,
+      "usageDetails": {
+        "input": 494,
+        "output": 717,
+        "total": 1211
+      },
+      "metadata": {
+        "attributes": {
+          "session.id": "3095d7ba-14b3-44a1-9c80-53a75409ce54_1790061027714"
+        }
+      }
+    },
+    {
+      "id": "12fa815cc5c601c3",
+      "name": "ReactAgent",
+      "type": "CHAIN",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:06.639Z",
+      "endTime": "2026-09-22T07:16:18.662Z",
+      "parentObservationId": "4f6db71c1de50e33",
+      "level": "DEFAULT",
+      "latency": 312.023,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {
+          "gen_ai.conversation.id": "3095d7ba-14b3-44a1-9c80-53a75409ce54_1790061027714",
+          "lazyllm.trace.tags": "[\"handle_chat\",\"agent\"]",
+          "session.id": "3095d7ba-14b3-44a1-9c80-53a75409ce54_1790061027714"
+        }
+      }
+    },
+    {
+      "id": "549d80a09961c47e",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:06.677Z",
+      "endTime": "2026-09-22T07:11:15.520Z",
+      "parentObservationId": "12fa815cc5c601c3",
+      "level": "DEFAULT",
+      "latency": 8.843,
+      "usageDetails": {
+        "input": 30154,
+        "output": 448,
+        "total": 30602
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "205ea2ffe8d0aa08",
+      "name": "trigger_writer_workflow",
+      "type": "SPAN",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:15.533Z",
+      "endTime": "2026-09-22T07:11:15.616Z",
+      "parentObservationId": "12fa815cc5c601c3",
+      "level": "DEFAULT",
+      "latency": 0.083,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "ffe38dd0a4b0fb7e",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:15.652Z",
+      "endTime": "2026-09-22T07:11:18.495Z",
+      "parentObservationId": "12fa815cc5c601c3",
+      "level": "DEFAULT",
+      "latency": 2.843,
+      "usageDetails": {
+        "input": 62142,
+        "output": 511,
+        "total": 62653
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "27f7c83d86c3743e",
+      "name": "advance_step",
+      "type": "SPAN",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:18.509Z",
+      "endTime": "2026-09-22T07:11:35.417Z",
+      "parentObservationId": "12fa815cc5c601c3",
+      "level": "DEFAULT",
+      "latency": 16.908,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "959d58cdef34a439",
+      "name": "ReactAgent",
+      "type": "CHAIN",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:20.085Z",
+      "endTime": "2026-09-22T07:11:35.224Z",
+      "parentObservationId": "27f7c83d86c3743e",
+      "level": "DEFAULT",
+      "latency": 15.139,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "4c7e447ddb2d424c",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:20.095Z",
+      "endTime": "2026-09-22T07:11:26.522Z",
+      "parentObservationId": "959d58cdef34a439",
+      "level": "DEFAULT",
+      "latency": 6.427,
+      "usageDetails": {
+        "input": 2283,
+        "output": 239,
+        "total": 2522
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "a2bedc46b4940c0c",
+      "name": "writer_prepare_workspace",
+      "type": "SPAN",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:26.601Z",
+      "endTime": "2026-09-22T07:11:35.207Z",
+      "parentObservationId": "959d58cdef34a439",
+      "level": "DEFAULT",
+      "latency": 8.606,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "17b566ef2e0e6c70",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:26.618Z",
+      "endTime": "2026-09-22T07:11:35.129Z",
+      "parentObservationId": "a2bedc46b4940c0c",
+      "level": "DEFAULT",
+      "latency": 8.511,
+      "usageDetails": {
+        "input": 385,
+        "output": 491,
+        "total": 876
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "6013775050fb6c9e",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:35.479Z",
+      "endTime": "2026-09-22T07:11:37.834Z",
+      "parentObservationId": "12fa815cc5c601c3",
+      "level": "DEFAULT",
+      "latency": 2.355,
+      "usageDetails": {
+        "input": 94578,
+        "output": 637,
+        "total": 95215
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "0ecebeaeee05cdc3",
+      "name": "read_file_resource",
+      "type": "SPAN",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:37.867Z",
+      "endTime": "2026-09-22T07:11:37.873Z",
+      "parentObservationId": "12fa815cc5c601c3",
+      "level": "DEFAULT",
+      "latency": 0.006,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "0caf85c014906e90",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:37.908Z",
+      "endTime": "2026-09-22T07:11:40.711Z",
+      "parentObservationId": "12fa815cc5c601c3",
+      "level": "DEFAULT",
+      "latency": 2.803,
+      "usageDetails": {
+        "input": 129652,
+        "output": 699,
+        "total": 130351
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "9683f4515b975f05",
+      "name": "advance_step",
+      "type": "SPAN",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:11:40.730Z",
+      "endTime": "2026-09-22T07:14:55.811Z",
+      "parentObservationId": "12fa815cc5c601c3",
+      "level": "DEFAULT",
+      "latency": 195.081,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "451a807b087a7865",
+      "name": "ReactAgent",
+      "type": "CHAIN",
+      "traceId": "30e27b73058874257100328049bb55d5",
+      "startTime": "2026-09-22T07:11:41.520Z",
+      "endTime": "2026-09-22T07:14:55.650Z",
+      "parentObservationId": null,
+      "level": "DEFAULT",
+      "latency": 194.13,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {
+          "gen_ai.conversation.id": "79b4d53a7cc94bf0a4530490bca250e9",
+          "lazyllm.trace.tags": "[\"subagent\"]",
+          "session.id": "79b4d53a7cc94bf0a4530490bca250e9"
+        }
+      }
+    },
+    {
+      "id": "dd275e8cf4db6a9f",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "30e27b73058874257100328049bb55d5",
+      "startTime": "2026-09-22T07:11:41.540Z",
+      "endTime": "2026-09-22T07:11:48.843Z",
+      "parentObservationId": "451a807b087a7865",
+      "level": "DEFAULT",
+      "latency": 7.303,
+      "usageDetails": {
+        "input": 2707,
+        "output": 381,
+        "total": 3088
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "008dfc84dd38ed0b",
+      "name": "writer_outline_workspace",
+      "type": "SPAN",
+      "traceId": "30e27b73058874257100328049bb55d5",
+      "startTime": "2026-09-22T07:11:48.866Z",
+      "endTime": "2026-09-22T07:14:55.628Z",
+      "parentObservationId": "451a807b087a7865",
+      "level": "DEFAULT",
+      "latency": 186.762,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "f6544cfabfca2bbe",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "30e27b73058874257100328049bb55d5",
+      "startTime": "2026-09-22T07:11:48.898Z",
+      "endTime": "2026-09-22T07:14:03.729Z",
+      "parentObservationId": "008dfc84dd38ed0b",
+      "level": "DEFAULT",
+      "latency": 134.831,
+      "usageDetails": {
+        "input": 1685,
+        "output": 7724,
+        "total": 9409
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "3d2f0d6f7c1d18e3",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "30e27b73058874257100328049bb55d5",
+      "startTime": "2026-09-22T07:14:03.912Z",
+      "endTime": "2026-09-22T07:14:55.572Z",
+      "parentObservationId": "008dfc84dd38ed0b",
+      "level": "DEFAULT",
+      "latency": 51.66,
+      "usageDetails": {
+        "input": 4244,
+        "output": 3445,
+        "total": 7689
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "e9feb116ab9c9571",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:14:55.892Z",
+      "endTime": "2026-09-22T07:15:03.399Z",
+      "parentObservationId": "12fa815cc5c601c3",
+      "level": "DEFAULT",
+      "latency": 7.507,
+      "usageDetails": {
+        "input": 165162,
+        "output": 758,
+        "total": 165920
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "6081686393dc07dd",
+      "name": "advance_step",
+      "type": "SPAN",
+      "traceId": "b2fbe9398afeef2477b6d5df41de0255",
+      "startTime": "2026-09-22T07:15:03.430Z",
+      "endTime": "2026-09-22T07:16:18.642Z",
+      "parentObservationId": "12fa815cc5c601c3",
+      "level": "DEFAULT",
+      "latency": 75.212,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "2d93fa46d4fe19d4",
+      "name": "ReactAgent",
+      "type": "CHAIN",
+      "traceId": "8e78474e5a0e113c3be78a1010ec002e",
+      "startTime": "2026-09-22T07:15:05.235Z",
+      "endTime": "2026-09-22T07:16:18.299Z",
+      "parentObservationId": null,
+      "level": "DEFAULT",
+      "latency": 73.064,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {
+          "gen_ai.conversation.id": "79b4d53a7cc94bf0a4530490bca250e9",
+          "lazyllm.trace.tags": "[\"subagent\"]",
+          "session.id": "79b4d53a7cc94bf0a4530490bca250e9"
+        }
+      }
+    },
+    {
+      "id": "d68c623cd9314580",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "8e78474e5a0e113c3be78a1010ec002e",
+      "startTime": "2026-09-22T07:15:05.251Z",
+      "endTime": "2026-09-22T07:15:10.123Z",
+      "parentObservationId": "2d93fa46d4fe19d4",
+      "level": "DEFAULT",
+      "latency": 4.872,
+      "usageDetails": {
+        "input": 3038,
+        "output": 176,
+        "total": 3214
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "5332aa26d58b3124",
+      "name": "writer_draft_workspace",
+      "type": "SPAN",
+      "traceId": "8e78474e5a0e113c3be78a1010ec002e",
+      "startTime": "2026-09-22T07:15:10.146Z",
+      "endTime": "2026-09-22T07:16:18.285Z",
+      "parentObservationId": "2d93fa46d4fe19d4",
+      "level": "DEFAULT",
+      "latency": 68.139,
+      "usageDetails": {},
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "cffc6044908f15a1",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "8e78474e5a0e113c3be78a1010ec002e",
+      "startTime": "2026-09-22T07:15:10.234Z",
+      "endTime": "2026-09-22T07:15:43.057Z",
+      "parentObservationId": "5332aa26d58b3124",
+      "level": "DEFAULT",
+      "latency": 32.823,
+      "usageDetails": {
+        "input": 6301,
+        "output": 1675,
+        "total": 7976
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "ad3d2069803432de",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "8e78474e5a0e113c3be78a1010ec002e",
+      "startTime": "2026-09-22T07:15:43.138Z",
+      "endTime": "2026-09-22T07:15:55.107Z",
+      "parentObservationId": "5332aa26d58b3124",
+      "level": "DEFAULT",
+      "latency": 11.969,
+      "usageDetails": {
+        "input": 3196,
+        "output": 655,
+        "total": 3851
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "66e7ef8425731614",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "8e78474e5a0e113c3be78a1010ec002e",
+      "startTime": "2026-09-22T07:15:43.171Z",
+      "endTime": "2026-09-22T07:16:00.361Z",
+      "parentObservationId": "ad3d2069803432de",
+      "level": "DEFAULT",
+      "latency": 17.19,
+      "usageDetails": {
+        "input": 3281,
+        "output": 762,
+        "total": 4043
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "4cc9aff3b244e4d9",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "8e78474e5a0e113c3be78a1010ec002e",
+      "startTime": "2026-09-22T07:15:43.190Z",
+      "endTime": "2026-09-22T07:16:04.576Z",
+      "parentObservationId": "66e7ef8425731614",
+      "level": "DEFAULT",
+      "latency": 21.386,
+      "usageDetails": {
+        "input": 3270,
+        "output": 1057,
+        "total": 4327
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "4ddf8d0ad7278864",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "8e78474e5a0e113c3be78a1010ec002e",
+      "startTime": "2026-09-22T07:15:55.148Z",
+      "endTime": "2026-09-22T07:16:06.487Z",
+      "parentObservationId": "5332aa26d58b3124",
+      "level": "DEFAULT",
+      "latency": 11.339,
+      "usageDetails": {
+        "input": 3275,
+        "output": 466,
+        "total": 3741
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "53af653f3f1e520e",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "8e78474e5a0e113c3be78a1010ec002e",
+      "startTime": "2026-09-22T07:16:00.386Z",
+      "endTime": "2026-09-22T07:16:14.879Z",
+      "parentObservationId": "ad3d2069803432de",
+      "level": "DEFAULT",
+      "latency": 14.493,
+      "usageDetails": {
+        "input": 3219,
+        "output": 620,
+        "total": 3839
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    },
+    {
+      "id": "e09c4df5d8d533d5",
+      "name": "llm",
+      "type": "GENERATION",
+      "traceId": "8e78474e5a0e113c3be78a1010ec002e",
+      "startTime": "2026-09-22T07:16:04.604Z",
+      "endTime": "2026-09-22T07:16:18.116Z",
+      "parentObservationId": "66e7ef8425731614",
+      "level": "DEFAULT",
+      "latency": 13.512,
+      "usageDetails": {
+        "input": 3206,
+        "output": 771,
+        "total": 3977
+      },
+      "metadata": {
+        "attributes": {}
+      }
+    }
+  ]
+}

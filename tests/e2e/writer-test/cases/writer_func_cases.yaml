@@ -1,0 +1,875 @@
+schema_version: 2
+suite: ai-writer-core
+
+fixtures:
+  markdown_outline: {kind: local_file, path: fixtures/func/writer-outline.md}
+  markdown_full: {kind: local_file, path: fixtures/func/writer-full.md}
+  markdown_refs: {kind: local_file, path: fixtures/func/writer-refs.md}
+
+# 飞书测试文档统一登记（URL + 基线版本），功能与性能各自独立记录。
+# 基线以文档当前状态为准：跑前比较当前正文与 baseline_revision_id 内容，
+# 不同则 history-revert 到 history_version_id。
+feishu_docs:
+  outline:            # 功能测试大纲（C03/I02）
+    url: https://sensetime.feishu.cn/wiki/FgOfw3gh8ivcajk8FPyc086Knvg
+    history_version_id: '32768'
+    baseline_revision_id: 78
+  full:               # 功能测试全文（C05/C07）
+    url: https://sensetime.feishu.cn/wiki/G828wPWqDiokGvkqTNzcUPuDnec
+    history_version_id: '31744'
+    baseline_revision_id: 95
+
+# 非飞书文档统一登记；reference 为 URL / URI，微信按草稿完整标题定位。
+provider_docs:
+  notion_file:
+    provider: notion
+    reference: "https://app.notion.com/p/3df7b0d754e080b7a5c8dc5a5f4fb186"
+  github_file:
+    provider: github
+    reference: "https://github.com/Blink0214/LazyMind/blob/github-test/tests/e2e/fixtures/camping-guide.md"
+  obsidian_file:
+    provider: obsidian
+    reference: "obsidian://open?vault=Obsidian%20Vault&file=%E9%9C%B2%E8%90%A5%E6%8C%87%E5%8D%97"
+  wechat_title:
+    provider: wechat
+    reference: "周末露营活动指南"
+
+scenarios:
+  - id: C01
+    title: 从零创建 Markdown 全文
+    request:
+      text: 写一篇面向社会公众的《台风天安全防范指南》公众号文章，全文1500字左右，无需配图。
+      attachment: {kind: none}
+    expected:
+      route: create
+      steps: [prepare, outline, write_document]
+      workspaces:
+        prepare: {structure_mode: sectioned, representation: markdown, next_step: outline}
+        outline: {operation: generate, next_step: write_document}
+        write_document: {operation: generate, representation: markdown, next_step: __end__}
+      tools:
+        # 新业务逻辑将各步骤封装为顶层 workspace 工具，内部子步骤不再单独出 trace。
+        required: [writer_prepare_workspace, writer_outline_workspace, writer_draft_workspace]
+        forbidden: []
+      artifacts:
+        required:
+          outline_document: {extension: .md}
+          section_instructions: {}
+        forbidden: [source_document, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content: {min_chars: 900, max_chars: 2800}
+      sse: {required: true, min_deltas: 2, reconstruct_final: true}
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 文章围绕台风来临前、影响期间和过境后的安全防范，面向社会公众，建议清楚可理解，不偏题、不仅给提纲。
+      - 本次请求无需配图：最终稿不新增配图；不得将配图缺失判为失败。配置 image_calls=0 时另核对本次图片生成调用确为零。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+      streaming:
+      - 分别核对浏览器收到的本次 draft SSE 与观察器数据，不用观察器补齐浏览器缺失；完整流应 start→delta→end，无 abort，槽位归属明确。
+      - 按 min_deltas 检查增量事件数，文本非空；结合事件时间和 UI 录屏确认逐步呈现，不能只凭帧数推断用户看到流式效果。
+      - reconstruct_final=true 时比较完整流拼接内容与对应版本最终稿；归一化换行、行尾空格与连续空行，不忽略正文差异。必须区分同次重试产生的不同流和版本，缺少对应关系时记证据不足。
+
+
+  - id: C02
+    title: 根据 Markdown 大纲扩写全文
+    request:
+      text: 请根据我上传的大纲扩写成一篇完整文章，全文1500字左右，无需配图。
+      attachment: {fixture: markdown_outline}
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          outline_document: {extension: .md}
+          section_instructions: {}
+        forbidden: [document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content: {min_chars: 900, max_chars: 2800, source_heading_coverage_min: 0.8}
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 完整扩写源大纲各节要点，保留原意与主题，不只是重复标题或罗列提纲；允许自然扩写，不得丢失主要内容。
+      - 本次请求无需配图：最终稿不新增配图；不得将配图缺失判为失败。配置 image_calls=0 时另核对本次图片生成调用确为零。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+        heading_coverage: 沿用原覆盖率口径：提取源文档和成稿标题，去开头数字章节号及全部空白；逐个源标题检查是否出现在成稿标题拼接文本中，命中数/源标题数与 source_heading_coverage_min
+          比较。标题改写导致未命中须如实报告，另核对语义内容；源标题或源文档缺失时不能推断通过。
+
+
+  - id: C03
+    title: 根据飞书 IR 大纲扩写全文
+    request:
+      text: 请根据这份飞书大纲扩写成一篇完整文章，全文1500字左右，正文中无需配图：${outline}
+    feishu_doc: outline
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: outline, provider: feishu}
+          target_document: {provider: feishu}
+          outline_document: {extension: .lmd, stage: outline}
+          section_instructions: {}
+          document_write_result: {success: true}
+        forbidden: []
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {mode: replace, calls: 1, provider_revision_increases: true}
+      content: {min_chars: 900, max_chars: 2800, source_heading_coverage_min: 0.8}
+      provider_materialization: true
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 完整扩写源大纲各节要点，保留原意与主题，不只是重复标题或罗列提纲；允许自然扩写，不得丢失主要内容。
+      - 本次请求无需配图：最终稿不新增配图；不得将配图缺失判为失败。配置 image_calls=0 时另核对本次图片生成调用确为零。
+      - 按本次飞书目标链接独立读取原生内容，核对正文、结构及专项要求；按 expected 核对写回次数、方式和前后版本。保存链接、读取时间、版本与证据。格式转换可改变排版，不得丢失或错置内容，版本增加本身不代表写入正确。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+        heading_coverage: 沿用原覆盖率口径：提取源文档和成稿标题，去开头数字章节号及全部空白；逐个源标题检查是否出现在成稿标题拼接文本中，命中数/源标题数与 source_heading_coverage_min
+          比较。标题改写导致未命中须如实报告，另核对语义内容；源标题或源文档缺失时不能推断通过。
+
+
+  - id: C04
+    title: Markdown 全文重写
+    request:
+      text: 请重写我上传的完整文章并调整结构，全文1500字左右，无需配图。
+      attachment: {fixture: markdown_full}
+    expected:
+      route: rewrite
+      steps: [prepare, write_document]
+      workspaces:
+        prepare: {structure_mode: sectioned, representation: markdown, next_step: write_document}
+        write_document: {operation: rewrite, representation: markdown, next_step: __end__}
+      tools:
+        required: [writer_prepare_workspace, writer_draft_workspace]
+        forbidden: [writer_outline_workspace]
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          section_instructions: {}
+        forbidden: [outline_document, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content: {min_chars: 900, max_chars: 2800, source_similarity_max: 0.95}
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 保留原文主题、主要事实与核心信息，实质重写正文并调整组织结构；仅替换少量词句不算完成，达到相似度阈值也不能替代该判断。
+      - 本次请求无需配图：最终稿不新增配图；不得将配图缺失判为失败。配置 image_calls=0 时另核对本次图片生成调用确为零。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+        similarity: 沿用原相似度口径：对源文档与成稿采用上述字符归一化，计算 Python difflib.SequenceMatcher(None, source, final).ratio()（默认 autojunk=True）；按
+          source_similarity_min/max 含边界比较。AI 可临时调用计算工具取得数值，不得凭阅读估计；该数值仅为一项规则，不能替代改写质量或非目标内容保留检查。
+
+
+  - id: C05
+    title: 飞书 IR 全文重写
+    request:
+      text: 请重写这篇飞书文章并调整结构，全文1500字左右，无需配图：${full} 
+    feishu_doc: full
+    expected:
+      route: rewrite
+      steps: [prepare, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: draft_or_final, provider: feishu}
+          target_document: {provider: feishu}
+          section_instructions: {}
+          document_write_result: {success: true}
+        forbidden: [outline_document]
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {mode: replace, calls: 1, provider_revision_increases: true}
+      content: {min_chars: 900, max_chars: 2800, source_similarity_max: 0.95}
+      provider_materialization: true
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 保留原文主题、主要事实与核心信息，实质重写正文并调整组织结构；仅替换少量词句不算完成，达到相似度阈值也不能替代该判断。
+      - 本次请求无需配图：最终稿不新增配图；不得将配图缺失判为失败。配置 image_calls=0 时另核对本次图片生成调用确为零。
+      - 按本次飞书目标链接独立读取原生内容，核对正文、结构及专项要求；按 expected 核对写回次数、方式和前后版本。保存链接、读取时间、版本与证据。格式转换可改变排版，不得丢失或错置内容，版本增加本身不代表写入正确。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+        similarity: 沿用原相似度口径：对源文档与成稿采用上述字符归一化，计算 Python difflib.SequenceMatcher(None, source, final).ratio()（默认 autojunk=True）；按
+          source_similarity_min/max 含边界比较。AI 可临时调用计算工具取得数值，不得凭阅读估计；该数值仅为一项规则，不能替代改写质量或非目标内容保留检查。
+
+
+  - id: C06
+    title: Markdown 组合局部修改
+    request:
+      text: >-
+        请对我上传的完整文章执行以下修改，其他内容保持不变：1) 在“台风来临前的准备工作”这一章后面插入新的一章“应急物资准备”；
+        2) 将“台风过后的注意事项”和“台风期间的安全措施”两个章节交换顺序。
+      attachment: {fixture: markdown_full}
+    expected:
+      route: revise
+      steps: [prepare, write_document]
+      modify_types: [create, move]
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          document_revision_task: {task_type: revise}
+          document_modify_plan: {}
+          document_revision_set: {schema: lazyllm.tools.writer.data_models.revision.StringReplaceSet}
+          document_revision_result: {success: true}
+        forbidden: [outline_document, section_instructions, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content:
+        required_headings: [应急物资准备]
+        # 新提示词不再要求删除或改写，这些原文应保留。
+        required_text:
+          - 地下通道、地下车库及下沉式建筑
+          - 台风过境后，天气的短暂好转往往容易让人误以为危险已经完全解除，实际上灾后环境中潜藏着诸多次生风险。这一阶段的核心原则是：在没有接到官方明确的风险解除通知前，仍须保持高度警惕，所有行动应以安全评估为前提。
+        ordered_headings: [台风来临前的准备工作, 应急物资准备, 台风过后的注意事项, 台风期间的安全措施]
+        source_similarity_min: 0.55
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 在“台风来临前的准备工作”之后新增“应急物资准备”完整章节，内容具体且符合应急物资主题；新增章节不重复。
+      - “台风过后的注意事项”和“台风期间的安全措施”整章交换顺序，正文随章移动；按 ordered_headings 核对最终顺序，无章节丢失或重复。
+      - 只执行请求指定的新增和章节移动；比较全部非目标正文及原有表格、列表、图片与链接，除必要编号和引用更新、等价排版外保持不变，不以少量 required_text 命中或相似度达标替代全文检查。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+        similarity: 沿用原相似度口径：对源文档与成稿采用上述字符归一化，计算 Python difflib.SequenceMatcher(None, source, final).ratio()（默认 autojunk=True）；按
+          source_similarity_min/max 含边界比较。AI 可临时调用计算工具取得数值，不得凭阅读估计；该数值仅为一项规则，不能替代改写质量或非目标内容保留检查。
+        headings_and_text: required_text/forbidden_text 忽略空白检查；required_headings/ordered_headings 去数字章节号和空白后匹配完整标题，ordered_headings
+          按出现顺序核对；仍需确认匹配处是真实正文或章节，不能用目录和重复摘录冒充。
+
+
+  - id: C07
+    title: 飞书 IR 组合局部修改
+    request:
+      text: >-
+        请对这篇飞书文章执行以下修改，其他内容保持不变：1) 在“台风来临前的准备工作”这一章后面插入新的一章“应急物资准备”；
+        2) 将“台风过后的注意事项”和“台风期间的安全措施”两个章节交换顺序：${full}
+    feishu_doc: full
+    expected:
+      route: revise
+      steps: [prepare, write_document]
+      modify_types: [create, move]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: draft_or_final, provider: feishu}
+          document_revision_task: {task_type: revise}
+          document_modify_plan: {}
+          document_revision_set: {schema: lazyllm.tools.writer.data_models.revision.PatchSet}
+          document_revision_result: {success: true}
+        forbidden: [outline_document, section_instructions]
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {tool: writer_publish_revision, calls: 1, provider_revision_increases: true}
+      content:
+        required_headings: [应急物资准备]
+        # 新提示词不再要求删除或改写，这些原文应保留。
+        required_text:
+          - 地下通道、地下车库及下沉式建筑
+          - 台风过境后，天气的短暂好转往往容易让人误以为危险已经完全解除，实际上灾后环境中潜藏着诸多次生风险。这一阶段的核心原则是：在没有接到官方明确的风险解除通知前，仍须保持高度警惕，所有行动应以安全评估为前提。
+        ordered_headings: [台风来临前的准备工作, 应急物资准备, 台风过后的注意事项, 台风期间的安全措施]
+        source_similarity_min: 0.55
+      provider_materialization: true
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 在“台风来临前的准备工作”之后新增“应急物资准备”完整章节，内容具体且符合应急物资主题；新增章节不重复。
+      - “台风过后的注意事项”和“台风期间的安全措施”整章交换顺序，正文随章移动；按 ordered_headings 核对最终顺序，无章节丢失或重复。
+      - 只执行请求指定的新增和章节移动；比较全部非目标正文及原有表格、列表、图片与链接，除必要编号和引用更新、等价排版外保持不变，不以少量 required_text 命中或相似度达标替代全文检查。
+      - 按本次飞书目标链接独立读取原生内容，核对正文、结构及专项要求；按 expected 核对写回次数、方式和前后版本。保存链接、读取时间、版本与证据。格式转换可改变排版，不得丢失或错置内容，版本增加本身不代表写入正确。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+        similarity: 沿用原相似度口径：对源文档与成稿采用上述字符归一化，计算 Python difflib.SequenceMatcher(None, source, final).ratio()（默认 autojunk=True）；按
+          source_similarity_min/max 含边界比较。AI 可临时调用计算工具取得数值，不得凭阅读估计；该数值仅为一项规则，不能替代改写质量或非目标内容保留检查。
+        headings_and_text: required_text/forbidden_text 忽略空白检查；required_headings/ordered_headings 去数字章节号和空白后匹配完整标题，ordered_headings
+          按出现顺序核对；仍需确认匹配处是真实正文或章节，不能用目录和重复摘录冒充。
+
+
+  - id: C08
+    title: 从零创建 Markdown 分章节科幻小说
+    request:
+      text: 请启动 AI Writer，帮我写一篇科幻小说，讲述人类在一颗资源枯竭的流浪行星上发现远古文明遗迹、最终跨越种族隔阂重建家园的故事，包含序章、若干章节正文和尾声。 全文控制在 6000 字左右，正文最多 6 个一级章节，不要添加附录。本文无需配图，不要搜索、生成或插入任何图片。
+      attachment: {kind: none}
+    expected:
+      route: create
+      steps: [prepare, outline, write_document]
+      workspaces:
+        prepare: {structure_mode: sectioned, representation: markdown, next_step: outline}
+        outline: {operation: generate, next_step: write_document}
+        write_document: {operation: generate, representation: markdown, next_step: __end__}
+      tools:
+        # 新业务逻辑将各步骤封装为顶层 workspace 工具，内部子步骤不再单独出 trace。
+        required: [writer_prepare_workspace, writer_outline_workspace, writer_draft_workspace]
+        forbidden: []
+      artifacts:
+        required:
+          outline_document: {extension: .md}
+          section_instructions: {}
+          draft_blocks: {min_items: 1}
+        forbidden: [source_document, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content: {min_chars: 5100, max_chars: 7500}
+      sse: {required: true, min_deltas: 2, reconstruct_final: true}
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 小说包含序章、若干正文篇章和尾声；正文一级章节最多六个，不把全文标题计入正文篇章，不添加附录。
+      - 故事必须实际展开资源枯竭的流浪行星、远古文明遗迹发现、跨种族隔阂与重建家园；人物行动、冲突和结局连贯，不能只在标题或梗概中提及。
+      - draft_blocks 非空，并与最终小说正文有对应关系，不能以空白分块冒充分章节生成。
+      - 不得搜索、生成或插入图片；分别核对本次工具/日志及最终正文，不只核对 image_generator 调用数。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+      streaming:
+      - 分别核对浏览器收到的本次 draft SSE 与观察器数据，不用观察器补齐浏览器缺失；完整流应 start→delta→end，无 abort，槽位归属明确。
+      - 按 min_deltas 检查增量事件数，文本非空；结合事件时间和 UI 录屏确认逐步呈现，不能只凭帧数推断用户看到流式效果。
+      - reconstruct_final=true 时比较完整流拼接内容与对应版本最终稿；归一化换行、行尾空格与连续空行，不忽略正文差异。必须区分同次重试产生的不同流和版本，缺少对应关系时记证据不足。
+
+
+  - id: I01
+    title: Markdown 配图插入
+    request:
+      text: >-
+        请写一篇面向社会公众的《台风天安全防范指南》公众号文章，全文1500字左右。正文需要包含至少 2 张与内容紧密相关的配图并插入对应章节。
+      attachment: {kind: none}
+    expected:
+      route: create
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          outline_document: {extension: .md}
+          section_instructions: {}
+          visual_plan: {}
+          resolved_media_assets: {}
+        forbidden: [source_document, document_write_result]
+      media: {min_images: 2}
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      content: {min_chars: 900, max_chars: 2800}
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 文章围绕台风天安全防范，面向公众，正文完整且配图服务内容。
+      - 至少两张与所在章节内容相关的有效配图，插入对应正文位置；排除占位图和损坏图片，通过媒体资产、原生块与 UI 显示证据共同核对，不以 URL 数量或工具调用次数代替显示成功。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+
+
+  - id: I02
+    title: 飞书 IR 配图插入
+    request:
+      text: >-
+        请根据这份飞书大纲完成全文，全文1500字左右，正文需要包含至少 2 张与内容紧密相关的配图并插入对应章节：${outline}。
+    feishu_doc: outline
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: outline, provider: feishu}
+          target_document: {provider: feishu}
+          outline_document: {extension: .lmd, stage: outline}
+          section_instructions: {}
+          visual_plan: {}
+          resolved_media_assets: {}
+          document_write_result: {success: true}
+        forbidden: []
+      media: {min_images: 2}
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {mode: replace, calls: 1, provider_revision_increases: true}
+      content: {min_chars: 900, max_chars: 2800, source_heading_coverage_min: 0.8}
+      provider_materialization: true
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 完整扩写源大纲各节要点，保留原意与主题，不只是重复标题或罗列提纲；允许自然扩写，不得丢失主要内容。
+      - 至少两张与所在章节内容相关的有效配图，插入对应正文位置；排除占位图和损坏图片，通过媒体资产、原生块与 UI 显示证据共同核对，不以 URL 数量或工具调用次数代替显示成功。
+      - 按本次飞书目标链接独立读取原生内容，核对正文、结构及专项要求；按 expected 核对写回次数、方式和前后版本。保存链接、读取时间、版本与证据。格式转换可改变排版，不得丢失或错置内容，版本增加本身不代表写入正确。
+      - 另在飞书目标文档核对图片与图文位置正常显示；LazyMind 编辑器显示正常不能代替目标平台显示。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+        heading_coverage: 沿用原覆盖率口径：提取源文档和成稿标题，去开头数字章节号及全部空白；逐个源标题检查是否出现在成稿标题拼接文本中，命中数/源标题数与 source_heading_coverage_min
+          比较。标题改写导致未命中须如实报告，另核对语义内容；源标题或源文档缺失时不能推断通过。
+
+
+  - id: X01
+    title: Markdown 创建含章节交叉引用
+    request:
+      text: >-
+        请写一篇面向社会公众的《台风天安全防范指南》公众号文章，全文1500字左右，无需配图。正文需要包含至少 1 处提及其他章节的内部交叉引用。
+      attachment: {kind: none}
+    expected:
+      route: create
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          outline_document: {extension: .md}
+          section_instructions: {}
+        forbidden: [source_document, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      image_calls: 0
+      content: {min_chars: 900, max_chars: 2800}
+      cross_ref: {min_links: 1, min_section_links: 1}
+      ref_integrity: true
+      numbering: {require: true}
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 正文中的交叉引用指向文档内真实存在且语义正确的目标；检查源位置、目标章节及实际跳转/锚点关系，不以纯文本提及或链接数量代替有效引用。
+      - 按 expected.numbering、ref_integrity 和 ref_number_consistency 实际配置检查导出/最终展示：章节编号层级与顺序正确，存在的图表或代码题注编号连贯，锚点唯一且无悬空引用；正文显示的引用编号与当前目标对应。不要要求编号必须写入原始
+        IR content。
+      - 至少一处有效的章节内部交叉引用；正文仍是完整的台风天安全防范文章。
+      - 本次请求无需配图：最终稿不新增配图；不得将配图缺失判为失败。配置 image_calls=0 时另核对本次图片生成调用确为零。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+
+
+  - id: X02
+    title: 飞书 IR 成稿含章节引用
+    request:
+      text: >-
+        请根据这份飞书大纲完成全文，全文1500字左右，无需配图。正文需要包含至少 1 处提及其他章节的内部交叉引用：${outline}。
+    feishu_doc: outline
+    expected:
+      route: expand
+      steps: [prepare, outline, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .lmd, stage: outline, provider: feishu}
+          target_document: {provider: feishu}
+          outline_document: {extension: .lmd, stage: outline}
+          section_instructions: {}
+          document_write_result: {success: true}
+        forbidden: []
+      final: {extension: .lmd, representation: ir, stage: draft_or_final, provider: feishu, ui_editable: true, new_revision: true}
+      write_back: {mode: replace, calls: 1, provider_revision_increases: true}
+      image_calls: 0
+      content: {min_chars: 900, max_chars: 2800, source_heading_coverage_min: 0.8}
+      cross_ref: {min_links: 1, min_section_links: 1}
+      ref_integrity: {require_numbering: true}
+      numbering: {require: true}
+      provider_materialization: true
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 完整扩写源大纲各节要点，保留原意与主题，不只是重复标题或罗列提纲；允许自然扩写，不得丢失主要内容。
+      - 正文中的交叉引用指向文档内真实存在且语义正确的目标；检查源位置、目标章节及实际跳转/锚点关系，不以纯文本提及或链接数量代替有效引用。
+      - 按 expected.numbering、ref_integrity 和 ref_number_consistency 实际配置检查导出/最终展示：章节编号层级与顺序正确，存在的图表或代码题注编号连贯，锚点唯一且无悬空引用；正文显示的引用编号与当前目标对应。不要要求编号必须写入原始
+        IR content。
+      - 至少一处有效的章节内部交叉引用，且在飞书最终文档中对应正确目标。
+      - 本次请求无需配图：最终稿不新增配图；不得将配图缺失判为失败。配置 image_calls=0 时另核对本次图片生成调用确为零。
+      - 按本次飞书目标链接独立读取原生内容，核对正文、结构及专项要求；按 expected 核对写回次数、方式和前后版本。保存链接、读取时间、版本与证据。格式转换可改变排版，不得丢失或错置内容，版本增加本身不代表写入正确。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+        heading_coverage: 沿用原覆盖率口径：提取源文档和成稿标题，去开头数字章节号及全部空白；逐个源标题检查是否出现在成稿标题拼接文本中，命中数/源标题数与 source_heading_coverage_min
+          比较。标题改写导致未命中须如实报告，另核对语义内容；源标题或源文档缺失时不能推断通过。
+
+
+  - id: X03
+    title: 含交叉引用的 Markdown 局部修改后引用保留
+    request:
+      text: >-
+        请对我上传的完整文章执行以下修改，其他内容保持不变：将《台风过境后的注意事项》整个章节移动到
+        《台风期间的安全措施》之前（调整章节顺序），保证正文中的原有的所有交叉引用链接正确，无需新增或生成图片。
+      attachment: {fixture: markdown_refs}
+    expected:
+      route: revise
+      steps: [prepare, write_document]
+      artifacts:
+        required:
+          source_document: {extension: .md}
+          document_revision_task: {task_type: revise}
+          document_modify_plan: {}
+          document_revision_set: {schema: lazyllm.tools.writer.data_models.revision.StringReplaceSet}
+          document_revision_result: {success: true}
+        forbidden: [outline_document, section_instructions, document_write_result]
+      final: {extension: .md, representation: markdown, new_revision: true}
+      write_back: {calls: 0}
+      image_calls: 0
+      content:
+        ordered_headings: [台风过境后的注意事项, 台风期间的安全措施]
+        source_similarity_min: 0.7
+      cross_ref: {min_links: 2, preserve_from_source: true}
+      ref_integrity: true
+      numbering: {require: true}
+      ref_number_consistency: true
+
+    acceptance:
+      review_mode: ai_after_execution
+      criteria:
+      - 按本次 expected 逐项核对 route、steps、workspaces、tools、artifacts、final 和 write_back 中实际配置的规则；不得以工作流 completed 或回执 success
+        代替业务通过。
+      - 最终稿在 LazyMind 可见、非空且无错误占位；ui_editable=true 时需编辑器可编辑状态证据，不能仅凭数据标记推断。new_revision=true 需本次创建或修订记录，不能仅凭 revision
+        大于零判定。
+      - 以本次规则快照、输入、源文档、最终产物、session、trace、SSE 和 UI 录屏/页面为证据；报告逐项记录观察、证据路径和 PASS / FAIL / INCONCLUSIVE，缺少证据不得推断通过。
+      - 将“台风过境后的注意事项”整章移到“台风期间的安全措施”之前，移动包含章节全部正文，无丢失或重复。
+      - 只执行请求指定的新增和章节移动；比较全部非目标正文及原有表格、列表、图片与链接，除必要编号和引用更新、等价排版外保持不变，不以少量 required_text 命中或相似度达标替代全文检查。
+      - 正文中的交叉引用指向文档内真实存在且语义正确的目标；检查源位置、目标章节及实际跳转/锚点关系，不以纯文本提及或链接数量代替有效引用。
+      - 按 expected.numbering、ref_integrity 和 ref_number_consistency 实际配置检查导出/最终展示：章节编号层级与顺序正确，存在的图表或代码题注编号连贯，锚点唯一且无悬空引用；正文显示的引用编号与当前目标对应。不要要求编号必须写入原始
+        IR content。
+      - 逐一对照源文档所有原有引用，保留其语义目标；章节重排后同步显示编号和跳转目标，不能用新增链接凑足 min_links。
+      - 保留原有图片；不得新增或生成图片，按 image_calls=0 核对调用。
+      measurement_notes:
+        character_count: 沿用原内容校验口径：Markdown 去行首标题标记、列表前缀、HTML a 标签及 ` * _ > [ ] ( ) 标记；IR 取标题和递归块 content；随后去全部空白，按字符数比较
+          min_chars/max_chars（含边界）。这是测试统计口径，不是中文词数；不得直接使用 raw_markdown characters 替代。
+        similarity: 沿用原相似度口径：对源文档与成稿采用上述字符归一化，计算 Python difflib.SequenceMatcher(None, source, final).ratio()（默认 autojunk=True）；按
+          source_similarity_min/max 含边界比较。AI 可临时调用计算工具取得数值，不得凭阅读估计；该数值仅为一项规则，不能替代改写质量或非目标内容保留检查。
+        headings_and_text: required_text/forbidden_text 忽略空白检查；required_headings/ordered_headings 去数字章节号和空白后匹配完整标题，ordered_headings
+          按出现顺序核对；仍需确认匹配处是真实正文或章节，不能用目录和重复摘录冒充。
+
+  # 写作 3.0（9月）新增用例，来源文档 revision 771：
+  # https://sensetime.feishu.cn/wiki/MnyvwLI9xiXd61ky83scTHsHnyc
+  # acceptance 是验收设计元数据，当前 case_loader/Runner 不执行此字段。
+  # W01 的串行 UI 发布与判定见 expected.publication。其他新增用例的 acceptance 仍不执行。
+  - id: W01
+    title: 0→1 多平台写入
+    request:
+      text: 写一篇《周末露营准备指南》，约1500字，包含装备清单、行程安排和安全提醒。正文需要有两张配图、一张装备表格、有序和无序列表，以及一个用 JSON 记录行程的代码块。
+      attachment:
+        kind: none
+    expected:
+      route: create
+      steps:
+      - prepare
+      - outline
+      - write_document
+      artifacts:
+        required:
+          outline_document:
+            extension: .md
+          section_instructions: {}
+        forbidden:
+        - source_document
+        - document_write_result
+      final:
+        extension: .md
+        representation: markdown
+        new_revision: true
+      write_back:
+        calls: 0
+      content:
+        min_chars: 900
+        max_chars: 2800
+      media:
+        min_images: 2
+      publication:
+        mode: sequential
+        providers: [feishu, notion, github, wechat, obsidian]
+        # GitHub 目标按用户要求暂留空；配置提示词中的真实仓库/目录后再移除此项。
+        unconfigured_providers: [github]
+    acceptance:
+      automation_status: sequential_ui_execution; AI_readback_and_review_pending; github target unconfigured
+      providers:
+      - feishu
+      - notion
+      - github
+      - wechat
+      - obsidian
+      steps:
+      - 检查生成稿包含文本、两张配图、装备表格、有序和无序列表、JSON 代码块。
+      - 保存初始生成稿作为比较基准，在同一编辑器中依次发布到五个平台；不恢复原稿，各平台独立记录结果。
+      - 独立回读目标文档，检查正文、表格、列表、代码及图片引用保留。
+      - 汇总实际返回的文档链接；微信无预览链接时记录草稿 ID，Obsidian 记录本地路径。
+      - 人工打开目标文档核查图文显示。
+      review_mode: ai_after_execution
+      required_content:
+        - 正文及主要章节完整，装备清单、行程安排、安全提醒均保留。
+        - 至少两张配图，图片与原稿对应；检查可访问性或实际显示，不能仅按链接数量判断。
+        - 装备表格的表头、各行数据及对应关系保留。
+        - 有序列表保留顺序，无序列表保留条目。
+        - JSON 行程代码块保留代码内容，语法有效。
+      allowed_changes:
+        - 平台正常排版差异、Markdown 与原生块格式转换、图片重托管。
+      forbidden_changes:
+        - 未要求的正文或结构丢失、列表顺序变化、表格数据错位、代码损坏、图片缺失。
+      provider_checks:
+        feishu: 根据本次文档链接或 Docx ID 回读，检查原生文档内容及图文显示。
+        notion: 根据本次页面链接或 ID 回读，检查原生块中的表格、列表、代码和图片，不只读取纯文本。
+        github: 检查本次实际写入提交或 PR 分支的文件和图片资源，不以默认分支代替；目标未配置时记未执行。
+        wechat: 用本次草稿 ID 和文章索引定位；公众号后台首页与阅读原文链接都不是草稿预览链接。
+        obsidian: 核实本次实际写入的 Vault、文件路径及图片附件，不能用预览缓存代替。
+      evidence_requirements:
+        - 使用本次 final.md 初稿和 publications.json 回执；连续发布不恢复原稿，检查是否累积丢失内容。
+        - AI 自行选择合适的 CLI、技能或浏览器独立读取目标，保存必要的回读摘录或截图、读取时间与目标版本。
+        - 报告逐平台列出执行状态、文档链接或路径、目标标识、逐项验收结果和证据位置。
+        - 脚本完成不等于业务通过；未回读保持待验收，读不到或无法确认时标记证据不足。
+      note: write_back.calls=0 只检查生成阶段，不包含后续 UI 主动发布。
+
+  - id: E02
+    title: Markdown / LaTeX 复制
+    request:
+      text: 写一篇《机器学习中的常见损失函数》，介绍均方误差、交叉熵和 Huber 损失，包含相关公式和推导、一张对比表格、使用建议列表及 Python 示例代码，约1500字，无需配图。
+      attachment:
+        kind: none
+    expected:
+      route: create
+      steps:
+      - prepare
+      - outline
+      - write_document
+      artifacts:
+        required:
+          outline_document:
+            extension: .md
+          section_instructions: {}
+        forbidden:
+        - source_document
+        - document_write_result
+      final:
+        extension: .md
+        representation: markdown
+        new_revision: true
+      write_back:
+        calls: 0
+      content:
+        min_chars: 900
+        max_chars: 2800
+      image_calls: 0
+    acceptance:
+      automation_status: generation_only; render/clipboard pending
+      steps:
+      - 检查 LazyMind 中公式与推导、对比表格、建议列表、Python 代码块正常渲染。
+      - 对同一份稿件分别点击复制 Markdown 和 LaTeX，保存实际剪贴板内容。
+      - 检查复制内容保留公式、表格、列表及代码块。
+      - 人工粘贴到语雀与 Overleaf，分别核查显示与 LaTeX 编译结果。
+
+  - id: R01
+    provider_doc: notion_file
+    title: Revise Notion
+    constraints: revise
+    request:
+      text: 修改这份Notion文档，将“安全与环保”整节移到“装备准备”之前，其他内容不变：${notion_file}
+      attachment:
+        kind: none
+    expected:
+      route: revise
+      steps:
+      - prepare
+      - write_document
+      artifacts:
+        required:
+          source_document:
+            provider: notion
+          document_revision_task:
+            task_type: revise
+          document_modify_plan: {}
+          document_revision_result:
+            success: true
+        forbidden:
+        - outline_document
+        - section_instructions
+      final:
+        provider: notion
+        new_revision: true
+      write_back:
+        calls: 1
+    acceptance:
+      automation_status: provider baseline/readback and business checks pending
+      provider: notion
+      preconditions:
+      - 运行前保存并确认原始基线；重复执行前恢复基线或使用经确认的测试副本。
+      steps:
+      - 安全与环保章节整体位于装备准备之前，无重复或丢失。
+      - 确认目标文档实际写回成功，独立回读并与修订前基线比对。
+      - 未要求修改的正文、结构和图片保持不变；保存目标链接或路径供人工核查。
+      source_registry_key: notion_file
+
+  - id: R02
+    provider_doc: wechat_title
+    title: Revise Wechat
+    constraints: revise
+    request:
+      text: 修改微信公众号草稿箱中的《${wechat_title}》，将“安全与环保”章节改得具体些，让第一次露营的人知道该注意什么。
+      attachment:
+        kind: none
+    expected:
+      route: revise
+      steps:
+      - prepare
+      - write_document
+      artifacts:
+        required:
+          source_document:
+            provider: wechat
+          document_revision_task:
+            task_type: revise
+          document_modify_plan: {}
+          document_revision_result:
+            success: true
+        forbidden:
+        - outline_document
+        - section_instructions
+      final:
+        provider: wechat
+        new_revision: true
+      write_back:
+        calls: 1
+    acceptance:
+      automation_status: provider baseline/readback and business checks pending
+      provider: wechat
+      preconditions:
+      - 运行前保存并确认原始基线；重复执行前恢复基线或使用经确认的测试副本。
+      steps:
+      - 按完整标题定位草稿；同名草稿需先确认，不任意选择。
+      - 安全与环保章节改写为具体、可操作的新手建议。
+      - 确认目标文档实际写回成功，独立回读并与修订前基线比对。
+      - 未要求修改的正文、结构和图片保持不变；保存目标链接或路径供人工核查。
+
+  - id: R03
+    provider_doc: github_file
+    title: Revise Github
+    constraints: revise
+    request:
+      text: '修改这份《周末露营活动指南》，在“活动概况”章节新增一张露营相关的宣传图： ${github_file} 。'
+      attachment:
+        kind: none
+    expected:
+      route: revise
+      steps:
+      - prepare
+      - write_document
+      artifacts:
+        required:
+          source_document:
+            provider: github
+          document_revision_task:
+            task_type: revise
+          document_modify_plan: {}
+          document_revision_result:
+            success: true
+        forbidden:
+        - outline_document
+        - section_instructions
+      final:
+        provider: github
+        new_revision: true
+      write_back:
+        calls: 1
+    acceptance:
+      automation_status: provider baseline/readback and business checks pending
+      provider: github
+      preconditions:
+      - 运行前保存并确认原始基线；重复执行前恢复基线或使用经确认的测试副本。
+      steps:
+      - 在“活动概况”章节新增一张露营相关的宣传图，图片引用有效且能够正常显示。
+      - 原有章节正文与图片保留。
+      - 回读实际写入分支或提交；若生成 PR，不用默认分支代替。
+      - 确认目标文档实际写回成功，独立回读并与修订前基线比对。
+      - 未要求修改的正文、结构和图片保持不变；保存目标链接或路径供人工核查。
+      source_registry_key: github_file
+
+      
+  - id: R04
+    provider_doc: obsidian_file
+    title: Revise Obsidian
+    constraints: revise
+    request:
+      text: 修改这个Obsidian文档，在“安全与环保”章节补充一段迷路时的应对办法，写得实用一点：${obsidian_file}
+      attachment:
+        kind: none
+    expected:
+      route: revise
+      steps:
+      - prepare
+      - write_document
+      artifacts:
+        required:
+          source_document:
+            provider: obsidian
+          document_revision_task:
+            task_type: revise
+          document_modify_plan: {}
+          document_revision_result:
+            success: true
+        forbidden:
+        - outline_document
+        - section_instructions
+      final:
+        provider: obsidian
+        new_revision: true
+      write_back:
+        calls: 1
+    acceptance:
+      automation_status: provider baseline/readback and business checks pending
+      provider: obsidian
+      preconditions:
+      - 运行前保存并确认原始基线；重复执行前恢复基线或使用经确认的测试副本。
+      steps:
+      - 在安全与环保章节新增实用的迷路应对段落。
+      - 运行前确认 Obsidian Vault 对应的实际本地路径。
+      - 确认目标文档实际写回成功，独立回读并与修订前基线比对。
+      - 未要求修改的正文、结构和图片保持不变；保存目标链接或路径供人工核查。
+      source_registry_key: obsidian_file

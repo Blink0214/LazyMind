@@ -135,6 +135,7 @@ data/evo/
 AGENTS.md
 !/docs/AGENTS.md
 algorithm/.agentic_rag/
+tests/e2e/writer-e2e/env.local.sh
 version.*
 algorithm/Dockerfile.chat-rebase
 
@@ -165,3 +166,9 @@ lazymind-history-injection*.zip
 /REPORT.md
 /RELEASE_AUDIT.md
 /RELEASE_CANDIDATE.md
+# Run artifacts produced by tests/e2e/writer-benchmark are large and not
+# source-controlled. Each test run regenerates them under a timestamped dir.
+
+# Patterns use leading "**/" so they match at any depth under tests/e2e/.
+tests/e2e/**/reports/
+tests/e2e/**/__pycache__/

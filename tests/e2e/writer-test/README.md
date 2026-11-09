@@ -1,0 +1,466 @@
+# AI Writer E2E 测试
+
+本目录只测试长文写作。功能测试与性能测试使用两套独立的 YAML 用例和 Runner：
+
+C08 沿用 P01 case 3 的科幻小说输入，要求全文约 6000 字，校验最终全文、路由与流式输出。
+
+C08 额外要求 `draft_blocks` 非空，以验证分章节生成路径；此断言不用于性能统计。
+
+- 功能：`cases/writer_func_cases.yaml`，C01–C08、I01–I02、X01–X03；
+- 性能：`cases/writer_perf_cases.yaml`，P01–P05，每个场景 5 个 case；
+- 用户输入仅使用用例 YAML 的 `text`（解析资源占位符），不追加执行约束词。
+`constraints` 保留为用例元数据；`exec_constraints.yaml` 不再自动注入。
+
+架构、证据来源和判决语义见
+[`e2e-test-architecture.md`](e2e-test-architecture.md)；Agent 操作约束见
+[`SKILL.md`](SKILL.md)。
+
+## 功能验收职责
+
+Runner 保存规则、事实、原稿与最终产物，不再按 expected 生成业务 PASS/FAIL。
+`execution_status` 表示工作流执行；`evidence_status` 和 `evidence_issues` 记录采集缺口；
+`acceptance_status` 固定为 `PENDING_AI_REVIEW`，由 Agent 后续在报告逐项填写验收。
+兼容字段 `checks` 为空，`mechanical_verdict` 固定为待验收。
+退出码 0 仅表示工作流完成，1 表示未完成，2 表示执行异常；不能据此上报业务通过。
+原有平台回读保留为取证，不再做固定内容比对。性能统计和采集完整性门槛保持原口径。
+
+现有 YAML 不迁移：`expected` 与 `acceptance` 保留原结构，新增业务字段不需要 Python
+映射或白名单。证据包保存完整场景快照、规则文件路径及 SHA256，AI 优先使用本次快照，
+不得用运行后修改的规则静默替换。凭据仍按统一取证策略脱敏。
+
+基础取证不依赖判题字段：读取源文档/可读附件、最终产物、实际会话槽位、媒体资产，
+并尝试导出最终文档；已有飞书资源按资源登记采集原生内容。缺失或读取失败应区分于业务不合格。
+发布前快照存在时不再导出发布后的当前文档来冒充原稿；该缺口明确记录。
+`expected.publication` 仍含实际执行参数，因此保留平台、串行模式等参数检查。
+
+## 运行前准备
+
+- LazyMind 服务可从 `http://localhost:8090` 访问；可用
+  `LAZYMIND_BASE_URL` 或 `--base-url` 覆盖。
+- 默认使用 `admin/admin` 登录；可用
+  `LAZYMIND_E2E_USERNAME`、`LAZYMIND_E2E_PASSWORD` 覆盖。
+- 飞书场景要求本机已安装并登录 `lark-cli`。Runner 会在发送 Writer 请求前
+  自动恢复 YAML 中登记的文档基线；恢复失败时用例立即停止。
+- UI 模式需要 `frontend` 已安装 Playwright 及浏览器依赖。
+
+## 功能测试
+
+默认通过 Playwright 驱动真实聊天 UI：
+
+```bash
+# 全部功能场景
+bash tests/e2e/writer-test/scripts/full_run.sh --mode func
+
+# 单场景
+bash tests/e2e/writer-test/scripts/full_run.sh --mode func C03
+
+# 跳过浏览器，直接走 Core API
+bash tests/e2e/writer-test/scripts/full_run.sh --mode func --no-ui C01
+```
+
+直接运行单个功能场景：
+
+```bash
+.venv/bin/python tests/e2e/writer-test/runners/func_run.py \
+  --scenario X01 \
+  --base-url http://localhost:8090 \
+  --output-dir /tmp/writer-test/X01
+```
+
+功能场景始终来自 `writer_func_cases.yaml`，没有 case 编号参数。
+
+功能 UI 状态每 15 秒轮询。SSE 从页面发送请求前安装捕获：浏览器 XHR 与独立
+只读 task 订阅分开取证；独立订阅在浏览器首次请求该 task stream 时启动，
+不等工作流结束后再补订阅。单例桥接预算预留 35 秒用于收尾；完成后最多等待
+30 秒，并要求正文终止事件后至少 500 ms 没有新事件。收尾超时不会补造 end，
+最终页面正文也不会替代捕获流。`_ui_bridge/sse_capture.json` 保留两路事件及连接
+开始/断开时间、断开类型、收尾原因；`evidence.json.sse.observer` 保留独立订阅的
+归一化证据。AI 验收应区分浏览器捕获与 observer，不用后者冒充浏览器实际收到的内容。
+
+source_document 的 provider 从 IR `provider_binding.provider` 读取，
+target_document 从 `adapter` 读取；最终稿才优先使用 Core 槽位顶层的写回
+`provider`。修订集按实际 `PatchSet` / `StringReplaceSet` schema 检查，
+不要求该模型不存在的 `patch_type` 字段。
+
+X01/X02 的编号只检查章节标题、图注等被编号项；正文链接文字无需重复编号。
+引用仍需满足数量要求并准确指向存在的目标。
+
+## 性能测试
+
+性能模式固定走 Core API，不启动浏览器：
+
+```bash
+# 全部 P01–P05，每个场景 5 个 case
+bash tests/e2e/writer-test/scripts/full_run.sh
+
+# 指定场景和 case
+bash tests/e2e/writer-test/scripts/full_run.sh P03 --cases 1,2
+
+# 功能与性能串行执行，共用一次运行时间戳
+bash tests/e2e/writer-test/scripts/full_run.sh --mode both
+```
+
+直接运行一个性能 case：
+
+```bash
+.venv/bin/python tests/e2e/writer-test/runners/perf_run.py \
+  --scenario P01 \
+  --case 1 \
+  --base-url http://localhost:8090 \
+  --output-dir /tmp/writer-perf/P01/case_1
+```
+
+## 常用参数
+
+`full_run.sh` 支持：
+
+| 参数 | 作用 |
+|---|---|
+| `--mode perf\|func\|both` | 选择套件；默认 `perf` |
+| `--cases 1,2` | 只运行性能场景中的指定 case |
+| `--run-id YYYYMMDD_HHMMSS` | 向指定批次追加新场景；已有场景目录时拒绝覆盖 |
+| `--base-url URL` | 覆盖被测服务地址 |
+| `--recipe text_intent\|explicit_mention` | 选择 API 路由信号 |
+| `--no-ui` | 功能测试改走 API 通道 |
+| `--no-trace` | 不获取 trace |
+| `--no-checks` | 兼容旧命令；不再执行机械判决，事实始终采集 |
+| `--no-stats` | 不计算性能统计 |
+| `--venv PATH` | 指定 Python 解释器 |
+
+单用例超时通过 `TIMEOUT_S` 设置，默认 600 秒：
+
+```bash
+TIMEOUT_S=900 bash tests/e2e/writer-test/scripts/full_run.sh --mode func C03
+```
+
+## 前端局部编辑与写回测试
+
+`frontend/tests/e2e/writer_effect_ui.spec.ts` 针对已存在的长文会话执行四个
+Playwright 用例：Markdown/IR 选区改写、手动编辑后写回、Markdown 写回飞书。
+必须提供对应会话 ID；缺失时用例会被跳过。
+
+```bash
+cd frontend
+AI_WRITER_MARKDOWN_EFFECT_CONVERSATION_ID=<id> \
+AI_WRITER_IR_EFFECT_CONVERSATION_ID=<id> \
+AI_WRITER_WRITE_BACK_CONVERSATION_ID=<id> \
+AI_WRITER_MARKDOWN_WRITE_BACK_CONVERSATION_ID=<id> \
+pnpm test:writer-effects
+```
+
+这些 ID 必须分别指向与用例表示形式和 provider 匹配的会话。测试不会用“最近
+会话”兜底。
+
+## 输出位置
+
+`full_run.sh` 输出到：
+
+```text
+reports/
+  func/<timestamp>/<scenario>/case_1/
+  perf/<timestamp>/<scenario>/case_N/
+  ui/<run-id>/
+```
+
+功能单用例主要产物：
+
+```text
+run_N.json        执行状态、证据状态、会话、耗时和待 AI 验收状态
+trace.json        归一化 trace（启用时）
+final.md          最终文档
+evidence.json     expected、facts、checks、SSE、重试等结构化证据
+report.md         执行与采集结果、待填写的逐项业务结论
+_ui_bridge/       UI 模式录屏（成功或失败均保留）
+```
+
+IR 场景按需额外保留 `draft_document.json` 与 `export_document.md`。Runner 的
+重复 stdout、空 stderr 和桥接临时 prompt 会自动清理；非空 stderr 保留用于诊断。
+
+性能单用例额外产生 `document_stats.json`；场景目录产生聚合后的
+`stats.json`、`stats.md`。失败用例保留运行记录，但不进入成功样本的性能聚合。
+
+### 修改文字数采集
+
+P04/P05 在 trace 回收后，从本次 material-analysis 请求的完整正文恢复原文；优先读取
+已采集 IO，也支持完整 LLM 诊断中的请求。正文必须有完整起止标记且不含截断标记。
+飞书正文与资源标题合并，附件原文已含标题；不读取当前在线文档或其他批次作为基线。
+原文缺失或多份内容冲突时，修改文字数标为缺失（上报填 `-`），绝不按 0 计算。
+
+`visible_text` 去除 Markdown 标记和空白后，使用 `SequenceMatcher(autojunk=False)`
+对比原文与最终稿：修改文字数＝新增字符数＋删除字符数；替换同时计两侧，段落搬移
+按删除＋新增计算。不是全文长度差，也不代表语义改写字数，不累计失败草稿。
+`document_stats.json` 的 `revision.changed_characters` 保存总修改量；
+`original.recovered.md` 保存原文，`revision_audit.json` 保存来源 observation ID、
+提取状态、原文和最终稿哈希。缺失样本不参与可用值均值：成功样本中任一个缺失，
+聚合修改量也标为缺失。全部有值时取成功样本均值，真正未修改时输出 0。
+
+报告正文阶段及全流程显示相同修改量，不加失败重试括号。JSON 位于
+`phases.write_document.reported.modified_chars` 和 `reported_full.modified_chars`。
+15 列导出的末三列为全文字符数、修改文章字数、键；映射飞书 16 列时，在
+前 12 列后插入 draft 章节数 `-`，再接这三列，即 `row[:12] + ['-'] + row[12:]`。
+不要继续沿用旧的固定键索引 13；新键索引为 14。历史 14 列导出须重算或显式按旧格式导入。
+
+### 当前性能统计口径
+
+性能导出使用以下 15 列（导入外部表格时需匹配该列顺序）：批次、场景、阶段、总耗时、
+LLM 推理轮数、LLM 累计耗时、Agent 工具调用次数、工具实际执行时间、输入
+token/字符、输出 token/字符、全文字符数、修改文章字数、键。
+
+- 展示和导出统一为 `总值(失败重试部分)`，例如 `14(5)`；没有失败重试贡献的指标
+  只显示总值，不加 `(0)`。采用 15 列（比原 14 列在键前增加修改文章字数），不增加异常行或列。括号内是总值的子项，
+  不可再次相加。失败调用缺少 token usage 时，受影响的总 token 和失败 token 标为缺失，
+  不按 0 推算；已采集 IO 字符仍按原规则累计。带括号的导出单元格是文本；计算、排序和对比应读取 `stats.json`
+  中的数值字段，不能直接把显示文本当数值使用。
+- 主报表只聚合最终成功的样本，但总值包含这些样本的全部失败及重试尝试。
+  `phases.*.reported` 和 `reported_full` 保存总值，其 `failed_retry` 保存对应失败重试
+  数值；两者使用完全相同的成功样本集合与分母。`normal` / `clean_full` 保留为审计字段，
+  不再作为主报表总值。全文字符数只取最终成稿，不累计失败草稿。
+- `reported_full` 从 trace 起点统计到最后步骤返回，期间发起的调用全部计入；
+  阶段外协调和失败发起决策只计全流程。终态后才开始的正常尾迹不计入该总值，
+  也不能误记成失败重试；`full_link` 仍保留全量原始过程供审计。
+- 括号内调用指标按已识别的失败/被替代尝试、失败前缀和 ERROR 子树计算；
+  成功重试内部发起决策及成功执行不算失败部分。墙钟括号内仅计失败区间的独占时间，
+  保护与正常工作重叠的时间，不能将并发调用累计耗时直接当墙钟失败耗时。
+  它是可观测的失败独占时间，不表示严格的因果延迟。
+- 阶段仅统计对应 `advance_step` 的完整执行子树（`advance_step_execution_tree`），
+  包含步骤内部 Agent 决策、准备、workspace 执行和收尾。workspace 父链只用于识别步骤。
+  步骤外主 Agent 的发起决策、路由和协调只计全流程，不延长阶段起点。
+  不使用前端状态、相邻阶段时间窗、旧函数名映射或“步骤＋外部决策”口径兜底。
+- 发起决策的串行轮次关联仅用于失败尝试分类；同一 Agent、同一 trace、该轮唯一
+  目标工具、无跨轮重叠，已有输出还须匹配工具名和 step_ids。成功步骤的外部决策
+  无需归属阶段。失败/先前尝试的决策无法可靠关联时记录 `unresolved_dispatches`
+  并阻止正式导出，不能猜测应扣除的调用。步骤内 workspace 重试保留成功发起决策。
+- 远程子 Agent 仍要求 workflow session、subagent 标签和跨 trace 的唯一包围关系，
+  关联记录在 `step_links`；决策关联记录在 `decision_links`，原始 observation 不变。
+  `unassigned_llm_ids` 列出终态边界内未归属阶段的正常 LLM（包括前置路由）。
+- 阶段 `full` 保留全部尝试，`normal` 只保留最后且成功的尝试，`abnormal` 记录其余
+  调用。同一步内重试 workspace 时，从明确发起最后 workspace 的决策开始保留；
+  先前尝试的决策也随尝试排除。末次失败不回退选择旧成功结果；可用的后端
+  attempt_results 终态优先于 workspace 表面成功。失败样本不参与正常指标均值。
+- 阶段墙钟为业务尝试区间并集：起点为 advance_step 开始（步骤内重试取成功重试的内部决策），终点包含执行收尾和晚结束的
+  后代调用。正常墙钟扣除被排除调用独占的时间；失败并行调用与保留工作重叠的
+  时间不能重复扣减。LLM 耗时逐调用累加，可以超过墙钟。工具次数仅计 Agent 直接
+  调用的业务工具；工具时间扣除后代 LLM 区间并集，不减去并行 LLM 的时长之和。
+- `full_link` 保留所有尝试和尾迹。`clean_full` 在 trace 起点到最后步骤返回的
+  边界内保留正常调用，包括没有阶段归属的主 Agent 调用，排除先前尝试、失败前缀
+  和 ERROR 子树；失败后代即使超出父 span，也参与排除。墙钟只扣除失败区间中
+  不与保留工作重叠的部分。它是排除失败后的派生 trace 耗时，不是 runner 总墙钟，
+  不要求等于阶段之和；批次 runner 耗时与成功链路耗时不得互相替换。
+- 当前 LazyLLM 动态 supplier 的 token 为模型实例累计计数。采集记录
+  `metadata.llm_usage_semantics=cumulative_entity`，分析器先按 traceId / entity.id
+  及时间排序差分，再过滤失败尝试，保留 `usage_corrections` 审计记录，不修改原始
+  observation。此口径要求完整采集本次新建模型实例的调用；不能用于从中途开始
+  截取或跨运行复用模型的 trace。重叠调用、计数回退或错误后基线未知时直接报错。
+  若部署已改为逐调用 usage，显式设置 `E2E_LLM_USAGE_SEMANTICS=per_call`；
+  不根据数值递增猜口径。未声明口径的外部 trace 按标准逐调用 usage 读取。
+- 字符数累计 trace 中已采集的原始 IO 载荷长度，截断片段（含采集标记）也按现存文本计入；
+  未采集载荷不贡献字符数，不因缺少部分调用而清空整组。该值表示已采集字符累计，
+  不代表完整请求/响应长度，也不从 token 换算；原有列名保持不变。全文字符数来自最终文档的可见文本。
+
+Langfuse 和 local trace 使用同一归一化结构，按本次会话/工作流标识及运行时间范围
+关联，并按 span 开始时间筛选本次运行窗口内的调用；即使属于同一会话，在 runner 记录的结束时间之后才开始的 span（如异步 Memory Review）也不计入本次统计，因此统计不包含这部分 token 和耗时。采集会等待 span 结束、usage 到齐，且内容连续三次稳定后再统计；不用提示词
+相似度或文件修改时间猜测归属。单例也输出 `stats.json` / `stats.md`。
+启用采集/统计时，成稿缺失、trace 获取失败、统计无效均返回非零退出码，批量聚合
+异常也不再忽略。flat 分支不在本性能套件覆盖范围内。
+
+### 完整 LLM 诊断采集（不改变统计口径）
+
+算法服务配置 `LAZYMIND_LLM_TRACE_DIAGNOSTICS=true`、
+`LAZYMIND_LLM_TRACE_PAYLOAD_MAX_CHARS=0`，并重建对应容器后启用。
+Compose 已透传这两个变量；部署是否开启应核验容器实际配置，不能仅看本地 `.env`。
+
+- 新数据位于 LLM span 的 `lazyllm.diagnostics.llm` 属性，随现有 Langfuse/local
+  后端导出。保留最终请求中的模型输入字段、成功调用的格式化输出、完整性标记及响应计时。
+- 不预计算字段、消息或工具的分项字符数；从完整请求 JSON 离线分析组成和字符比例。
+  分项字符比例不等于精确 token 比例，token 仍按供应商 usage 语义处理。
+- `0` 仅表示本地不截断；远端回读后仍须核对正文字符数与 SHA-256。
+  诊断开关不能恢复历史缺失正文，也不能证明远端一定保存完整。
+- 当前分析器的 IO 字符列仍读取既有 IO 字段，不会自动改用诊断正文或把两份载荷相加。
+  完整正文用于补充归因，不能把已有“累计已采集字符”列解释为完整模型输入输出总量。
+- 阶段墙钟仍由 span 边界和失败区间计算；新增响应计时只用于解释等待/生成耗时。
+  HTTP 逐次重试记录不等于 Writer 业务步骤重试，不另加为阶段 LLM 调用次数。
+
+性能 Runner 在回读 trace 后默认执行完整诊断门槛（`--no-trace` 时跳过）。
+`diagnostics_audit.json` 记录模型调用覆盖率、请求/输出字符数与 SHA-256 校验、
+HTTP 尝试和响应计时检查。模型候选同时检查 name、GENERATION、语义和 LLM/CHAT/VLM
+配置类型，不能仅以 GENERATION 子集声称采集完整。非流式 chunk 计时、
+不支持解析器的首语义块计时允许为空；成功尝试仍须有响应头和总耗时。
+
+调用分类不正确、诊断缺失或正文/计时校验失败时，Runner 保留原始证据和
+`run_N.json`，设置 `collection_validation.status=BLOCKED`，不计算统计，返回 2。
+`full_run.sh` 遇到性能 Runner 的退出码 2 会立即停止后续 case/场景，且不复制
+该 trace 进入场景聚合。trace 获取失败同样阻断。独立重算也拒绝未正确分类的模型调用，
+不会把普通 SPAN 静默漏出统计。此门槛不能修复服务端分类或恢复历史缺失正文。
+
+### 性能统计核验
+
+**运行前确认口径。** `E2E_LLM_USAGE_SEMANTICS` 支持 `cumulative_entity` 与
+`per_call`，采集默认值对应当前累计 usage 实现，但默认值不等于部署证据。
+升级 LazyLLM、模型路由或 tracing 后，检查实际运行版本的 usage 写入和清理路径，
+不能只看本地 checkout。当前需关注 supplier `_record_usage`、动态路由的
+`supplier.forward` 以及 trace hook 读取 usage 的位置：直接调用 `forward` 是否绕过
+`__call__` 的用量清理，会改变每个 span 的 token 含义。按确认结果显式设置环境变量，
+采集后检查 `trace.json.metadata.llm_usage_semantics`。历史 trace 无此字段时，分析器
+默认按单次 usage 读取；重算前必须独立核实，不能把默认行为当作历史口径证明。
+
+**从原始 trace 独立核验，再检查表格写入。**
+
+- 抽查重复使用的模型实例（主 Agent 和阶段子 Agent 都要覆盖），核对
+  `traceId`、`lazyllm.entity.id`、调用顺序和原始 usage。仅数值递增不能证明累计。
+  完整、零起点且无缺失的累计序列，差分后的总量应等于最后一次累计值；逐调用
+  usage 则直接求和。输入与输出分别核对，不对字符数或耗时做 token 式差分。
+- 先对包含失败尝试的完整序列差分，再按业务调用归属选取正常调用。例如两次累计输入
+  为 100、160，第一次属于失败尝试，则第二次正常调用只计 60，不能计 160。
+  缺少起点、复用跨运行实例、同一实例并发、计数回退或错误后基线未知时，停止
+  正常指标上报并说明缺失证据，不推算或填零。
+- 核对主报表总值与括号：阶段 `reported` 应包含成功样本的全部尝试，全流程
+  `reported_full` 应包含同一统计边界内的全部调用。分别核验失败部分及样本分母；
+  成功后尾迹不能冒充失败部分。无异常时不带括号，原始 trace 不改写。
+- 核对正常调用集合：阶段之间的主 Agent 决策应进入 `clean_full`；明确失败尝试
+  才排除。没有失败的样本，在相同时间边界内应保留全部正常调用。`full_link`
+  包含失败及尾迹，不能无条件要求它与 `clean_full` 相等。
+- 墙钟扣除排除区间的并集；LLM 累计耗时允许因并行而大于墙钟。字符按已采集载荷累计
+  （包括截断片段，缺失部分不计），不要由 token 换算。核验各阶段、全流程及导出行，并检查
+  `usage_corrections`，不能仅以“表格与 stats.json 一致”宣称统计正确。
+- 比较旧批次时先核对阶段归属、usage 语义、失败过滤和时间边界。口径不一致时
+  用原始 trace 做同口径分析，并明确区分历史表值与重算值；未获要求不覆盖旧表。
+
+## 维护用例
+
+- 功能场景只改 `writer_func_cases.yaml`；性能场景只改
+  `writer_perf_cases.yaml`。
+- 公共执行约束只改 `exec_constraints.yaml`，不要复制到每条提示词。
+- 附件统一放在 `fixtures/func` 或 `fixtures/perf`，由 YAML 引用。
+- 飞书基线变化时，同步更新 YAML `feishu_docs` 中的
+  `history_version_id` 和 `baseline_revision_id`。
+- `tests/e2e_old/` 是只读参考，不作为当前用例来源。
+
+## 结果上报
+
+功能结果写入飞书 Base 时，测试表判决应依据本次运行证据和对应专项测试项，
+不能直接复制 `run_N.json.mechanical_verdict`。C01 分为“流式输出”和“路由/工具链”
+两行；C*、I*、X* 分别对应路由/工具链、图片能力、交叉引用。详细边界见架构文档
+“判决模型”一节。
+
+性能数据应使用 `analyze_perf.sheet_rows(stats, batch_id)` 生成导出行：阶段使用
+`reported`，全流程使用 `reported_full`，按总值(失败重试部分)显示；末次仍失败的用例
+不进入成功样本汇总。旧 stats 必须从原始 trace 重算，不能仅拼接旧平均值。目标
+工作簿和字段结构应先通过 `lark-cli` 回读确认，不猜测 sheet、表或字段 ID。
+
+重算后同步更新各场景 `stats.json` / `stats.md`、批次 `sheet_rows.json` /
+`summary.md` 及相关分析说明。上报时检查「测试批次」「全数据」及「对比」的批次
+选项、数据范围和公式；保持用户的基准批次选择，逐场景核对指标与变化率，验证后
+恢复用户选中的场景。只保留最终报告、原始运行证据和简短上报说明，默认不另存旧版报告
+备份、重复 trace、整份上传载荷或多份样式回读文件；用户明确要求历史备份时例外，
+从可验证来源原样提取并记录来源和校验值，历史目录不得作为重算输入。
+
+## 独立平台回读（无需先定义用例）
+
+以下入口不调用 LazyMind 读入实现，也不写入平台。Notion 使用已登录的 `ntn`，
+GitHub 使用已登录的 `gh`，Obsidian 直接读取指定 Vault 中的 Markdown 文件。
+在仓库根目录运行（输出参数放在平台名称之前）：
+
+```bash
+PYTHONPATH=tests/e2e .venv/bin/python -m shared.readback \
+  --output /tmp/notion-readback.json notion '<页面URL或ID>'
+
+PYTHONPATH=tests/e2e .venv/bin/python -m shared.readback \
+  --output /tmp/github-readback.json github \
+  --repo owner/repo --path docs/note.md --ref feature/test
+
+PYTHONPATH=tests/e2e .venv/bin/python -m shared.readback \
+  --output /tmp/obsidian-readback.json obsidian \
+  --vault '/absolute/path/to/Vault' --path '笔记.md'
+```
+
+输出路径已存在时拒绝覆盖。JSON 包含 provider、document_id、revision_id、content、
+title、url 和 raw。Notion 的 content 是供检查的纯文本，完整格式与图片证据在 raw
+的块树中（含递归子块和全部分页）；导出证据会去掉识别到的签名 URL 参数。
+GitHub 必须明确 ref，先解析到提交 SHA 再读取文件，仅支持 github.com 普通仓库
+的 UTF-8 文件，不支持 Wiki 或 Contents API 不提供 Base64 正文的大文件。
+Obsidian 以 SHA-256 作为内容版本，拒绝路径或符号链接逃出 Vault。
+
+这些模块只负责回读，不做用例判决、基线恢复、图片下载或附件存在性检查。
+图片引用可从 Notion raw 块或 GitHub/Obsidian 原文提取，实际图片显示仍需另外验证。
+远端 CLI 的总请求预算默认为 180 秒，可在平台名称前传 `--timeout` 修改。
+若沙箱无法访问系统钥匙串，应在获准的宿主环境执行，不能将认证失败视为产品失败。
+
+### 微信公众号草稿回读及授权来源
+
+```bash
+PYTHONPATH=tests/e2e .venv/bin/python -m shared.readback \
+  --output /tmp/wechat-readback.json wechat --media-id '<草稿media_id>' --article-index 0
+```
+
+微信独立模块直接请求官方 `draft/get`，不调用 LazyMind provider。
+凭据从进程环境读取：优先 `LAZYMIND_E2E_WECHAT_ACCESS_TOKEN`；未提供时使用
+`LAZYMIND_E2E_WECHAT_APP_ID` 和 `LAZYMIND_E2E_WECHAT_APP_SECRET` 请求
+`stable_token`（`force_refresh=false`）。统一命令入口会自动读取仓库根目录 `.env` 中这三个微信测试变量（使用 python-dotenv），
+已有进程环境变量优先；其他 `.env` 配置不会注入环境。直接调用 Python 回读函数时仍由调用方提供环境。
+不从产品数据库抽取密钥、不缓存或输出 token。已有 token 失效时明确报错，不自动刷新重试。
+需要对应公众号的草稿接口权限，并满足其 IP 白名单要求。
+
+article-index 从 0 开始；输出正文 HTML、所选文章元数据、图片引用和文章内容哈希。
+哈希不是微信原生版本号。`content_source_url` 仅是“阅读原文”链接，不作为预览链接，
+顶层 url 暂留空；用 media_id 在公众号后台核查。脚本不发布、不修改草稿。
+
+当前独立回读授权来源：飞书是 `lark-cli` 用户登录；Notion 是 `ntn` 的登录凭据
+（CLI 也支持环境 token）；GitHub 是 `gh` 的登录凭据（CLI 也支持环境 token）；
+Obsidian 是执行进程对指定 Vault 的文件读取权限；微信是上述测试环境变量。
+这些授权与 LazyMind 内部的云文档授权互相独立，CLI 登录成功不等于所有资源都有权限。
+
+## W01 串行发布与 AI 验收
+
+W01 分为两个阶段：**脚本执行并留证，AI 按规则独立回读和验收**。
+`expected.publication` 仅配置发布顺序、串行模式和未配置的平台；`acceptance` 描述
+内容要求、允许的格式变化、平台特殊要求及证据要求，不转换成固定内容断言。
+
+```bash
+bash tests/e2e/writer-test/scripts/full_run.sh --mode func W01
+```
+
+默认批量清单仍不含 W01。顺序为飞书 → Notion → GitHub → 微信 → Obsidian。
+GitHub 目标按用户要求暂留空，`unconfigured_providers: [github]` 会记录未尝试；
+其余平台继续。后续在 W01 提示词中明确真实仓库/目录 URL，并移除此标记即可启用。
+Runner 不猜测目标或自动追加提示词。`--no-ui` 不执行发布，发布项记录未执行。
+
+脚本在生成结束后保存初始 Markdown 和 session 快照，再在同一个编辑器串行点击
+发布。中途不恢复原稿、不新建会话、不并发点击。每次保存真实请求中的稿件 ID、
+revision、draft_version，以及响应、目标、时间和执行状态；不再逐平台导出 Markdown
+或计算源稿哈希。明确写入前失败且 UI 解除阻断后可继续；结果未知或界面未恢复时
+停止后续点击，不自动重试写入或释放未知状态。
+
+生成阶段仍默认 600 秒；初始快照另留 60 秒，各平台发布预算默认 180 秒，直接运行
+`func_run.py` 可用 `--publication-timeout` 调整。生成断言和 trace 截止于发布前，
+避免发布转换后的文档影响原有 Markdown、生成阶段零写回等检查。
+
+### 输出与报告
+
+- `final.md`：初始稿件，供 AI 比较连续发布是否累积丢失内容。
+- `_ui_bridge/generation.json`：生成结束时的 session、原稿及版本。
+- `_ui_bridge/publications.json`：增量发布证据，请求发出即保存。
+- `publications.json`：本次发布证据，无自动独立回读内容。
+- `evidence.json`：执行检查及本次 `acceptance` 规则；规则随运行保存，供 AI 验收。
+- `run_N.json.publication`：逐平台执行状态、核查链接、目标标识和
+  `acceptance_status: PENDING_AI_REVIEW`。
+- `report.md`：逐平台“发布目标与人工核查”表，列出执行状态、文档/地址链接、
+  ID/路径/版本、待 AI 验收状态；保留未执行平台及原因。
+
+报告链接来自回执；GitHub 另可根据回执仓库、文件路径和提交 SHA 生成写入版本链接，
+同时保留 PR 链接。微信不将后台首页或“阅读原文”当成草稿预览，用草稿 ID/文章索引
+定位。Obsidian 展示完整本地路径；回执没有目标时明确说明，不猜测地址。
+
+`mechanical_verdict` 是兼容字段，固定为 PENDING_AI_REVIEW；即使全部发布回执成功，内容验收仍为
+待 AI 验收。发布回执汇总中，未配置/未执行/结果未知产生 WARN，执行汇总为 INCONCLUSIVE；明确失败
+产生 FAIL。AI 的逐平台业务结论另外填写，不能覆盖或伪造原始执行证据。
+
+### AI 后续工作
+
+遵循 [SKILL.md](SKILL.md) 的“发布后 AI 验收”：读取本次规则和原稿，依据报告目标，
+选择合适的 CLI、技能或浏览器独立回读，保存必要证据并逐项判断。原有
+`shared.readback` 及平台模块仍是可选工具，Runner 不强制调用；AI 也可以直接使用
+平台 CLI。连接、回读权限或工具不可用时写明证据不足，不判通过，不补发写入。
+
+重点检查正文、章节、表格数据及对应关系、列表顺序、代码和图片。允许平台格式转换
+和图片重托管，不允许内容丢失。图片实际显示、语义和排版由 AI 结合浏览器/人工证据
+判断。测试脚本不自动删除平台文档或 PR。
