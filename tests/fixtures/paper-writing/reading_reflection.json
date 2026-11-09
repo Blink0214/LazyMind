@@ -4,16 +4,28 @@
     "request": "比较方法并总结启发",
     "papers": [
       {
-        "id": "P1",
+        "id": "ref-001",
         "title": "证据组织研究（样例）",
         "text": "研究将主张与检索片段对齐。",
-        "url": ""
+        "url": null,
+        "authors": [],
+        "year": null,
+        "doi": null,
+        "content_type": "excerpt",
+        "source": "test",
+        "truncated": false
       },
       {
-        "id": "P2",
+        "id": "ref-002",
         "title": "引用核验研究（样例）",
         "text": "研究检查引用是否支持主张。",
-        "url": ""
+        "url": null,
+        "authors": [],
+        "year": null,
+        "doi": null,
+        "content_type": "excerpt",
+        "source": "test",
+        "truncated": false
       }
     ],
     "evidence": "# 文献综述\nP1 关注组织，P2 关注核验。[P1] [P2]"

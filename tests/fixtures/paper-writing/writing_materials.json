@@ -1,0 +1,129 @@
+{
+  "step": "write_document",
+  "input": {
+    "topic": "方法得分比较",
+    "request": "",
+    "constraints": {
+      "paper_language": "zh-CN",
+      "word_target": null,
+      "paper_type": "research",
+      "citation_style": "GB/T 7714",
+      "focus": []
+    },
+    "mode": "draft",
+    "papers": [
+      {
+        "id": "ref-001",
+        "title": "方法比较示例",
+        "text": "比较方法时应报告评价指标与实验条件。",
+        "url": null,
+        "authors": [],
+        "year": null,
+        "doi": null,
+        "content_type": "excerpt",
+        "source": "upload",
+        "truncated": false
+      }
+    ],
+    "question": "# 研究选题\n\n## 研究问题\n新方法的得分提升是否稳定？\n\n## 研究依据与待验证设想\n单次得分不足以说明稳定性。\n补充重复实验与误差分析。\n\n## 验证计划\n固定测试条件，重复运行并报告均值和区间。\n\n## 证据状态\n仅依据现有材料提出，仍需进一步检索与验证。",
+    "evidence": "# evidence\n\n```json\n{\n  \"summary\": \"评价方法需要说明指标及实验条件。\",\n  \"items\": [\n    {\n      \"id\": \"E1\",\n      \"paper_id\": \"ref-001\",\n      \"claim\": \"方法比较应明确指标和实验条件。\",\n      \"quote\": \"比较方法时应报告评价指标与实验条件。\",\n      \"locator\": null,\n      \"relation\": \"background\"\n    }\n  ],\n  \"gaps\": [\n    \"现有材料未给出重复实验结果。\"\n  ],\n  \"limitations\": [\n    \"仅提供一段节选。\"\n  ]\n}\n```",
+    "analysis": {
+      "data_sha256": "262603dbeb95d726f1f6b08d89731256d0d1a055f0d52a5256a18da6d5121e98",
+      "summary": "新方法单次得分比基线高 15 分。",
+      "row_count": 2,
+      "methods": [
+        "按 method 比较 score，计算差值。"
+      ],
+      "findings": [
+        {
+          "statement": "新方法得分比基线高 15 分。",
+          "columns": [
+            {
+              "table_id": "data",
+              "column": "method"
+            },
+            {
+              "table_id": "data",
+              "column": "score"
+            }
+          ],
+          "calculation": "75 - 60",
+          "value": 15,
+          "unit": "point",
+          "sample_size": {
+            "source_rows": [
+              {
+                "table_id": "data",
+                "count": 2
+              }
+            ],
+            "n": 2,
+            "unit": "方法单次记录",
+            "excluded_n": 0
+          },
+          "id": "finding-1",
+          "target_id": "comparison",
+          "kind": "effect",
+          "interval": null,
+          "test": null,
+          "probability": null,
+          "model_id": null
+        }
+      ],
+      "limitations": [
+        "每种方法只有一次记录，不能推断统计显著性。"
+      ],
+      "input_sha256": "262603dbeb95d726f1f6b08d89731256d0d1a055f0d52a5256a18da6d5121e98",
+      "data_sources": [
+        {
+          "id": "data",
+          "columns": [
+            "method",
+            "score"
+          ],
+          "row_count": 2,
+          "data_sha256": "262603dbeb95d726f1f6b08d89731256d0d1a055f0d52a5256a18da6d5121e98"
+        }
+      ],
+      "targets": [
+        {
+          "id": "comparison",
+          "question": "两种方法的单次得分差异如何？",
+          "estimand": "单次观测得分差",
+          "scope": "仅当前记录，不推断总体差异",
+          "columns": [
+            {
+              "table_id": "data",
+              "column": "method"
+            },
+            {
+              "table_id": "data",
+              "column": "score"
+            }
+          ]
+        }
+      ],
+      "models": [],
+      "diagnostics": [
+        {
+          "id": "replication",
+          "model_id": null,
+          "name": "重复测量",
+          "outcome": "not_checked",
+          "value": null,
+          "threshold": null,
+          "details": "每组仅一次记录，不能进行推断。"
+        }
+      ]
+    },
+    "charts": [],
+    "outline": "# 示例研究\n\n## 方法\n\n## 结果\n\n## 局限",
+    "manuscript": null,
+    "review": null,
+    "selected_issue_ids": []
+  },
+  "output": {
+    "is_demo": true,
+    "manuscript": "# 示例研究\n\n## 方法\n比较两个方法的单次得分。\n\n## 结果\n新方法得分高 15 分。\n\n## 局限\n尚未进行重复实验。"
+  }
+}
