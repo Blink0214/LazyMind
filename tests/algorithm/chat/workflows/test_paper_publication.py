@@ -361,3 +361,25 @@ body = '[' + (r'\[' * 100) + '](https://example.com)'
 assert validate_chart_references(body, []) == []
 """
     subprocess.run([sys.executable, '-c', code], check=True, timeout=10)
+
+
+def test_published_citations_export_through_copy_conversion():
+    import shutil
+    from lazymind.document_tools.resources import convert_document
+    from lazyllm.tools.writer.utils.pandoc import check_pandoc_version
+
+    executable = shutil.which('pandoc')
+    if not executable:
+        pytest.skip('Pandoc is required for the real LaTeX copy regression.')
+    check_pandoc_version(executable)
+    source = publication.publish_citations(
+        '# 论文\n\n依据[文献:SRC-甲.v2]，再次引用[文献:SRC-甲.v2]。',
+        [dict(id='SRC-甲.v2', citation='Author & Co. Study [J]. 2026.')],
+    )
+    exported = convert_document(source, output_format='latex')
+    latex = exported['content']
+    assert latex.count(r'\cite{ref-001}') == 2
+    assert r'\bibitem{ref-001}' in latex
+    assert r'\begin{thebibliography}' in latex
+    assert r'\hyperref[paper-ref-' not in latex
+    assert '[\\[1\\]](#paper-ref-SRC-甲.v2)' in source

@@ -474,3 +474,37 @@ def test_json_attachment_binding_stays_in_analysis(tmp_path, monkeypatch):
     writing = workflow.business_input('write_outline', pool, value['request'])
     assert writing['papers'] == value['papers']
     assert writing['evidence'] == value['evidence']
+
+
+@pytest.mark.parametrize(('current', 'recovery', 'saved', 'expected'), [
+    ('', '', '', '材料中的分析要求'),
+    ('首次只比较均值', '', '', '首次只比较均值'),
+    ('改为按组比较方差', '', '上次比较均值', '改为按组比较方差'),
+    ('重试', '', '上次比较均值', '上次比较均值'),
+    ('Please re-run step data_analysis', '', '上次比较均值', '上次比较均值'),
+    ('重试', '', '', '材料中的分析要求'),
+    ('', '改为比较中位数', '上次比较均值', '改为比较中位数'),
+    ('', '重试', '上次比较均值', '上次比较均值'),
+    ('本轮要求', '恢复要求', '上次比较均值', '本轮要求'),
+])
+@pytest.mark.parametrize('entry', ['paper_input', 'data_analysis_pool'])
+def test_f4_original_request_selection_with_current_input(tmp_path, current, recovery, saved, expected, entry):
+    """Original F4 priority with Core's newly forwarded current turn, through pool loading."""
+    value = {'topic': '请求优先级', 'request': '材料中的分析要求',
+             'data': {'columns': ['score'], 'column_types': ['number'],
+                      'units': [None], 'rows': [[1], [2], [3]]}}
+    payload = value if entry == 'paper_input' else workflow.pool_from_business(value)
+    path = tmp_path / 'materials.json'
+    path.write_text(json.dumps(payload), encoding='utf-8')
+    bound = {entry: str(path)}
+    pool = workflow.initialize_pool(bound, '原始启动请求')
+    if saved:
+        pool['history'].append({'node': 'F4', 'request': saved})
+    before = copy.deepcopy(pool)
+    params = {'step_id': 'data_analysis', 'current_user_input': current,
+              'user_input': '原始启动请求', 'launch_user_input': '原始启动请求',
+              'retry_hint': 'Recovery request for this rerun only:' + recovery if recovery else ''}
+    actual = workflow._step_request('data_analysis', pool, params, bound)
+    assert actual == expected
+    assert workflow.business_input('data_analysis', pool, actual)['request'] == expected
+    assert pool == before  # Choosing a turn requirement must not rewrite uploaded materials.

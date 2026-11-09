@@ -10,6 +10,8 @@ import logging
 import time
 from threading import Lock
 
+from .attachments import source_catalog
+
 from lazyllm import tracing
 
 from lazyllm.tools.writer.data_models.planning import SectionInstructionList
@@ -39,14 +41,11 @@ from ...toolkits import WriterCreateToolkit
 
 
 from ..prompts.write_document_prompt import (
-    WRITING_INSTRUCTIONS,
-    MATERIAL_USAGE_INSTRUCTIONS,
-    CHART_USAGE_INSTRUCTIONS,
-    REFERENCE_USAGE_INSTRUCTIONS,
+    STAGE_RULES,
+    REVIEW_REVISION_INSTRUCTIONS,
     SECTION_CONTENT_INSTRUCTIONS,
     WRITING_TASK_HEADER,
     REVISE_MODE_INSTRUCTIONS,
-    DRAFT_MODE_INSTRUCTIONS,
     SECTION_NO_TARGET_INSTRUCTIONS,
     SECTION_BUDGET_INSTRUCTIONS,
     DIRECT_REVISION_INSTRUCTIONS,
@@ -162,17 +161,7 @@ def _chart_directory(chart, findings):
         return {key: chart[key] for key in ('id', 'title', 'caption')}
     if any(ref not in findings for ref in chart['finding_ids']):
         raise ValueError('chart.finding_ids 包含未知的分析结论')
-    return {**{key: copy.deepcopy(chart[key]) for key in ('id', 'title', 'columns', 'caption', 'finding_ids')},
-            'findings': [copy.deepcopy(findings[ref]) for ref in chart['finding_ids']]}
-
-def _reference_candidates(papers):
-    candidates = []
-    for paper in papers:
-        entry = paper.get('citation')
-        if entry is None:
-            continue
-        candidates.append({'id': paper['id'], 'citation': entry})
-    return candidates
+    return {key: copy.deepcopy(chart[key]) for key in ('id', 'title', 'columns', 'caption', 'finding_ids')}
 
 def _validate_reference_markers(body, candidates, original=None):
     """Check reserved citation markers; preserve existing unsupported citations."""
@@ -285,22 +274,10 @@ def prepare_writer_inputs(inputs: dict, *, toolkit=None) -> dict:
         # Only selected recommendations enter the revision context. The full report's
         # summary may contain instructions about unselected issues.
         review = {'issues': selected_issues, 'limitations': review_data['limitations']}
-    # Build the material rules before context creation: replacement generation
-    # receives context and plan, but does not receive the writing task directly.
-    query = '\n\n'.join((
-        WRITING_INSTRUCTIONS, MATERIAL_USAGE_INSTRUCTIONS,
-        CHART_USAGE_INSTRUCTIONS, REFERENCE_USAGE_INSTRUCTIONS,
-    )) + WRITING_TASK_HEADER + _json({
-        'topic': source['topic'], 'request': source['request'],
-        'constraints': constraints, 'mode': source['mode'],
+    query = WRITING_TASK_HEADER + _json({
+        'topic': source['topic'], 'request': source['request'], 'mode': source['mode'],
         'selected_issue_ids': source['selected_issue_ids'],
     })
-    if review is not None:
-        query += REVISE_MODE_INSTRUCTIONS
-    elif source['mode'] == 'revise':
-        query += DIRECT_REVISION_INSTRUCTIONS
-    else:
-        query += DRAFT_MODE_INSTRUCTIONS
     task = json.loads(toolkit.build_writing_task(query=query))
     # Explicit structured constraints take precedence over incidental numbers in
     # user prose. English words must not be passed to Writer as Chinese chars.
@@ -329,7 +306,7 @@ def prepare_writer_inputs(inputs: dict, *, toolkit=None) -> dict:
 
     for paper in source['papers']:
         material('paper:' + paper['id'], paper['title'], paper)
-    candidates = _reference_candidates(source['papers'])
+    candidates = source_catalog(source)
     material('reference_candidates', 'Citation candidate catalog (only these sources may receive new citations)', candidates)
     material('question', 'Research question, hypotheses and validation plan', source['question'])
     material('evidence', 'Literature evidence and limitations', source['evidence'])
@@ -337,7 +314,7 @@ def prepare_writer_inputs(inputs: dict, *, toolkit=None) -> dict:
     findings = {item['id']: item for item in (source['analysis'] or {}).get('findings', [])}
     charts = figure_catalog(source['charts'], source.get('media_assets'))
     chart_directory = [_chart_directory(chart, findings) for chart in charts]
-    material('writing_materials', 'Uploaded writing materials (source facts, not inferred analysis)', source.get('writing_materials'))
+    material('writing_materials', 'Uploaded documents (raw materials; use according to current request)', source.get('writing_materials'))
     material('charts', 'Chart reference catalog', chart_directory)
     material('outline', 'Existing outline', source['outline'])
     material('manuscript', 'Current complete manuscript', source['manuscript'])
@@ -363,16 +340,7 @@ def prepare_writer_context(inputs: dict, *, toolkit=None) -> dict:
     """
     toolkit = toolkit if toolkit is not None else WriterCreateToolkit()
     prepared = prepare_writer_inputs(inputs, toolkit=toolkit)
-    context = json.loads(toolkit.create_writing_context(
-        writing_task_json=_json(prepared['writing_task']),
-        resource_profiles_json=_json(prepared['resource_profiles']),
-    ))
-    locked = {resource['resource_id'] for resource in prepared['resources']
-              if resource['meta']['material_kind'] in {'paper', 'evidence', 'analysis'}}
-    for fact in context['facts']:
-        if fact['key'] in locked:
-            fact['locked'] = True
-    prepared['writing_context'] = context
+    prepared['writing_context'] = stage_context(prepared, 'complete', toolkit=toolkit)
     return prepared
 
 def _heading_signature(markdown):
@@ -417,7 +385,7 @@ def _prepare_sections(plan, outline, constraints):
     target = constraints['word_target']
     unit = 'words' if constraints['paper_language'] == 'en' else 'chinese_characters'
     # Prefer confirmed outline budgets over a fresh section planner's weights.
-    # English targets remain word counts; the final audit uses the academic counter.
+    # English targets remain word counts; the length validator uses the academic counter.
     weights = [max(1, int(item['meta'].get('target_chars') or 1)) for item in instructions]
     outline_document = parse_document_markdown(outline, document_id='paper-section-budgets')
     outline_weights = [block.target_chars for block in outline_document.blocks
@@ -522,9 +490,55 @@ def validate_result(value, inputs):
             raise ValueError(f'{key} 超过长度限制')
     signature = _validate_manuscript_structure(value['manuscript'],
         charts=figure_catalog(inputs['charts'], inputs.get('media_assets')) if inputs else None,
-        candidates=_reference_candidates(inputs['papers']) if inputs else None,
+        candidates=source_catalog(inputs) if inputs else None,
         original=inputs['manuscript'] if inputs else None)
     if inputs and inputs['mode'] == 'revise':
         return
     if inputs and (not inputs['outline'] or _heading_signature(inputs['outline']) != signature):
         raise ValueError('确认的大纲与稿件不一致')
+
+
+def stage_context(prepared, stage, *, toolkit=None):
+    roles = {
+        'outline': {'outline', 'charts'},
+        'section_plan': {'charts'},
+        'draft': {'charts'},
+        'revision_plan': {'outline', 'charts'},
+        'revision_content': {'outline', 'charts', 'manuscript'},
+        'complete': {'outline', 'charts', 'manuscript'},
+    }[stage]
+    structural = {'outline', 'charts', 'manuscript'}
+    profiles = [profile for profile in prepared['resource_profiles']
+                if profile['meta']['material_kind'] not in structural
+                or profile['meta']['material_kind'] in roles]
+    if stage == 'draft' and prepared['outline']:
+        structure = '\n'.join('#' * level + ' ' + title
+                              for level, title in _heading_signature(prepared['outline']))
+        profiles = [*profiles, {'resource_id': 'write_document:outline_structure',
+                               'resource_role': 'background', 'key_facts': [structure]}]
+    toolkit = toolkit if toolkit is not None else WriterCreateToolkit()
+    context = json.loads(toolkit.create_writing_context(
+        writing_task_json=_json(prepared['writing_task']), resource_profiles_json=_json(profiles),
+    ))
+    locked = {resource['resource_id'] for resource in prepared['resources']
+              if resource['meta']['material_kind'] in {'paper', 'evidence', 'analysis'}}
+    for fact in context.get('facts', []):
+        if fact['key'] in locked:
+            fact['locked'] = True
+    return context
+
+
+def stage_task(prepared, stage):
+    task = copy.deepcopy(prepared['writing_task'])
+    query = '\n\n'.join(STAGE_RULES[stage]) + task['query']
+    if stage.startswith('revision_'):
+        reviewing = task['meta'].get('review_driven', False)
+        if reviewing:
+            query += REVISE_MODE_INSTRUCTIONS
+            if stage in {'revision_locate', 'revision_plan'}:
+                query += REVIEW_REVISION_INSTRUCTIONS
+            query += '\nSelected review issues:\n' + _json(prepared['selected_issues'])
+        elif stage in {'revision_locate', 'revision_plan'}:
+            query += DIRECT_REVISION_INSTRUCTIONS
+    task['query'] = query
+    return task

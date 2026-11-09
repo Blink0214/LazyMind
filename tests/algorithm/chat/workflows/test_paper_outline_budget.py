@@ -11,6 +11,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from lazymind.document_tools.toolkits import WriterCreateToolkit as ContextToolkit
+
 from lazyllm.tools.writer.utils.serialization import get_markdown_outline_targets, parse_markdown_outline_instructions
 from lazymind.document_tools.paper import workflow
 from lazymind.document_tools.paper.runtime_events import bind_runtime_events
@@ -44,6 +46,7 @@ def test_recorded_outline_saves_length_in_preview_pool_and_next_draft(
     assert original['sec-001-001']['target_chars'] == 2
     assert original['sec-001-001']['outline_description'].endswith('（约2字）。')
     toolkit = Mock()
+    toolkit.create_writing_context = Mock(wraps=ContextToolkit().create_writing_context)
 
     def stream_outline(**kwargs):
         kwargs['on_delta'](recorded_outline)
@@ -51,8 +54,9 @@ def test_recorded_outline_saves_length_in_preview_pool_and_next_draft(
 
     toolkit.stream_outline.side_effect = stream_outline
     monkeypatch.setattr(write_outline, 'WriterCreateToolkit', lambda: toolkit)
-    monkeypatch.setattr(write_outline, 'prepare_writer_context', lambda inputs, **kw: {
-        'writing_task': {'constraints': inputs['constraints']}, 'writing_context': {},
+    monkeypatch.setattr(write_outline, 'prepare_writer_inputs', lambda inputs, **kw: {
+        'writing_task': {'query': 'Write outline', 'task_type': 'write',
+                         'constraints': inputs['constraints']}, 'resources': [], 'resource_profiles': [],
         'outline': None, 'charts': [],
     })
     pool = workflow.pool_from_business({
@@ -108,7 +112,7 @@ def test_recorded_outline_saves_length_in_preview_pool_and_next_draft(
     assert ''.join(event.get('delta', '') for event in latest) == outline
     assert latest[-1]['type'] == 'artifact_stream_end'
     assert any(event['type'] == 'artifact_stream_abort' for event in emitted)
-    assert [call[0] for call in toolkit.method_calls] == ['stream_outline']
+    assert [call[0] for call in toolkit.method_calls] == ['create_writing_context', 'stream_outline']
 
 
 @pytest.mark.parametrize('language', ['zh-CN', 'en'])
@@ -117,6 +121,7 @@ def test_recorded_explicit_length_displays_real_hierarchical_budgets(recorded_ou
     prepared = prepared_outline(recorded_outline, {'paper_language': language, 'word_target': 6600})
     before = copy.deepcopy(prepared)
     toolkit = Mock()
+    toolkit.create_writing_context = Mock(wraps=ContextToolkit().create_writing_context)
     outline = write_outline.prepare_outline(prepared, toolkit)
     assert prepared == before
     toolkit.generate_outline.assert_not_called()
@@ -146,6 +151,7 @@ def test_recorded_explicit_length_displays_real_hierarchical_budgets(recorded_ou
 def test_confirmed_recorded_outline_is_cleaned_without_regeneration(recorded_outline, target):
     prepared = prepared_outline(recorded_outline, {'paper_language': 'zh-CN', 'word_target': target})
     toolkit = Mock()
+    toolkit.create_writing_context = Mock(wraps=ContextToolkit().create_writing_context)
     outline = write_outline.prepare_outline(prepared, toolkit)
     prepared['outline'] = outline
     assert write_outline.prepare_outline(prepared, toolkit) == outline

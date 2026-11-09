@@ -94,6 +94,7 @@ def test_single_multiple_paper_reflection(count, reflection_calls):
         {'id': paper['id'], 'title': paper['title'], 'text': paper['text'], 'source_kind': 'partial_text'}
         for paper in papers
     ]
+    assert tools.material(result['pool'], 'papers')['content'] == papers
     assert all(paper['id'] in result['document'] for paper in papers)
 
 
@@ -202,7 +203,7 @@ def runtime(monkeypatch, tmp_path):
     return ctx, batches
 
 
-def test_runtime_wrapper_uses_host_inputs_and_saves_all_declared_outputs(runtime, tmp_path):
+def test_runtime_wrapper_uses_host_inputs_and_saves_all_declared_outputs(runtime, tmp_path, reflection_calls):
     ctx, batches = runtime
     workflow = yaml.safe_load((PACKAGE / 'workflow.yaml').read_text())
     state = yaml.safe_load((PACKAGE / 'scenario/state.yml').read_text())
@@ -213,6 +214,10 @@ def test_runtime_wrapper_uses_host_inputs_and_saves_all_declared_outputs(runtime
     path = tmp_path / 'seed.json'
     path.write_text(json.dumps({'data': seed}))
     for step in ['research_topic', 'literature_review', 'experiment', 'data_analysis', 'write_document', 'peer_review', 'reading_reflection']:
+        step_pool = copy.deepcopy(seed)
+        if step == 'write_document':
+            step_pool['current'].pop('manuscript', None)
+        path.write_text(json.dumps({'data': step_pool}))
         ctx.params = {'step_id': step, 'remote_inputs': {'seed_pool': str(path)}}
         ctx.output_slots = [item['material'] for item in state['steps'][step]['outputs']]
         tools.run_paper_step()

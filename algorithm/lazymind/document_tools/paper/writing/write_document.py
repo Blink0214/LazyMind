@@ -16,6 +16,8 @@ from .common import (
     _trace_call,
     _validate_manuscript,
     prepare_writer_context,
+    stage_context,
+    stage_task,
     validate_inputs as validate_writing_inputs,
     validate_result,
 )
@@ -40,12 +42,14 @@ def _write_draft(inputs, *, toolkit=None, on_delta=None):
     task['constraints']['visual_policy'] = {'allow_visuals': False}
     context_json = _json(prepared['writing_context'])
     outline = prepare_outline(prepared, toolkit)
-    task_json = _json(task)
+    task_json = _json(stage_task(prepared, 'draft'))
     signature = _heading_signature(outline)
     # 章节规划与正文生成沿用公共 Writer，补充论文约束。
     report_progress(25, '正在规划章节')
     planned = json.loads(_trace_call('section_plan', toolkit.generate_section_instructions,
-        writing_task_json=task_json, outline_json=_CHART_OWNERS.sub('', outline), writing_context_json=context_json,
+        writing_task_json=_json(stage_task(prepared, 'section_plan')),
+        outline_json=_CHART_OWNERS.sub('', outline),
+        writing_context_json=_json(stage_context(prepared, 'section_plan', toolkit=toolkit)),
     ))
     plan = _prepare_sections(planned['section_instructions'], outline, inputs['constraints'])
     _bind_chart_references(plan, prepared, outline)
@@ -55,7 +59,7 @@ def _write_draft(inputs, *, toolkit=None, on_delta=None):
     report_progress(30, '正在生成正文')
     sections = json.loads(_trace_call('draft_sections', toolkit.stream_draft_blocks_markdown,
         writing_task_json=task_json, section_instructions_json=_json(plan),
-        writing_context_json=context_json,
+        writing_context_json=_json(stage_context({**prepared, 'outline': outline}, 'draft', toolkit=toolkit)),
         on_delta=on_delta or (events.delta if events else lambda delta: None), **callbacks,
     ))
     if not isinstance(sections, list) or not sections or any(not isinstance(s, str) or not s.strip() for s in sections):

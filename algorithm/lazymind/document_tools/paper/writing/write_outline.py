@@ -21,7 +21,9 @@ from .common import (
     _outline_chart_owners,
     _strip_outline_budget,
     _trace_call,
-    prepare_writer_context,
+    prepare_writer_inputs,
+    stage_context,
+    stage_task,
     validate_inputs as validate_writing_inputs,
 )
 
@@ -87,18 +89,18 @@ def _normalize_outline_budgets(outline, constraints):
 def prepare_outline(prepared, toolkit, *, on_delta=None):
     """Reuse Writer outline planning for both the approval step and legacy drafts."""
     task = prepared['writing_task']
-    context_json = _json(prepared['writing_context'])
     outline = prepared['outline']
     original_signature = _heading_signature(outline) if outline else None
     previous = _outline_chart_owners(outline or '', prepared['charts'], require_complete=False)
     needs_ownership = len(previous) != len(prepared['charts'])
     if not outline or needs_ownership:
         report_progress(15, '正在生成大纲和图表归属' if prepared['charts'] else '正在生成大纲')
-        outline_task = copy.deepcopy(task)
+        context_json = _json(stage_context(prepared, 'outline', toolkit=toolkit))
+        outline_task = stage_task(prepared, 'outline')
         if prepared['charts']:
-            outline_task['query'] += '\n' + CHART_OUTLINE_INSTRUCTIONS + _json(prepared['chart_directory'])
+            outline_task['query'] += '\n' + CHART_OUTLINE_INSTRUCTIONS
         if outline:
-            outline_task['query'] += '\nAdd only missing chart ownership markers. Preserve every existing image assignment. Preserve the following outline headings, hierarchy and order verbatim:\n' + outline
+            outline_task['query'] += '\nAdd only missing chart ownership markers. Preserve every existing image assignment. Preserve the supplied outline headings, hierarchy and order in context verbatim.'
         generate = toolkit.stream_outline if on_delta is not None else toolkit.generate_outline
         kwargs = {'on_delta': on_delta} if on_delta is not None else {}
         outline = _trace_call('outline', generate,
@@ -121,7 +123,7 @@ def validate_inputs(inputs):
 
 def run(inputs):
     toolkit = WriterCreateToolkit()
-    prepared = prepare_writer_context(inputs, toolkit=toolkit)
+    prepared = prepare_writer_inputs(inputs, toolkit=toolkit)
     prepared['writing_task']['constraints']['visual_policy'] = {'allow_visuals': False}
     events = current_events()
 

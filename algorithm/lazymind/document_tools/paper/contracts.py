@@ -284,9 +284,12 @@ def validate_input(step, value):
     if module in {'write_outline', 'write_document', 'revise_document'} and isinstance(result['analysis'], dict):
         from .analysis.schema import validate_charts as validate_structured_charts
         validate_structured_charts(result['charts'], result['analysis'])
+    if module in {'write_outline', 'write_document', 'revise_document'}:
+        from .writing.attachments import source_catalog
+        catalog = source_catalog(result)
     if step == 'revise_document' and result.get('manuscript') and not result.get('review_data'):
         from .publication import normalize_source_citations
-        result['manuscript'] = normalize_source_citations(result['manuscript'], result['papers'])
+        result['manuscript'] = normalize_source_citations(result['manuscript'], catalog)
     required = {'experiment': ('question',), 'refine_topic': ('evidence',), 'peer_review': ('manuscript',),
                 'revise_document': ('manuscript',), 'reading_reflection': ('papers',)}.get(step, ())
     missing = [name for name in required if not result[name]]

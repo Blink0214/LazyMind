@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="700" viewBox="0 0 1120 700" role="img">
+<title>论文写作 Agent：五项验收指标对比（模拟数据）</title>
+<desc>人工构造测试数据，未运行模型实验。B0为直接生成与全文重写，B1为材料约束与局部修订。各指标分母不同，不作统计推断。</desc>
+<rect width="1120" height="700" fill="#ffffff"/>
+<g font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+<text x="42" y="48" font-size="27" fill="#0f172a" >论文写作 Agent：五项验收指标对比</text>
+<text x="42" y="79" font-size="17" fill="#b45309" >模拟数据 · 未运行模型实验 · 不代表真实系统性能</text>
+<line x1="255.0" y1="145" x2="255.0" y2="575" stroke="#e2e8f0"/>
+<text x="255.0" y="601" font-size="14" fill="#334155" text-anchor="middle">0</text>
+<line x1="407.0" y1="145" x2="407.0" y2="575" stroke="#e2e8f0"/>
+<text x="407.0" y="601" font-size="14" fill="#334155" text-anchor="middle">20</text>
+<line x1="559.0" y1="145" x2="559.0" y2="575" stroke="#e2e8f0"/>
+<text x="559.0" y="601" font-size="14" fill="#334155" text-anchor="middle">40</text>
+<line x1="711.0" y1="145" x2="711.0" y2="575" stroke="#e2e8f0"/>
+<text x="711.0" y="601" font-size="14" fill="#334155" text-anchor="middle">60</text>
+<line x1="863.0" y1="145" x2="863.0" y2="575" stroke="#e2e8f0"/>
+<text x="863.0" y="601" font-size="14" fill="#334155" text-anchor="middle">80</text>
+<line x1="1015.0" y1="145" x2="1015.0" y2="575" stroke="#e2e8f0"/>
+<text x="1015.0" y="601" font-size="14" fill="#334155" text-anchor="middle">100</text>
+<rect x="255" y="100" width="16" height="16" rx="3" fill="#64748b"/>
+<text x="279" y="114" font-size="15" fill="#334155" >B0 直接生成与全文重写</text>
+<rect x="610" y="100" width="16" height="16" rx="3" fill="#0f766e"/>
+<text x="634" y="114" font-size="15" fill="#334155" >B1 材料约束与局部修订</text>
+<text x="232" y="181" font-size="17" fill="#334155" text-anchor="end">材料事实覆盖率</text>
+<text x="232" y="204" font-size="13" fill="#64748b" text-anchor="end">每策略分母 100</text>
+<rect x="255" y="160" width="592.8" height="23" rx="3" fill="#64748b"/>
+<text x="855.8" y="178" font-size="15" fill="#64748b" >78%</text>
+<rect x="255" y="190" width="714.4" height="23" rx="3" fill="#0f766e"/>
+<text x="977.4" y="208" font-size="15" fill="#0f766e" >94%</text>
+<text x="232" y="263" font-size="17" fill="#334155" text-anchor="end">引用正确率</text>
+<text x="232" y="286" font-size="13" fill="#64748b" text-anchor="end">每策略分母 60</text>
+<rect x="255" y="242" width="570.0" height="23" rx="3" fill="#64748b"/>
+<text x="833.0" y="260" font-size="15" fill="#64748b" >75%</text>
+<rect x="255" y="272" width="722.0" height="23" rx="3" fill="#0f766e"/>
+<text x="985.0" y="290" font-size="15" fill="#0f766e" >95%</text>
+<text x="232" y="345" font-size="17" fill="#334155" text-anchor="end">局部修改完成率</text>
+<text x="232" y="368" font-size="13" fill="#64748b" text-anchor="end">每策略分母 20</text>
+<rect x="255" y="324" width="456.0" height="23" rx="3" fill="#64748b"/>
+<text x="719.0" y="342" font-size="15" fill="#64748b" >60%</text>
+<rect x="255" y="354" width="684.0" height="23" rx="3" fill="#0f766e"/>
+<text x="947.0" y="372" font-size="15" fill="#0f766e" >90%</text>
+<text x="232" y="427" font-size="17" fill="#334155" text-anchor="end">非目标章节保留率</text>
+<text x="232" y="450" font-size="13" fill="#64748b" text-anchor="end">每策略分母 100</text>
+<rect x="255" y="406" width="638.4" height="23" rx="3" fill="#64748b"/>
+<text x="901.4" y="424" font-size="15" fill="#64748b" >84%</text>
+<rect x="255" y="436" width="744.8" height="23" rx="3" fill="#0f766e"/>
+<text x="1007.8" y="454" font-size="15" fill="#0f766e" >98%</text>
+<text x="232" y="509" font-size="17" fill="#334155" text-anchor="end">导出完整率</text>
+<text x="232" y="532" font-size="13" fill="#64748b" text-anchor="end">每策略分母 20</text>
+<rect x="255" y="488" width="684.0" height="23" rx="3" fill="#64748b"/>
+<text x="947.0" y="506" font-size="15" fill="#64748b" >90%</text>
+<rect x="255" y="518" width="760.0" height="23" rx="3" fill="#0f766e"/>
+<text x="1023.0" y="536" font-size="15" fill="#0f766e" >100%</text>
+<text x="635" y="632" font-size="16" fill="#334155" text-anchor="middle">成功率（%）</text>
+<text x="42" y="671" font-size="14" fill="#64748b" >来源：f4-source-data.json｜仅描述性汇总；无显著性检验，未绘制误差区间。</text>
+</g></svg>

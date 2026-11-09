@@ -162,7 +162,10 @@ def business_input(step: str, pool: dict, request: str = '') -> dict:
             validate_chart_references(manuscript['content'], figure_catalog(charts['content'] if charts else [], media['content'] if media else None))
             from .publication import validate_citations
             papers = material(pool, 'papers')
-            validate_citations(manuscript['content'], papers['content'] if papers else [], published=True)
+            catalog = papers['content'] if papers else []
+            from .writing.attachments import pool_catalog
+            catalog = pool_catalog(pool)
+            validate_citations(manuscript['content'], catalog, published=True)
     for kind in contracts.FIELDS[module]:
         if kind == 'selected_issue_ids':
             value[kind] = copy.deepcopy(pool.get(kind, [])) if step == 'revise_document' else []
@@ -482,7 +485,7 @@ def _read_bound(path: str) -> Any:
         return text
 
 
-def pool_from_inputs(inputs: dict[str, Any]) -> dict:
+def pool_from_inputs(inputs: dict[str, Any], *, writing_import=False) -> dict:
     candidates = [(key, validate_pool(value)) for key, value in inputs.items() if key.endswith('_pool')]
     if not candidates:
         raise MissingMaterials('没有绑定材料池，请先执行入口准备或补充材料。')
@@ -524,7 +527,11 @@ def pool_from_inputs(inputs: dict[str, Any]) -> dict:
                     from .publication import protect_reference_region, publish_citations
                     protect_reference_region(content, document)
                     papers = material(pool, 'papers')
-                    document = publish_citations(document, papers['content'] if papers else [])
+                    catalog = papers['content'] if papers else []
+                    if writing_import:
+                        from .writing.attachments import pool_catalog
+                        catalog = pool_catalog(pool)
+                    document = publish_citations(document, catalog)
                 updated = {**content, 'report': document} if kind == 'experiment' and isinstance(content, dict) else document
                 add_material(pool, kind, updated, [pool['current'][kind]], current['source_refs'], is_demo=current['mock'])
     return validate_pool(pool)
@@ -545,9 +552,7 @@ def _runtime_request(params: dict) -> tuple[str, str]:
     # Core restores launch intent in user_input on rewind; the new request is in retry_hint.
     recovery = instruction.partition('Recovery request for this rerun only:')[2].strip()
     if params.get('step_id') == 'data_analysis':
-        # Before PR #83 Core did not expose current_user_input to algorithms.
-        # Keep that F4 contract; Writer independently consumes the new field.
-        values = (recovery, params.get('user_input'), params.get('launch_user_input'))
+        values = (params.get('current_user_input'), recovery, params.get('user_input'), params.get('launch_user_input'))
         request = next((text for value in values if (text := _business_request(value))), '')
     elif 'current_user_input' in params:
         request = str(params['current_user_input'] or recovery or '').strip()
@@ -559,18 +564,21 @@ def _runtime_request(params: dict) -> tuple[str, str]:
 
 
 
-def initialize_pool(bound: dict[str, str], request: str = '') -> dict:
+def initialize_pool(bound: dict[str, str], request: str = '', *, writing_import=False) -> dict:
     """Resolve saved materials, or initialize business inputs before the first algorithm."""
     # A later step must use the latest confirmed artifacts, not re-read the original upload.
     saved = {key: _read_bound(path) for key, path in bound.items()
              if key.endswith(('_pool', '_document'))}
     if any(key.endswith('_pool') for key in saved):
-        pool = pool_from_inputs(saved)
+        pool = pool_from_inputs(saved, writing_import=writing_import)
         if 'experiment_question' in bound and material(pool, 'question') is None:
             question = _read_bound(bound['experiment_question'])
             contracts.text(question, 'question')
             add_material(pool, 'question', question, [], [])
         return pool
+    if writing_import:
+        from .writing.attachments import initialize_upload
+        return initialize_upload(_read_entry_value(bound, allow_pool=True), request)
     return _pool_from_entry(_read_entry_value(bound), request)
 
 
@@ -611,24 +619,37 @@ def _read_f7_paper(paper_id: str) -> dict:
     return {'status': 'ready', 'text': text}
 
 
-def _read_entry_value(bound: dict[str, str]) -> dict:
+def _read_entry_value(bound: dict[str, str], *, allow_pool=False) -> dict:
     """Read bound business inputs without creating a pool or selecting paper sources."""
     value = _read_bound(bound['paper_input']) if 'paper_input' in bound else {}
-    if not isinstance(value, dict) or {'schema', 'step', 'input', 'output'} & value.keys():
+    if not isinstance(value, dict) or ({'step', 'input', 'output'} | (set() if allow_pool else {'schema'})) & value.keys():
         raise ValueError('paper_input 必须是 JSON 业务对象，不接受附件名、样例包装或材料池')
     value = copy.deepcopy(value)
+
+    def put_field(field, incoming):
+        if allow_pool and value.get('schema') == SCHEMA and field != 'topic':
+            previous = material(value, field)
+            if previous and previous['content'] != incoming:
+                raise ValueError(f'{field} 存在冲突输入，请只提供一个版本')
+            if not previous:
+                add_material(value, field, incoming, [], [])
+        else:
+            if field in value and value[field] != incoming:
+                raise ValueError(f'{field} 存在冲突输入，请只提供一个版本')
+            value[field] = incoming
+
     for slot, field in (('manuscript_text', 'manuscript'), ('paper_topic', 'topic'),
                         ('experiment_question', 'question')):
         if slot in bound:
             incoming = Path(bound[slot]).read_text(encoding='utf-8-sig')
             contracts.text(incoming, field)
-            if field in value and value[field] != incoming:
-                raise ValueError(f'{field} 存在冲突输入，请只提供一个版本')
-            value[field] = incoming
+            put_field(field, incoming)
+    if 'outline_file' in bound:
+        put_field('outline', read_manuscript(bound['outline_file']))
     if 'manuscript_file' in bound:
         if 'manuscript' in value:
             raise ValueError('同时提供了论文文件和正文，请选择一个待审稿版本')
-        value['manuscript'] = read_manuscript(bound['manuscript_file'])
+        put_field('manuscript', read_manuscript(bound['manuscript_file']))
     return value
 
 
@@ -662,11 +683,11 @@ def _step_request(step: str, pool: dict, params: dict, bound: dict | None = None
     if step == 'data_analysis':
         request, instruction = _runtime_request({**params, 'step_id': step})
         recovery = instruction.partition('Recovery request for this rerun only:')[2].strip()
-        if _business_request(recovery):
+        if _business_request(params.get('current_user_input')) or _business_request(recovery):
             return request
-        # Restore the pre-PR input contract: only recovery can override materials.
+        # A plain retry restores this step's saved requirements.
         previous = ''
-        if recovery:
+        if params.get('current_user_input') or recovery:
             previous = next((_business_request(item.get('request')) for item in reversed(pool['history'])
                              if item['node'] == STEP_NODE[step] and _business_request(item.get('request'))), '')
         return previous or _business_request(pool.get('request')) or request
@@ -769,11 +790,11 @@ def _run_paper_step(context, stream=None) -> dict:
             with diagnostics.stage('input_binding'):
                 bound = bind_attachment(bound, context.workspace_path, request)
             with diagnostics.stage('input_validation'):
-                pool = initialize_pool(bound, request)
+                pool = initialize_pool(bound, request, writing_import=step != 'data_analysis')
         elif step in {'research_topic', 'reading_reflection'} and not any(
             key.endswith('_pool') for key in bound
         ):
-            value = _read_entry_value(bound)
+            value = _read_entry_value(bound, allow_pool=step == 'reading_reflection')
             use_attachments = 'paper_input' not in bound
             if use_attachments:
                 handoff = _load_f7_handoff() if step == 'reading_reflection' else None
@@ -882,7 +903,8 @@ def _run_paper_step(context, stream=None) -> dict:
             )
         fail = '[mock:fail]' in request + instruction and '[mock:retry]' not in request + instruction
         if (step == 'write_document' and 'write_outline_document' in getattr(context, 'input_slots', [])
-                and not material(pool, 'manuscript') and 'write_outline_document' not in bound):
+                and not material(pool, 'manuscript') and 'write_outline_document' not in bound
+                and 'outline_file' not in bound):
             raise MissingMaterials('请先生成并确认论文大纲，再继续写作。')
         preference = _read_bound(bound['experiment_execution']) if 'experiment_execution' in bound else 'simulate_only'
         result = execute_step(step, pool, request, fail=fail, on_event=stream,
@@ -895,8 +917,9 @@ def _run_paper_step(context, stream=None) -> dict:
             from .publication import publish_citations, publish_charts, figure_catalog
             manuscript = material(result['pool'], 'manuscript')
             charts = material(result['pool'], 'charts')
-            papers = material(result['pool'], 'papers')
-            original = publish_citations(manuscript['content'], papers['content'] if papers else [])
+            from .writing.attachments import pool_catalog
+            catalog = pool_catalog(result['pool'])
+            original = publish_citations(manuscript['content'], catalog)
             media = material(result['pool'], 'media_assets')
             published = publish_charts(original, figure_catalog(charts['content'] if charts else [], media['content'] if media else None))
             manuscript['content'] = published

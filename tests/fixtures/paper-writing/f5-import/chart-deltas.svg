@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="700" viewBox="0 0 1120 700" role="img">
+<title>各项成功率的描述性差值（模拟数据）</title>
+<desc>人工构造测试数据，未运行模型实验。B0为直接生成与全文重写，B1为材料约束与局部修订。各指标分母不同，不作统计推断。</desc>
+<rect width="1120" height="700" fill="#ffffff"/>
+<g font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+<text x="42" y="48" font-size="27" fill="#0f172a" >各项成功率的描述性差值</text>
+<text x="42" y="79" font-size="17" fill="#b45309" >模拟数据 · 未运行模型实验 · 不代表真实系统性能</text>
+<line x1="255.0" y1="145" x2="255.0" y2="575" stroke="#e2e8f0"/>
+<text x="255.0" y="601" font-size="14" fill="#334155" text-anchor="middle">0</text>
+<line x1="445.0" y1="145" x2="445.0" y2="575" stroke="#e2e8f0"/>
+<text x="445.0" y="601" font-size="14" fill="#334155" text-anchor="middle">10</text>
+<line x1="635.0" y1="145" x2="635.0" y2="575" stroke="#e2e8f0"/>
+<text x="635.0" y="601" font-size="14" fill="#334155" text-anchor="middle">20</text>
+<line x1="825.0" y1="145" x2="825.0" y2="575" stroke="#e2e8f0"/>
+<text x="825.0" y="601" font-size="14" fill="#334155" text-anchor="middle">30</text>
+<line x1="1015.0" y1="145" x2="1015.0" y2="575" stroke="#e2e8f0"/>
+<text x="1015.0" y="601" font-size="14" fill="#334155" text-anchor="middle">40</text>
+<text x="42" y="115" font-size="16" fill="#334155" >B1 − B0；正值表示 B1 的模拟成功率更高</text>
+<text x="232" y="181" font-size="17" fill="#334155" text-anchor="end">材料事实覆盖率</text>
+<text x="232" y="204" font-size="13" fill="#64748b" text-anchor="end">每策略分母 100</text>
+<rect x="255" y="167" width="304.0" height="35" rx="4" fill="#0f766e"/>
+<text x="571.0" y="191" font-size="18" fill="#0f766e" >+16</text>
+<text x="232" y="263" font-size="17" fill="#334155" text-anchor="end">引用正确率</text>
+<text x="232" y="286" font-size="13" fill="#64748b" text-anchor="end">每策略分母 60</text>
+<rect x="255" y="249" width="380.0" height="35" rx="4" fill="#0f766e"/>
+<text x="647.0" y="273" font-size="18" fill="#0f766e" >+20</text>
+<text x="232" y="345" font-size="17" fill="#334155" text-anchor="end">局部修改完成率</text>
+<text x="232" y="368" font-size="13" fill="#64748b" text-anchor="end">每策略分母 20</text>
+<rect x="255" y="331" width="570.0" height="35" rx="4" fill="#0f766e"/>
+<text x="837.0" y="355" font-size="18" fill="#0f766e" >+30</text>
+<text x="232" y="427" font-size="17" fill="#334155" text-anchor="end">非目标章节保留率</text>
+<text x="232" y="450" font-size="13" fill="#64748b" text-anchor="end">每策略分母 100</text>
+<rect x="255" y="413" width="266.0" height="35" rx="4" fill="#0f766e"/>
+<text x="533.0" y="437" font-size="18" fill="#0f766e" >+14</text>
+<text x="232" y="509" font-size="17" fill="#334155" text-anchor="end">导出完整率</text>
+<text x="232" y="532" font-size="13" fill="#64748b" text-anchor="end">每策略分母 20</text>
+<rect x="255" y="495" width="190.0" height="35" rx="4" fill="#0f766e"/>
+<text x="457.0" y="519" font-size="18" fill="#0f766e" >+10</text>
+<text x="635" y="632" font-size="16" fill="#334155" text-anchor="middle">成功率差（百分点）</text>
+<text x="42" y="671" font-size="14" fill="#64748b" >来源：f4-source-data.json｜仅描述性汇总；无显著性检验，未绘制误差区间。</text>
+</g></svg>

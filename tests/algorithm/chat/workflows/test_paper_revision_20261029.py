@@ -7,6 +7,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from lazymind.document_tools.toolkits import WriterCreateToolkit as ContextToolkit
+
 from lazyllm.tools.writer.data_models.revision import MarkdownModifyPlan
 from lazymind.document_tools.paper.runtime_events import bind_runtime_events
 from lazymind.document_tools.paper.writing import matching, recovery, revise_document
@@ -165,11 +167,11 @@ def test_recorded_title_directive_can_apply_atomically_with_body_edits(record, a
     if body_edit:
         replacements.append(dict(content_ref=reference, old_string='Original method.', new_string='Clarified method.'))
     editor = editor_for(plan, replacements)
-    prepared = dict(manuscript=source, charts=[], reference_candidates=[], writing_context={'context_id': 'title-test'},
-                    writing_task={'query': 'Revise the title and requested text.', 'meta': {'review_driven': body_edit}},
+    prepared = dict(resources=[], resource_profiles=[], manuscript=source, charts=[], reference_candidates=[], writing_context={'context_id': 'title-test'},
+                    writing_task={'task_type': 'revise', 'query': 'Revise the title and requested text.', 'meta': {'review_driven': body_edit}},
                     selected_issues=[{'id': 'R2', 'action_type': 'text_revision'}] if body_edit else [])
     before = copy.deepcopy(prepared)
-    result = revise_document._modify_manuscript(prepared, {'word_target': None}, Mock(), editor=editor)
+    result = revise_document._modify_manuscript(prepared, {'word_target': None}, ContextToolkit(), editor=editor)
     expected = source.replace(old_title, '# Refined title', 1)
     if body_edit:
         expected = expected.replace('Original method.', 'Clarified method.')
@@ -195,12 +197,12 @@ def test_title_permission_does_not_authorize_unrelated_or_invalid_changes(defect
     else:
         replacements = [dict(old_string='Keep method.', new_string='Changed method.')]
     editor = editor_for(plan, replacements)
-    prepared = dict(manuscript=source, charts=[], reference_candidates=[],
+    prepared = dict(resources=[], resource_profiles=[], manuscript=source, charts=[], reference_candidates=[],
                     writing_context={'context_id': 'title-invalid'},
-                    writing_task={'query': 'Clarify title.', 'meta': {}}, selected_issues=[])
+                    writing_task={'task_type': 'revise', 'query': 'Clarify title.', 'meta': {}}, selected_issues=[])
     emitted = []
     with bind_runtime_events(emitted.append, 'revise_document_document'), pytest.raises(ValueError):
-        revise_document._modify_manuscript(prepared, {'word_target': None}, Mock(), editor=editor)
+        revise_document._modify_manuscript(prepared, {'word_target': None}, ContextToolkit(), editor=editor)
     assert prepared['manuscript'] == source
     assert not any(event['type'].startswith('artifact_stream') for event in emitted)
     if defect not in {'reference', 'empty_title'}:

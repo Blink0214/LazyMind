@@ -1,0 +1,335 @@
+{
+  "conversation_id": "d6106b38-db37-4e84-bff0-ffc35e42ef2d",
+  "workflow_session_id": "0fb423c669054352b8f157485bc37e5e",
+  "date": "2026-10-23",
+  "timestamps_timezone": "UTC",
+  "model_from_service_log": "MiniMax-M3",
+  "scope": "Three successful F5 node traces; excludes main-agent routing, user confirmation wait and intervening F6 review. Historical run predates upload simplification.",
+  "stages": [
+    {
+      "trace_id": "f8660759cb413d72c596897c8abedb45",
+      "name": "run_paper_step",
+      "start_time": "2026-10-23 08:31:48.191",
+      "end_time": "2026-10-23 08:32:55.205",
+      "ms": 67014,
+      "level": "DEFAULT",
+      "measurements": {}
+    },
+    {
+      "trace_id": "f8660759cb413d72c596897c8abedb45",
+      "name": "paper.write_document.outline",
+      "start_time": "2026-10-23 08:31:52.513",
+      "end_time": "2026-10-23 08:32:55.185",
+      "ms": 62672,
+      "level": "DEFAULT",
+      "measurements": {
+        "paper.writing.phase": "outline",
+        "paper.writing.trace_id": "f8660759cb413d72c596897c8abedb45",
+        "paper.writing.writing_task_json_chars": "14190",
+        "paper.writing.writing_context_json_chars": "25732",
+        "paper.writing.status": "completed",
+        "paper.writing.output_chars": "823",
+        "paper.writing.elapsed_ms": "62672"
+      }
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "name": "run_paper_step",
+      "start_time": "2026-10-23 08:33:03.944",
+      "end_time": "2026-10-23 08:45:11.853",
+      "ms": 727909,
+      "level": "DEFAULT",
+      "measurements": {}
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "name": "paper.write_document.prepare",
+      "start_time": "2026-10-23 08:33:03.955",
+      "end_time": "2026-10-23 08:33:03.970",
+      "ms": 15,
+      "level": "DEFAULT",
+      "measurements": {
+        "paper.writing.phase": "prepare",
+        "paper.writing.trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+        "paper.writing.papers_json_chars": "2",
+        "paper.writing.papers_count": "0",
+        "paper.writing.evidence_json_chars": "4",
+        "paper.writing.analysis_json_chars": "4",
+        "paper.writing.charts_json_chars": "2",
+        "paper.writing.charts_count": "0",
+        "paper.writing.question_json_chars": "4",
+        "paper.writing.status": "completed",
+        "paper.writing.elapsed_ms": "15"
+      }
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "name": "paper.write_document.section_plan",
+      "start_time": "2026-10-23 08:33:03.971",
+      "end_time": "2026-10-23 08:33:03.987",
+      "ms": 16,
+      "level": "DEFAULT",
+      "measurements": {
+        "paper.writing.phase": "section_plan",
+        "paper.writing.trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+        "paper.writing.writing_task_json_chars": "12656",
+        "paper.writing.outline_json_chars": "717",
+        "paper.writing.writing_context_json_chars": "26902",
+        "paper.writing.status": "completed",
+        "paper.writing.output_chars": "2279",
+        "paper.writing.elapsed_ms": "15"
+      }
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "name": "paper.write_document.draft_sections",
+      "start_time": "2026-10-23 08:33:03.989",
+      "end_time": "2026-10-23 08:36:50.491",
+      "ms": 226502,
+      "level": "DEFAULT",
+      "measurements": {
+        "paper.writing.phase": "draft_sections",
+        "paper.writing.trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+        "paper.writing.writing_task_json_chars": "12656",
+        "paper.writing.section_instructions_json_chars": "3767",
+        "paper.writing.writing_context_json_chars": "26902",
+        "paper.writing.status": "completed",
+        "paper.writing.output_chars": "1406",
+        "paper.writing.elapsed_ms": "226501"
+      }
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "name": "paper.write_document.assemble",
+      "start_time": "2026-10-23 08:36:50.493",
+      "end_time": "2026-10-23 08:36:50.525",
+      "ms": 32,
+      "level": "DEFAULT",
+      "measurements": {
+        "paper.writing.phase": "assemble",
+        "paper.writing.trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+        "paper.writing.draft_sections_json_chars": "1402",
+        "paper.writing.writing_context_json_chars": "26902",
+        "paper.writing.outline_json_chars": "717",
+        "paper.writing.status": "completed",
+        "paper.writing.output_chars": "1518",
+        "paper.writing.elapsed_ms": "31"
+      }
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "name": "paper.write_document.validate_structure",
+      "start_time": "2026-10-23 08:36:50.527",
+      "end_time": "2026-10-23 08:36:50.530",
+      "ms": 3,
+      "level": "DEFAULT",
+      "measurements": {
+        "paper.writing.phase": "validate_structure",
+        "paper.writing.trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+        "paper.writing.status": "completed",
+        "paper.writing.elapsed_ms": "3"
+      }
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "name": "paper.write_document.consistency",
+      "start_time": "2026-10-23 08:36:50.531",
+      "end_time": "2026-10-23 08:45:11.806",
+      "ms": 501275,
+      "level": "DEFAULT",
+      "measurements": {
+        "paper.writing.phase": "consistency",
+        "paper.writing.trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+        "paper.writing.draft_document_json_chars": "1452",
+        "paper.writing.writing_context_json_chars": "26902",
+        "paper.writing.status": "completed",
+        "paper.writing.output_chars": "818",
+        "paper.writing.quality_passed": "true",
+        "paper.writing.elapsed_ms": "501274"
+      }
+    },
+    {
+      "trace_id": "9ee87338f670ab5f3d50137a1e46e2a4",
+      "name": "run_paper_step",
+      "start_time": "2026-10-23 08:48:59.499",
+      "end_time": "2026-10-23 08:49:40.544",
+      "ms": 41045,
+      "level": "DEFAULT",
+      "measurements": {}
+    },
+    {
+      "trace_id": "9ee87338f670ab5f3d50137a1e46e2a4",
+      "name": "paper.write_document.validate_structure",
+      "start_time": "2026-10-23 08:49:40.486",
+      "end_time": "2026-10-23 08:49:40.493",
+      "ms": 7,
+      "level": "DEFAULT",
+      "measurements": {
+        "paper.writing.phase": "validate_structure",
+        "paper.writing.trace_id": "9ee87338f670ab5f3d50137a1e46e2a4",
+        "paper.writing.status": "completed",
+        "paper.writing.elapsed_ms": "6"
+      }
+    }
+  ],
+  "model_calls": [
+    {
+      "trace_id": "f8660759cb413d72c596897c8abedb45",
+      "id": "98934e4c0610dbf1",
+      "start_time": "2026-10-23 08:31:46.604",
+      "end_time": "2026-10-23 08:31:52.358",
+      "ms": 5754,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "f8660759cb413d72c596897c8abedb45",
+      "id": "ad62328870023fa8",
+      "start_time": "2026-10-23 08:31:46.610",
+      "end_time": "2026-10-23 08:31:48.170",
+      "ms": 1560,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "f8660759cb413d72c596897c8abedb45",
+      "id": "2c2b83a1f45d439a",
+      "start_time": "2026-10-23 08:31:48.229",
+      "end_time": "2026-10-23 08:31:52.480",
+      "ms": 4251,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "f8660759cb413d72c596897c8abedb45",
+      "id": "75129251fe346bdc",
+      "start_time": "2026-10-23 08:31:52.524",
+      "end_time": "2026-10-23 08:32:54.974",
+      "ms": 62450,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "id": "1342ba9596e261ce",
+      "start_time": "2026-10-23 08:33:02.527",
+      "end_time": "2026-10-23 08:33:07.415",
+      "ms": 4888,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "id": "c17471bcb4ab0b7d",
+      "start_time": "2026-10-23 08:33:02.539",
+      "end_time": "2026-10-23 08:33:03.927",
+      "ms": 1388,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "id": "4f447a48df0311a5",
+      "start_time": "2026-10-23 08:33:04.022",
+      "end_time": "2026-10-23 08:36:04.331",
+      "ms": 180309,
+      "level": "ERROR",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "id": "609e59e83ffd3340",
+      "start_time": "2026-10-23 08:36:04.348",
+      "end_time": "2026-10-23 08:36:50.379",
+      "ms": 46031,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "35eb8587a9be5c4f6269833c7262d99c",
+      "id": "fffe51e40fb38750",
+      "start_time": "2026-10-23 08:36:50.576",
+      "end_time": "2026-10-23 08:45:11.784",
+      "ms": 501208,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "9ee87338f670ab5f3d50137a1e46e2a4",
+      "id": "b0dc605455717877",
+      "start_time": "2026-10-23 08:48:58.286",
+      "end_time": "2026-10-23 08:49:04.283",
+      "ms": 5997,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "9ee87338f670ab5f3d50137a1e46e2a4",
+      "id": "5c415b414eb05ad4",
+      "start_time": "2026-10-23 08:48:58.306",
+      "end_time": "2026-10-23 08:48:59.487",
+      "ms": 1181,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "9ee87338f670ab5f3d50137a1e46e2a4",
+      "id": "3bce684f44054428",
+      "start_time": "2026-10-23 08:48:59.510",
+      "end_time": "2026-10-23 08:49:00.465",
+      "ms": 955,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "9ee87338f670ab5f3d50137a1e46e2a4",
+      "id": "32590df34d0680a4",
+      "start_time": "2026-10-23 08:49:00.526",
+      "end_time": "2026-10-23 08:49:06.071",
+      "ms": 5545,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "9ee87338f670ab5f3d50137a1e46e2a4",
+      "id": "bc0a00a54dffb03f",
+      "start_time": "2026-10-23 08:49:06.152",
+      "end_time": "2026-10-23 08:49:33.110",
+      "ms": 26958,
+      "level": "DEFAULT",
+      "usage_details": {}
+    },
+    {
+      "trace_id": "9ee87338f670ab5f3d50137a1e46e2a4",
+      "id": "cb7b1d6ec4211e82",
+      "start_time": "2026-10-23 08:49:33.161",
+      "end_time": "2026-10-23 08:49:40.428",
+      "ms": 7267,
+      "level": "DEFAULT",
+      "usage_details": {}
+    }
+  ],
+  "limitations": [
+    "usage_details is empty; token usage/cost unavailable",
+    "One GENERATION span need not equal one provider HTTP attempt",
+    "Captured prompt/output values may be truncated; adapter character counts are not token counts"
+  ],
+  "draft_stream_timeout": {
+    "first_response_ms": 735.26,
+    "visible_chars": 0,
+    "received_text_chars": 32671,
+    "attempt_ms": 180309,
+    "retry_ms": 46031,
+    "status": "idle_timeout; model span reports Draft Markdown cancelled"
+  },
+  "context": {
+    "adapter_json_chars": 26902,
+    "query_json_chars": 12309,
+    "document_summary_json_chars": 12322,
+    "facts_json_chars": 2113,
+    "query_equals_document_summary_summary": true,
+    "draft_before_publication_chars": 1452,
+    "published_manuscript_chars": 1604,
+    "h2_count": 1
+  }
+}

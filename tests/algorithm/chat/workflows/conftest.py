@@ -24,6 +24,7 @@ def paper_simulation(monkeypatch, request):
         pool = original_seed()
         for paper in workflow.material(pool, 'papers')['content']:
             paper.update(url=None, authors=[], year=None, doi=None, content_type='excerpt', source='test', truncated=False)
+        workflow.add_material(pool, 'outline', '# 测试论文\n\n## 方法', [], [], is_demo=True)
         pool['constraints'] = copy.deepcopy(source.get('constraints', {}))
         workflow.material(pool, 'data')['content'].update(column_types=['string', 'number'], units=[None, 'point'])
         return pool
@@ -72,6 +73,7 @@ def paper_simulation(monkeypatch, request):
 
     monkeypatch.setattr(workflow, 'seed_pool', seed)
     for name, fn in [('research_topic', question), ('literature_review', literature), ('data_analysis', analysis),
+                     ('write_outline', lambda inputs: {'outline': inputs['outline'], 'is_demo': True}),
                      ('write_document', writer), ('revise_document', writer), ('peer_review', reviewer)]:
         if name == 'research_topic' and request.module.__name__.endswith(('test_paper_writing', 'test_paper_writing_algorithms')):
             continue

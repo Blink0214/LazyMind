@@ -1,0 +1,123 @@
+{
+  "topic": "LazyMind：基于可追溯研究材料与受限修订的论文写作 Agent",
+  "request": "仅对人工构造的模拟汇总计数作描述性分析和绘图；报告成功率与百分点差值，不作显著性检验，不声称真实实验。",
+  "constraints": {
+    "paper_language": "zh-CN",
+    "word_target": null,
+    "paper_type": null,
+    "citation_style": "GB/T 7714",
+    "focus": []
+  },
+  "data": {
+    "columns": [
+      "metric",
+      "strategy",
+      "success_count",
+      "total_count",
+      "rate_pct"
+    ],
+    "column_types": [
+      "string",
+      "string",
+      "integer",
+      "integer",
+      "number"
+    ],
+    "units": [
+      null,
+      null,
+      "个",
+      "个",
+      "%"
+    ],
+    "rows": [
+      [
+        "材料事实覆盖率",
+        "B0",
+        78,
+        100,
+        78
+      ],
+      [
+        "材料事实覆盖率",
+        "B1",
+        94,
+        100,
+        94
+      ],
+      [
+        "引用正确率",
+        "B0",
+        45,
+        60,
+        75
+      ],
+      [
+        "引用正确率",
+        "B1",
+        57,
+        60,
+        95
+      ],
+      [
+        "局部修改完成率",
+        "B0",
+        12,
+        20,
+        60
+      ],
+      [
+        "局部修改完成率",
+        "B1",
+        18,
+        20,
+        90
+      ],
+      [
+        "非目标章节保留率",
+        "B0",
+        84,
+        100,
+        84
+      ],
+      [
+        "非目标章节保留率",
+        "B1",
+        98,
+        100,
+        98
+      ],
+      [
+        "导出完整率",
+        "B0",
+        18,
+        20,
+        90
+      ],
+      [
+        "导出完整率",
+        "B1",
+        20,
+        20,
+        100
+      ]
+    ]
+  },
+  "experiment": null,
+  "data_context": {
+    "description": "人工构造的 F5 验收 fixture；未运行模型实验。10 行为5个指标×2种策略的汇总计数，不是10个独立任务。每项指标分母单位不同，不能汇总为总体成功率。",
+    "column_descriptions": [],
+    "relations": []
+  },
+  "study_design": {
+    "description": "演示设定每策略20个任务；无逐任务观测，不能检验显著性、计算有效独立样本量或因果效应。",
+    "observation_unit": "指标与策略的模拟汇总行",
+    "unit_keys": [],
+    "pairing_keys": [],
+    "grouping": [],
+    "repeated_measures": [],
+    "covariates": [],
+    "time_column": null,
+    "weight_column": null
+  }
+}

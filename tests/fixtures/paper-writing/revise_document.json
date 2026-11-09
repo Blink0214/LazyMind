@@ -39,7 +39,6 @@
     ]
   },
   "output": {
-    "outline": "# 论文\n\n## 方法\n\n## 局限",
     "manuscript": "# 论文\n## 方法\n比较两种证据组织方法。\n## 局限\n样本较少，不能推断总体表现。",
     "is_demo": true
   }

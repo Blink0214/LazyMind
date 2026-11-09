@@ -4,6 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from lazymind.document_tools.toolkits import WriterCreateToolkit as ContextToolkit
+
 from lazymind.document_tools.paper import contracts, workflow
 from lazymind.document_tools.paper.writing import write_outline, write_document
 from lazymind.document_tools.paper.runtime_events import bind_runtime_events
@@ -79,16 +81,18 @@ def test_finished_preview_can_restart_without_reusing_old_content():
 
 def test_outline_step_only_calls_public_outline_generation(monkeypatch):
     toolkit = Mock()
+    toolkit.create_writing_context = Mock(wraps=ContextToolkit().create_writing_context)
     def stream_outline(**kwargs):
         kwargs['on_delta']('# Test paper')
         kwargs['on_delta']('\n\n')
         kwargs['on_delta']('## Method\n\n## Limitations')
         return OUTLINE
     toolkit.stream_outline.side_effect = stream_outline
-    prepared = {'writing_task': {'constraints': {}}, 'writing_context': {},
+    prepared = {'writing_task': {'query': 'Outline', 'task_type': 'write', 'constraints': {}},
+                'resource_profiles': [], 'resources': [], 'writing_context': {},
                 'outline': None, 'charts': []}
     monkeypatch.setattr(write_outline, 'WriterCreateToolkit', lambda: toolkit)
-    monkeypatch.setattr(write_outline, 'prepare_writer_context', lambda *a, **k: copy.deepcopy(prepared))
+    monkeypatch.setattr(write_outline, 'prepare_writer_inputs', lambda *a, **k: copy.deepcopy(prepared))
     inputs = contracts.validate_input('write_outline', {'topic': 'Test', 'question': 'Compare methods'})
     write_outline.validate_inputs(inputs)
     emitted = []
@@ -102,11 +106,12 @@ def test_outline_step_only_calls_public_outline_generation(monkeypatch):
     assert ''.join(event['delta'] for event in deltas) == OUTLINE
     contracts.validate_output('write_outline', result, inputs)
     assert result == {'outline': OUTLINE, 'is_demo': False}
-    assert [call[0] for call in toolkit.method_calls] == ['stream_outline']
+    assert [call[0] for call in toolkit.method_calls] == ['create_writing_context', 'stream_outline']
 
 
 def test_confirmed_outline_is_reused_without_regeneration():
     toolkit = Mock()
+    toolkit.create_writing_context = Mock(wraps=ContextToolkit().create_writing_context)
     prepared = {'writing_task': {}, 'writing_context': {}, 'outline': OUTLINE, 'charts': []}
     assert write_outline.prepare_outline(prepared, toolkit) == OUTLINE
     toolkit.generate_outline.assert_not_called()

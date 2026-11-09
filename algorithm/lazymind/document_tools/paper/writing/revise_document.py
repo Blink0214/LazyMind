@@ -1,10 +1,9 @@
 """Scoped paper revision using the public Writer revision toolkit."""
-from ..prompts.write_document_prompt import REVIEW_REVISION_INSTRUCTIONS, REVISION_SCOPE_INSTRUCTIONS
+from ..prompts.write_document_prompt import REVISION_SCOPE_INSTRUCTIONS
 from lazyllm.tools.writer.data_models.revision import MarkdownModifyPlan, StringReplaceSet
 from ...toolkits import WriterCreateToolkit, WriterRevisionToolkit
 from ..publication import validate_chart_references as _validate_chart_references
 from .. import contracts
-import copy
 import re
 import uuid
 from ..runtime_events import current_events, report_progress
@@ -22,7 +21,9 @@ from .common import (
     _json,
     _materialize_chart_insertions,
     _validate_manuscript,
-    prepare_writer_context,
+    prepare_writer_inputs,
+    stage_context,
+    stage_task,
     validate_inputs,
     validate_result,
 )
@@ -98,6 +99,10 @@ def _resolve_review_issues(request, review, workflow_context):
     if not request.strip():
         raise RevisionInputRequired('请明确本轮修改要求，或说明按当前审稿意见修订。')
     if review is None:
+        if _requested_issue_count(request) is not None:
+            raise RevisionInputRequired(
+                '按条数选择审稿意见需要与当前稿件绑定的结构化审稿报告；请提供与当前稿件配套的结构化审稿材料，'
+                '或明确本轮要修改的具体文字与范围。')
         return []
     issue_ids = [issue['id'] for issue in review['issues']]
     count = _requested_issue_count(request)
@@ -294,24 +299,21 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
     # Do not expand pre-existing insertion directives outside the approved edit.
     _validate_chart_references(source, prepared['charts'])
     _heading_signature(source)
-    task = copy.deepcopy(prepared['writing_task'])
-    reviewing = task['meta'].get('review_driven', False)
+    reviewing = prepared['writing_task']['meta'].get('review_driven', False)
     editor = editor if editor is not None else WriterRevisionToolkit()
-    context_json = _json(prepared['writing_context'])
+    context_json = _json(stage_context(prepared, 'revision_plan', toolkit=toolkit))
     issues = prepared['selected_issues'] if reviewing else []
-    if reviewing:
-        if not issues:
-            raise ValueError('Review revision requires selected issues; empty is not all.')
-        task['query'] += REVIEW_REVISION_INSTRUCTIONS + _json(issues)
+    if reviewing and not issues:
+        raise ValueError('Review revision requires selected issues; empty is not all.')
     try:
         report_progress(20, '正在定位修改范围')
         located = editor.locate_revision_target(
-            writing_task_json=_json(task), writer_document_json=source,
+            writing_task_json=_json(stage_task(prepared, 'revision_locate')), writer_document_json=source,
             writing_context_json=context_json,
         )
         report_progress(35, '正在规划稿件修改')
         plan = MarkdownModifyPlan.model_validate(json.loads(editor.generate_modify_plan(
-            writing_task_json=_json(task), writer_document_json=source,
+            writing_task_json=_json(stage_task(prepared, 'revision_plan')), writer_document_json=source,
             locate_result_json=located, writing_context_json=context_json,
         )))
     except ValueError as exc:
@@ -336,7 +338,9 @@ def _modify_manuscript(prepared: dict, constraints, toolkit, *, editor=None):
         allowed.append(title.span())
     report_progress(50, '正在生成修改内容')
     changes, located_changes = _validated_changes(source, plan, allowed, json.loads(editor.generate_string_replace_set(
-        markdown_document=source, modify_plan_json=plan.model_dump_json(), writing_context_json=context_json,
+        writing_task_json=_json(stage_task(prepared, 'revision_content')),
+        markdown_document=source, modify_plan_json=plan.model_dump_json(),
+        writing_context_json=_json(stage_context(prepared, 'revision_content', toolkit=toolkit)),
     )), allow_repair=not repaired)
     if plan.title_instruction:
         title_changes = [(start, end, replacement) for start, end, replacement in located_changes
@@ -388,6 +392,6 @@ def run(inputs):
     """Revise a manuscript from the current request or selected current review issues."""
     report_progress(10, '正在准备修订材料')
     toolkit = WriterCreateToolkit()
-    prepared = prepare_writer_context(inputs, toolkit=toolkit)
+    prepared = prepare_writer_inputs(inputs, toolkit=toolkit)
     prepared['writing_task']['constraints']['visual_policy'] = {'allow_visuals': False}
     return _modify_manuscript(prepared, inputs['constraints'], toolkit)

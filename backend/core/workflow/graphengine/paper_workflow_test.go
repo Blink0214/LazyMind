@@ -87,20 +87,33 @@ func TestRecoveryPolicyValidationAndLegacyHash(t *testing.T) {
 	}
 }
 
-func TestPaperWritingRequiresAnInputSource(t *testing.T) {
+func TestPaperWritingAllowsAttachmentResolutionBeforeValidation(t *testing.T) {
 	graph := paperGraph(t, nil)
-	for _, source := range []string{"", "paper_topic", "paper_input", "seed_pool", "literature_review_pool", "data_analysis_pool", "manuscript_text"} {
+	// Conversation attachments are resolved by the paper tool after dispatch and
+	// need not have material facts yet. Ready permits input resolution, not draft
+	// generation; test_paper_f5_import.py covers the execution validation boundary.
+	for _, source := range []string{"", "paper_topic", "paper_input", "outline_file", "seed_pool", "literature_review_pool", "data_analysis_pool", "manuscript_text", "write_outline_document"} {
 		t.Run(source, func(t *testing.T) {
 			snapshot := RuntimeSnapshot{}
 			if source != "" {
 				snapshot.Materials = []MaterialValue{{MaterialID: source, RevisionID: "input-1", Valid: true}}
 			}
 			node := Project(graph, snapshot).Nodes["write_document"]
-			wantReady := source != "" && source != "paper_topic"
-			if (node.Readiness == "ready") != wantReady {
+			if node.Readiness != "ready" || !node.RequiresApproval || node.Execution != "none" {
 				t.Fatalf("source %q: %+v", source, node)
 			}
 		})
+	}
+	// Keep both direct-upload and confirmed-outline bindings available to the
+	// dispatched tool; dropping one would make readiness alone a false positive.
+	optional := map[string]bool{}
+	for _, input := range graph.Nodes["write_document"].OptionalInputs {
+		optional[input.Material] = true
+	}
+	for _, source := range []string{"paper_input", "outline_file", "write_outline_pool", "write_outline_document"} {
+		if !optional[source] {
+			t.Fatalf("draft entry cannot receive %s", source)
+		}
 	}
 }
 

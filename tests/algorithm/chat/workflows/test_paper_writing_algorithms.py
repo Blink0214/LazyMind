@@ -130,7 +130,7 @@ def test_middle_entry_needs_only_business_data(step, fields):
 
 
 @pytest.mark.parametrize('step,inputs', [
-    ('peer_review', {'topic': 'T'}), ('revise_document', {'topic': 'T', 'manuscript': '# 稿件'}),
+    ('peer_review', {'topic': 'T'}), ('revise_document', {'topic': 'T', 'manuscript': '# 稿件\n\n## 方法\n正文'}),
     ('refine_topic', {'topic': 'T'}), ('reading_reflection', {'topic': 'T', 'papers': []}),
     ('data_analysis', {'topic': 'T', 'experiment': {
         'executed': False, 'plan': '方案', 'results': None, 'report': '仅方案', 'code': None, 'logs': None}}),
@@ -140,7 +140,7 @@ def test_missing_business_materials_stop_before_algorithm(step, inputs, monkeypa
     def must_not_run(_):
         pytest.fail('missing materials reached algorithm')
     monkeypatch.setattr(api.ALGORITHMS[module], 'run', must_not_run)
-    with pytest.raises(tools.MissingMaterials, match='缺少'):
+    with pytest.raises(tools.MissingMaterials, match='明确' if step == 'revise_document' else '缺少'):
         tools.run_algorithm(step, inputs)
 
 

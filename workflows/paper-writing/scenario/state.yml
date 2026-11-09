@@ -244,6 +244,7 @@ steps:
     terminal_tools: [run_paper_step]
     inputs:
       - {material: seed_pool, required: false, transport: path}
+      - {material: outline_file, required: false, transport: path}
       - {material: paper_input, required: false, transport: path}
       - {material: manuscript_file, required: false, transport: path}
       - {material: manuscript_text, required: false, transport: path}
@@ -281,6 +282,7 @@ steps:
     terminal_tools: [run_paper_step]
     inputs:
       - {material: seed_pool, required: false, transport: path}
+      - {material: outline_file, required: false, transport: path}
       - {material: paper_input, required: false, transport: path}
       - {material: manuscript_file, required: false, transport: path}
       - {material: manuscript_text, required: false, transport: path}

@@ -7,6 +7,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from lazymind.document_tools.toolkits import WriterCreateToolkit as ContextToolkit
+
 from lazyllm.tools.writer.data_models.revision import MarkdownModifyPlan, StringReplaceSet
 from lazymind.document_tools.paper import contracts
 from lazymind.document_tools.paper.runtime_events import bind_runtime_events
@@ -40,10 +42,12 @@ def correction_model(monkeypatch, respond):
 def draft(monkeypatch, body, candidates):
     outline = '# Paper\n\n## Discussion'
     inputs = contracts.validate_input('write_document', {'topic': 'Paper', 'outline': outline})
-    prepared = dict(writing_task={'constraints': {}}, writing_context={}, outline=outline,
+    prepared = dict(writing_task={'constraints': {}, 'query': 'Write', 'task_type': 'write'},
+                    resources=[], resource_profiles=[], writing_context={}, outline=outline,
                     charts=[], reference_candidates=candidates)
     monkeypatch.setattr(write_document, 'prepare_writer_context', lambda *a, **kw: prepared)
     toolkit = Mock()
+    toolkit.create_writing_context = Mock(wraps=ContextToolkit().create_writing_context)
     toolkit.generate_section_instructions.return_value = json.dumps({'section_instructions': {'instructions': [dict(
         instruction_id='discussion', content_ref={'heading_path': ['Paper', 'Discussion']},
         section_title='Discussion', section_goal='Discuss evidence', required_points=[],
@@ -171,9 +175,9 @@ def revision_case():
                                meta={'issue_ids': [issue]}))
         changes.append(dict(content_ref=reference, old_string=f'Original {word}.', new_string=f'Clarified {word}.'))
     changes[1].update(old_string='Original result. Keep evidence.', new_string='Clarified result. Changed evidence.')
-    data = dict(manuscript=source, charts=[], reference_candidates=[], writing_context={'context_id': 'recovery-test'},
+    data = dict(resources=[], resource_profiles=[], manuscript=source, charts=[], reference_candidates=[], writing_context={'context_id': 'recovery-test'},
                 selected_issues=[dict(id=key, action_type='text_revision') for key in ['R1', 'R2']],
-                writing_task={'query': 'Clarify selected text.', 'meta': {'review_driven': True}})
+                writing_task={'task_type': 'revise', 'query': 'Clarify selected text.', 'meta': {'review_driven': True}})
     tools = SimpleNamespace(
         locate_revision_target=Mock(return_value='{}'),
         generate_modify_plan=Mock(return_value=json.dumps({'scope': 'document', 'instructions': operations})),
@@ -203,12 +207,12 @@ def test_recovery_applies_all_validated_edits_once_and_never_publishes_invalid_r
             message = {True: 'exceeds the planned', 'citation': 'reference marker',
                        'chart': 'unknown chart', 'noop': 'old_string and new_string must differ'}[invalid]
             with pytest.raises(ValueError, match=message):
-                revise_document._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
+                revise_document._modify_manuscript(data, {'word_target': None}, ContextToolkit(), editor=tools)
             assert not any(event['type'].startswith('artifact_stream') for event in emitted)
             if invalid is True or invalid == 'noop':
                 tools.apply_string_replace.assert_not_called()
         else:
-            result = revise_document._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
+            result = revise_document._modify_manuscript(data, {'word_target': None}, ContextToolkit(), editor=tools)
             assert result['manuscript'] == data['manuscript'].replace('Original', 'Clarified')
             tools.apply_string_replace.assert_called_once()
             assert len([event for event in emitted if event['type'] == 'artifact_stream_end']) == 1
@@ -224,7 +228,7 @@ def test_locator_and_patch_correction_share_one_attempt(monkeypatch):
     tools.generate_modify_plan.return_value = json.dumps({'scope': 'document', 'instructions': operations})
     requests = correction_model(monkeypatch, lambda items: {'repairs': [dict(index=0, locator_text='Original method.')]})
     with pytest.raises(ValueError, match='exceeds the planned'):
-        revise_document._modify_manuscript(data, {'word_target': None}, Mock(), editor=tools)
+        revise_document._modify_manuscript(data, {'word_target': None}, ContextToolkit(), editor=tools)
     assert len(requests) == 1
     tools.apply_string_replace.assert_not_called()
 
