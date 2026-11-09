@@ -9,7 +9,7 @@ import { CLOUD_DOCUMENTS_OBSIDIAN_SETUP_PATH, getCloudDocumentsUrl } from '@/mod
 import i18n from '@/i18n';
 import { MarkdownArtifactEditor, type MarkdownSaveMode } from './MarkdownArtifactEditor';
 import { WriterIRControl, type WriterIRSaveMode } from './WriterIRControl';
-import { isWriterDocument, normalizeWriterDocumentForSync, type WriterDocument } from './writerIR';
+import { isWriterDocument, withWriterImagePreviews, normalizeWriterDocumentForSync, type WriterDocument } from './writerIR';
 import { SlotEditingContext, WorkflowPanelTabActiveContext } from './slotEditingContext';
 import { ArtifactRewriteDialog, type ArtifactRewriteSelection } from './ArtifactRewriteDialog';
 import { useDocumentCopy } from './useDocumentCopy';
@@ -149,8 +149,11 @@ export function DocumentArtifactEditor({ slot: incomingSlot, sessionId, readOnly
       .map(item => [item.slot_id, item.artifact_id, item.revision, item.draft_version]));
   });
   const mediaKey = JSON.stringify([sessionId, slot.artifact_id, slot.revision, slot.draft_version, writerSlot, mediaRevision]);
-  const [media, setMedia] = useState<{ key: string; urls?: Record<string, string> }>();
+  const [media, setMedia] = useState<{ key: string; urls?: Record<string, string>; document?: unknown }>();
   const mediaUrls = media?.key === mediaKey || retainedPublicationSource.current !== undefined ? media?.urls : undefined;
+  const imagePreviewDocument = useMemo(() => isWriterDocument(value)
+    ? withWriterImagePreviews(value, media?.key === mediaKey ? media.document : undefined)
+    : undefined, [value, media, mediaKey]);
   const latestMediaUrls = useRef(mediaUrls);
   latestMediaUrls.current = mediaUrls;
   const resolveImageUrl = useCallback(async (url: string) => {
@@ -165,13 +168,14 @@ export function DocumentArtifactEditor({ slot: incomingSlot, sessionId, readOnly
   const imageDownloadsRef = useRef(imageDownloads); imageDownloadsRef.current = imageDownloads;
 
   useEffect(() => {
-    if (descriptor.representation !== 'markdown' || !writerSlot || mediaRevision === undefined || (slot.list_index ?? -1) >= 0) return;
+    if (!['markdown', 'ir'].includes(descriptor.representation) || !writerSlot || mediaRevision === undefined || (slot.list_index ?? -1) >= 0) return;
     const controller = new AbortController();
     // Resolve preview resources only; the editable source keeps its original image references.
     void WorkflowSessionApi().renderWriterDocument(sessionId, writerSlot, {
       signal: controller.signal, silentError: true,
     } as never).then(response => {
-      if (!controller.signal.aborted) setMedia({ key: mediaKey, urls: response.data.code === 0 ? response.data.data.media_urls : undefined });
+      if (!controller.signal.aborted) setMedia({ key: mediaKey, urls: response.data.code === 0 ? response.data.data.media_urls : undefined,
+        document: response.data.code === 0 ? response.data.data.document : undefined });
     }).catch(() => {
       if (!controller.signal.aborted) setMedia({ key: mediaKey });
     });
@@ -445,7 +449,7 @@ export function DocumentArtifactEditor({ slot: incomingSlot, sessionId, readOnly
           sessionId, slotId: slot.slot_id, listIndex: slot.list_index ?? -1, preview: preview.value, applyPreview } : null}
         onRewritePreviewApplied={() => setPreview(null)} onRewritePreviewRejected={() => setPreview(null)}
         onSave={async (text, revision, mode, numbering) => { const saved = await save(text, revision, mode, numbering); return { markdown: String(saved.value), revision: saved.revision }; }} />
-      : isWriterDocument(value) ? <WriterIRControl document={value as WriterDocument} sourceRevision={version} editingKey={editingKey} readOnly={!writable} allowMultipleParagraphs
+      : isWriterDocument(value) ? <WriterIRControl document={imagePreviewDocument ?? value as WriterDocument} sourceRevision={version} editingKey={editingKey} readOnly={!writable} allowMultipleParagraphs
         onDocumentChange={edit} numbering={numbering} toolbarActions={versionHistory}
         onRewriteSelection={canRewrite ? (picked) => setSelection({ type: 'ir', node_id: picked.nodeId, nodeSelections: picked.nodeSelections, selectedText: picked.selectedText, anchor: picked.anchor }) : undefined}
         rewriteDialogOpen={selection !== null}

@@ -584,13 +584,22 @@ func loadSelectedWriterArtifact(
 	return loadWriterArtifactRevision(ctx, db, revision)
 }
 
+type writerMediaSourceBinding struct {
+	Provider        string `json:"provider"`
+	ProviderBlockID string `json:"provider_block_id"`
+	NodeID          string `json:"node_id"`
+}
+
 type writerMediaAsset struct {
 	MediaAssetID string `json:"media_asset_id"`
 	URI          string `json:"uri"`
 	LocalPath    string `json:"local_path"`
 	Meta         struct {
-		SourceReference string `json:"source_reference"`
-		SHA256          string `json:"sha256"`
+		SourceReference string                     `json:"source_reference"`
+		Provider        string                     `json:"provider"`
+		ProviderBlockID string                     `json:"provider_block_id"`
+		SourceBindings  []writerMediaSourceBinding `json:"source_bindings"`
+		SHA256          string                     `json:"sha256"`
 	} `json:"meta"`
 }
 
@@ -643,6 +652,7 @@ func attachWriterIRMediaPreviewURLs(document map[string]any, urls map[string]str
 			}
 			if block["type"] == "image" {
 				references, _ := block["references"].([]any)
+				previewURL, previewID := "", ""
 				for _, value := range references {
 					reference, _ := value.(map[string]any)
 					if reference == nil || reference["type"] != "media_asset" {
@@ -650,18 +660,35 @@ func attachWriterIRMediaPreviewURLs(document map[string]any, urls map[string]str
 					}
 					assetID, _ := reference["id"].(string)
 					path, _ := reference["path"].(string)
-					previewURL := urls["asset://"+strings.TrimSpace(assetID)]
+					previewURL = urls["asset://"+strings.TrimSpace(assetID)]
+					previewID = assetID
 					if previewURL == "" {
 						previewURL = urls[strings.TrimSpace(path)]
 					}
-					if previewURL != "" {
-						block["references"] = append(references, map[string]any{
-							"type": "preview_asset",
-							"id":   assetID,
-							"url":  previewURL,
-						})
-					}
 					break
+				}
+				if previewURL == "" {
+					nodeID, _ := block["node_id"].(string)
+					binding, _ := block["provider_binding"].(map[string]any)
+					provider, _ := binding["provider"].(string)
+					blockID, _ := binding["block_id"].(string)
+					previewURL = urls["writer-node://"+nodeID]
+					if previewURL == "" && provider != "" && blockID != "" {
+						previewURL = urls["writer-image://"+provider+"/"+blockID]
+					}
+					previewID = nodeID
+				}
+				if previewURL != "" {
+					filtered := make([]any, 0, len(references)+1)
+					for _, value := range references {
+						reference, _ := value.(map[string]any)
+						if reference == nil || reference["type"] != "preview_asset" {
+							filtered = append(filtered, value)
+						}
+					}
+					block["references"] = append(filtered, map[string]any{
+						"type": "preview_asset", "id": previewID, "url": previewURL,
+					})
 				}
 			}
 			if children, ok := block["children"].([]any); ok {
@@ -732,6 +759,17 @@ func writerDocumentMediaURLs(
 			}
 			if mediaAssetID := strings.TrimSpace(asset.MediaAssetID); mediaAssetID != "" {
 				references = append(references, "asset://"+mediaAssetID)
+			}
+			bindings := append([]writerMediaSourceBinding{{
+				Provider: asset.Meta.Provider, ProviderBlockID: asset.Meta.ProviderBlockID,
+			}}, asset.Meta.SourceBindings...)
+			for _, binding := range bindings {
+				if binding.Provider != "" && binding.ProviderBlockID != "" {
+					references = append(references, "writer-image://"+binding.Provider+"/"+binding.ProviderBlockID)
+				}
+				if binding.NodeID != "" {
+					references = append(references, "writer-node://"+binding.NodeID)
+				}
 			}
 			for _, reference := range references {
 				if reference == "" {

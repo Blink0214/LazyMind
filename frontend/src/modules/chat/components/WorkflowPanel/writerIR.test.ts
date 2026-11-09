@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   parseWriterDocument,
+  withWriterImagePreviews,
   restoreLegacyWriterImageReference,
   type WriterDocument,
 } from './writerIR';
@@ -67,4 +68,28 @@ describe('restoreLegacyWriterImageReference', () => {
     });
   });
 
+});
+
+
+describe('withWriterImagePreviews', () => {
+  it('uses backend library previews without overwriting edits or mutating the source', () => {
+    const source: WriterDocument = { document_id: 'doc', title: 'Edited title', stage: 'final', blocks: [
+      { node_id: 'heading', type: 'heading', content: 'Edited heading', children: [
+        { node_id: 'image', type: 'image', references: [{ type: 'media_asset', id: 'asset-1' }] },
+      ] },
+    ] };
+    const before = JSON.stringify(source);
+    const rendered = structuredClone(source);
+    rendered.title = 'Old title';
+    rendered.blocks[0].content = 'Old heading';
+    rendered.blocks[0].children![0].references!.push({ type: 'preview_asset', url: '/static-files/media.png?sig=new' });
+    const display = withWriterImagePreviews(source, rendered);
+    expect(display.title).toBe('Edited title');
+    expect(display.blocks[0].content).toBe('Edited heading');
+    expect(display.blocks[0].children![0].references).toEqual([
+      { type: 'media_asset', id: 'asset-1' }, { type: 'preview_asset', url: '/static-files/media.png?sig=new' },
+    ]);
+    expect(JSON.stringify(source)).toBe(before);
+    expect(withWriterImagePreviews(display, rendered).blocks[0].children![0].references).toHaveLength(2);
+  });
 });

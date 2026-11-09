@@ -388,6 +388,11 @@ func TestAttachWriterMediaURLs(t *testing.T) {
 					"meta": map[string]any{
 						"source_reference": "docs/assets/diagram.png",
 						"sha256":           digest,
+						"provider":         "notion", "provider_block_id": "block-1",
+						"source_bindings": []map[string]string{
+							{"provider": "notion", "provider_block_id": "block-1", "node_id": "image-1"},
+							{"provider": "notion", "provider_block_id": "block-2", "node_id": "image-2"},
+						},
 					},
 				},
 			},
@@ -405,6 +410,7 @@ func TestAttachWriterMediaURLs(t *testing.T) {
 	attachWriterMediaURLs(context.Background(), db.DB, "session", "draft_document", result)
 	urls := result["media_urls"].(map[string]string)
 	for _, reference := range []string{
+		"writer-image://notion/block-1", "writer-image://notion/block-2", "writer-node://image-1", "writer-node://image-2",
 		"docs/assets/diagram.png",
 		imagePath,
 		sourceURI,
@@ -1682,5 +1688,34 @@ func seedWriterRevision(
 		CreatedAt:       time.Now().UTC(),
 	}).Error; err != nil {
 		t.Fatalf("seed revision %s: %v", id, err)
+	}
+}
+
+func TestWriterImportedImagePreviewsUseMediaLibrary(t *testing.T) {
+	for _, provider := range []string{"notion", "feishu", "wechat"} {
+		t.Run(provider, func(t *testing.T) {
+			image := map[string]any{
+				"node_id": "image-1", "type": "image",
+				"provider_binding": map[string]any{"provider": provider, "block_id": "block-1"},
+				"references":       []any{map[string]any{"type": "preview_asset", "url": "https://expired.test/image"}},
+			}
+			document := map[string]any{"blocks": []any{map[string]any{
+				"type": "heading", "children": []any{image},
+			}}}
+			url := "/static-files/media/image.png?sig=first"
+			attachWriterIRMediaPreviewURLs(document, map[string]string{"writer-image://" + provider + "/block-1": url})
+			refs := image["references"].([]any)
+			if len(refs) != 1 || refs[0].(map[string]any)["url"] != url {
+				t.Fatalf("expected library preview replacing stale URL: %#v", refs)
+			}
+			// Node IDs survive copy-and-delete moves even when the provider block ID changes.
+			image["provider_binding"].(map[string]any)["block_id"] = "moved-block"
+			url = "/static-files/media/image.png?sig=refreshed"
+			attachWriterIRMediaPreviewURLs(document, map[string]string{"writer-node://image-1": url})
+			refs = image["references"].([]any)
+			if len(refs) != 1 || refs[0].(map[string]any)["url"] != url {
+				t.Fatalf("expected refreshed library preview after move: %#v", refs)
+			}
+		})
 	}
 }

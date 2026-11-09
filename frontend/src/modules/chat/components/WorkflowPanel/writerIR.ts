@@ -227,6 +227,27 @@ export function restoreLegacyWriterImageReference(
   return changed ? { ...document, blocks } : document;
 }
 
+/** Merge only backend MediaAsset previews; never replace a user's in-progress content. */
+export function withWriterImagePreviews(document: WriterDocument, rendered: unknown): WriterDocument {
+  if (!isWriterDocument(rendered)) return document;
+  const previews = new Map<string, Record<string, unknown>>();
+  const collect = (blocks: WriterBlock[]) => blocks.forEach(block => {
+    const preview = block.type === 'image' && block.references?.find(item => item.type === 'preview_asset');
+    if (preview) previews.set(block.node_id, preview);
+    if (block.children) collect(block.children);
+  });
+  collect(rendered.blocks);
+  if (!previews.size) return document;
+  const visit = (blocks: WriterBlock[]): WriterBlock[] => blocks.map(block => {
+    const children = block.children ? visit(block.children) : undefined;
+    const preview = block.type === 'image' ? previews.get(block.node_id) : undefined;
+    return { ...block, children, ...(preview ? { references: [
+      ...(block.references ?? []).filter(item => item.type !== 'preview_asset'), { ...preview },
+    ] } : {}) };
+  });
+  return { ...document, blocks: visit(document.blocks) };
+}
+
 export interface WriterIRParseResult {
   ok: boolean;
   document?: WriterDocument;

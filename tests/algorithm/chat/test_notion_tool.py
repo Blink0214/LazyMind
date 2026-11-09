@@ -20,6 +20,7 @@ def test_cloud_document_guidance_distinguishes_notion_list_and_search():
     guidance = '\n'.join(CLOUD_DOCUMENT_TOOL_POLICY_APPENDIX['tool_policy'])
 
     assert 'Notion URL' in guidance
-    assert 'Notion file-system tools first' in guidance
+    assert ('use the Notion file-system tools to resolve the link and read '
+            'the document before summarizing or analyzing it.') in guidance
     assert 'reading with references' in guidance
     assert 'Do not fall back to generic URL fetching' in guidance

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkflowStore, type SlotRevision, type WorkflowSession } from '@/modules/chat/store/workflowPanel';
+import type { WriterDocument } from './writerIR';
 import { DocumentArtifactEditor } from './DocumentArtifactEditor';
 import { SlotEditingContext, type SlotFooterAction } from './slotEditingContext';
 
@@ -13,7 +14,11 @@ vi.mock('@/modules/chat/utils/request', async (original) => ({
 vi.mock('./useDocumentCopy', () => ({ useDocumentCopy: () => {} }));
 vi.mock('./useWriterProviderAvailability', () => ({ useWriterProviderAvailability: () => ({ states: {} }) }));
 vi.mock('./DocumentPublicationRecoveryPanel', () => ({ DocumentPublicationRecoveryPanel: () => null }));
-vi.mock('./WriterIRControl', () => ({ WriterIRControl: () => <article>IR document</article> }));
+vi.mock('./WriterIRControl', () => ({ WriterIRControl: ({ document }: { document: WriterDocument }) => <>
+  <article>{document.title}</article>
+  {document.blocks.filter(block => block.type === 'image').map(block => <img key={block.node_id} alt='IR image'
+    src={block.references?.find(reference => reference.type === 'preview_asset')?.url as string | undefined} />)}
+</> }));
 vi.mock('./ArtifactRewriteDialog', () => ({ ArtifactRewriteDialog: () => null }));
 vi.mock('./MarkdownArtifactEditor', () => ({
   MarkdownArtifactEditor: ({ markdown, resolveImageUrl, onSave, sourceRevision, onDownloadImage }: {
@@ -178,4 +183,25 @@ describe('document artifact image previews', () => {
     await screen.findByRole('article');
     expect(api.renderWriterDocument).not.toHaveBeenCalled();
   });
+});
+
+
+it('loads Notion IR previews from the backend when media arrives', async () => {
+  const document: WriterDocument = { document_id: 'doc', stage: 'final', title: 'Keep this title', blocks: [
+    { node_id: 'notion-image', type: 'image', references: [], provider_binding: { provider: 'notion', block_id: 'block-1' } },
+  ] };
+  const irSlot = { ...slot, artifact_value: { data: document },
+    document: { representation: 'ir', editable: true, capabilities: ['save'] } } as SlotRevision;
+  api.renderWriterDocument.mockResolvedValueOnce({ data: { code: 0, data: { representation: 'ir', document } } });
+  render(<DocumentArtifactEditor slot={irSlot} sessionId='session' readOnly />);
+  await waitFor(() => expect(api.renderWriterDocument).toHaveBeenCalledTimes(1));
+  const rendered = structuredClone(document);
+  rendered.title = 'Stale server title';
+  rendered.blocks[0].references = [{ type: 'preview_asset', url: 'https://example.test/local-media.png' }];
+  api.renderWriterDocument.mockResolvedValueOnce({ data: { code: 0, data: { representation: 'ir', document: rendered } } });
+  act(() => useWorkflowStore.setState({ sessionByConversation: { conversation: session('session', 2) } }));
+  await waitFor(() => expect(screen.getByAltText('IR image')).toHaveAttribute('src', 'https://example.test/local-media.png'));
+  expect(screen.getByRole('article')).toHaveTextContent('Keep this title');
+  expect(document.blocks[0].references).toEqual([]);
+  expect(api.saveDocumentArtifact).not.toHaveBeenCalled();
 });
