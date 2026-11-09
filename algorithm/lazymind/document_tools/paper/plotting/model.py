@@ -13,6 +13,29 @@ class PlotModelError(RuntimeError):
     """No model output is a service failure, not a generated-program repair request."""
 
 
+MAX_RAW_RESPONSE_CHARS = 1024 * 1024
+MAX_BODY_CHARS = 96 * 1024
+
+
+class ModelBodyTooLong(ValueError):
+    pass
+
+
+def _bounded_response(raw):
+    serialized = json.dumps(raw, ensure_ascii=False, separators=(',', ':')) if isinstance(raw, dict) else str(raw or '')
+    if len(serialized) > MAX_RAW_RESPONSE_CHARS:
+        raise PlotModelError(f'模型原始响应过长：{len(serialized)} 字符，限制 {MAX_RAW_RESPONSE_CHARS} 字符；停止自动重写')
+    normalized = normalize_response(raw)
+    body = normalized.body
+    text = json.dumps(body, ensure_ascii=False, separators=(',', ':')) if isinstance(body, dict) else body
+    if not text or not text.strip():
+        raise PlotModelError('模型未返回独立正文；不将空响应当作计划或代码错误重写')
+    diagnostics.normalized_response(text, int(bool(normalized.reasoning)), raw_chars=len(serialized))
+    if len(text) > MAX_BODY_CHARS:
+        raise ModelBodyTooLong(f'模型正式正文过长：{len(text)} 字符，限制 {MAX_BODY_CHARS} 字符（已排除思考段）')
+    return normalized
+
+
 def request_model(prompt, json_output=True, *, output_format=None):
     from lazyllm import AutoModel
 
@@ -50,7 +73,7 @@ def request_model(prompt, json_output=True, *, output_format=None):
                     raise
                 preview.recorder.streaming_rejected = True
                 raw = transport.call(client, prompt, {**options, 'stream_output': False}, policy, supported)
-            normalized = normalize_response(raw)
+            normalized = _bounded_response(raw)
             if preview:
                 preview.finish(raw, normalized=normalized)
         except BaseException:

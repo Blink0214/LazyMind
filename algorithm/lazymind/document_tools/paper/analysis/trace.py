@@ -315,6 +315,14 @@ def response(raw):
         recorder.record('model_response', **response_info(raw))
 
 
+def normalized_response(text, removed, raw_chars=None):
+    recorder = _current.get()
+    if recorder:
+        recorder.record('response_normalized', removed_thinking_blocks=removed, body_chars=len(text),
+                        raw_chars=raw_chars,
+                        body_sha256=hashlib.sha256(text.encode()).hexdigest())
+
+
 def figure_name(identifier):
     return hashlib.sha256(identifier.encode()).hexdigest()[:12]
 
